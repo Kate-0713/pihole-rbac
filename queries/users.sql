@@ -11,3 +11,12 @@ SELECT * FROM users WHERE username = ?;
 
 -- name: GetUser :one
 SELECT * FROM users WHERE id = ?;
+
+-- name: SetUserLastLogin :exec
+UPDATE users SET last_login_at = ? WHERE id = ?;
+
+-- name: ListUserRoleIDs :many
+SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY role_id;
+
+-- name: SetUserDisabled :exec
+UPDATE users SET disabled = ? WHERE id = ?;

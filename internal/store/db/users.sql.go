@@ -80,3 +80,58 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	)
 	return i, err
 }
+
+const listUserRoleIDs = `-- name: ListUserRoleIDs :many
+SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY role_id
+`
+
+func (q *Queries) ListUserRoleIDs(ctx context.Context, userID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listUserRoleIDs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var role_id int64
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setUserDisabled = `-- name: SetUserDisabled :exec
+UPDATE users SET disabled = ? WHERE id = ?
+`
+
+type SetUserDisabledParams struct {
+	Disabled bool
+	ID       int64
+}
+
+func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error {
+	_, err := q.db.ExecContext(ctx, setUserDisabled, arg.Disabled, arg.ID)
+	return err
+}
+
+const setUserLastLogin = `-- name: SetUserLastLogin :exec
+UPDATE users SET last_login_at = ? WHERE id = ?
+`
+
+type SetUserLastLoginParams struct {
+	LastLoginAt sql.NullInt64
+	ID          int64
+}
+
+func (q *Queries) SetUserLastLogin(ctx context.Context, arg SetUserLastLoginParams) error {
+	_, err := q.db.ExecContext(ctx, setUserLastLogin, arg.LastLoginAt, arg.ID)
+	return err
+}
