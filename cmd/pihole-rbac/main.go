@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/api"
+	"github.com/Kate-0713/pihole-rbac/internal/audit"
+	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
@@ -83,9 +85,30 @@ func serve() error {
 	}
 	defer st.Close()
 
+	authn, err := newAuthenticator(ctx, st)
+	if err != nil {
+		return err
+	}
+	sessions := auth.NewSessions(st, sec.SessionKey, auth.SessionOptions{
+		CookieSecure:   cfg.CookieSecure,
+		TrustedProxies: cfg.TrustedProxies,
+	})
+	byIP, byUser := api.DefaultLoginLimits()
+	server := api.New(api.Options{
+		Store:          st,
+		Sessions:       sessions,
+		Auth:           authn,
+		Audit:          audit.NewLogger(os.Stdout),
+		TrustedProxies: cfg.TrustedProxies,
+		LoginByIP:      byIP,
+		LoginByUser:    byUser,
+		Logger:         logger,
+	})
+	go pruneSessions(ctx, sessions, logger)
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           api.NewMux(),
+		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -110,6 +133,40 @@ func serve() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// newAuthenticator builds the login chain from the saved login settings. It is swappable so saving new settings can
+// replace it without a restart.
+func newAuthenticator(ctx context.Context, st *store.Store) (*auth.SwappableAuthenticator, error) {
+	settings, err := auth.LoadSettings(ctx, st.Read())
+	if err != nil {
+		return nil, err
+	}
+	chain, err := auth.Build(settings.Methods, map[auth.Method]auth.Authenticator{
+		auth.MethodLocal: auth.NewLocalAuthenticator(auth.StoreUsers{St: st}),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("login methods: %w", err)
+	}
+	return auth.NewSwappable(chain), nil
+}
+
+// pruneSessions deletes expired and idle sessions every 15 minutes until ctx ends.
+func pruneSessions(ctx context.Context, sessions *auth.Sessions, logger *slog.Logger) {
+	t := time.NewTicker(15 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := sessions.Prune(ctx); err != nil {
+				logger.Warn("pruning sessions failed", "err", err)
+			} else if n > 0 {
+				logger.Debug("pruned sessions", "count", n)
+			}
+		}
 	}
 }
 

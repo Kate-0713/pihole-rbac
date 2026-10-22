@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# oapi-codegen config: Go types, net/http routing and the strict server interface for api/openapi.yaml.
+# Run from the repo root: make generate / .\build.ps1 generate
+package: gen
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+output: internal/api/gen/api.gen.go

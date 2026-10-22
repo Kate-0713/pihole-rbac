@@ -5,7 +5,6 @@ package api
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
@@ -20,16 +19,15 @@ func TestHealthz(t *testing.T) {
 		{"head", http.MethodHead, http.StatusOK, ""},
 		{"post rejected", http.MethodPost, http.StatusMethodNotAllowed, ""},
 	}
-	mux := NewMux()
+	e := newTestEnv(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, httptest.NewRequest(tt.method, "/healthz", nil))
-			if rec.Code != tt.wantCode {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.wantCode)
+			res := e.client("10.0.0.1:1").do(tt.method, "/healthz", nil)
+			if res.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d", res.Code, tt.wantCode)
 			}
-			if tt.wantBody != "" && rec.Body.String() != tt.wantBody {
-				t.Fatalf("body = %q, want %q", rec.Body.String(), tt.wantBody)
+			if tt.wantBody != "" && res.Body.String() != tt.wantBody {
+				t.Fatalf("body = %q, want %q", res.Body.String(), tt.wantBody)
 			}
 		})
 	}

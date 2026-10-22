@@ -16,6 +16,7 @@ LDFLAGS  := -s -w -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(P
 
 # sqlc is pinned in tools/go.mod, not the main go.mod (see the comment there).
 SQLC     := go tool -modfile=tools/go.mod sqlc
+OAPI     := go tool -modfile=tools/go.mod oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
 
 export CGO_ENABLED := 0
 export PIHOLE_RBAC_DATA_DIR ?= $(CURDIR)/.devdata
@@ -47,11 +48,14 @@ test: ## go vet and go test
 	go vet ./...
 	go test ./...
 
-generate: ## Regenerate the sqlc code in internal/store/db
+generate: ## Regenerate internal/store/db (sqlc) and internal/api/gen (oapi-codegen)
 	$(SQLC) generate
+	$(OAPI)
 
-generate-check: ## Fail if the generated sqlc code is out of date
+generate-check: ## Fail if the generated code is out of date (regenerates internal/api/gen in place)
 	$(SQLC) diff
+	$(OAPI)
+	git diff --exit-code -- internal/api/gen
 
 dev-api: ## Run the API on :8080 with the dev data dir (no frontend build needed)
 	@mkdir -p "$(PIHOLE_RBAC_DATA_DIR)"

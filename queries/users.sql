@@ -20,3 +20,6 @@ SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY role_id;
 
 -- name: SetUserDisabled :exec
 UPDATE users SET disabled = ? WHERE id = ?;
+
+-- name: AddUserRole :exec
+INSERT INTO user_roles (user_id, role_id) VALUES (?, ?);

@@ -2,13 +2,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # API contract (spec-first). Every request/response shape is defined here before its handler.
+# oapi-codegen generates internal/api/gen from this file: make generate / .\build.ps1 generate
 openapi: 3.1.0
 info:
   title: pihole-rbac
   version: 2.0.0-dev
+  description: >-
+    Every /api/v1 endpoint needs a session unless it says otherwise. Every state-changing request (POST, PUT, PATCH,
+    DELETE) also needs the X-CSRF-Token header and an Origin (or Referer) matching the app's own origin, and a
+    request body must be application/json. Failures use the Error envelope.
   license:
     name: GNU Affero General Public License v3.0 or later
     identifier: AGPL-3.0-or-later
+
+security:
+  - session: []
+
 paths:
   /healthz:
     get:
@@ -29,9 +38,9 @@ paths:
     get:
       summary: Source code location and licence
       description: >-
-        Unauthenticated, and available before first-run setup is complete, so every page (including login and setup) can show the
-        source link that AGPL-3.0 section 13 requires. Deliberately carries no version number, so anonymous visitors can't tell
-        which release is running.
+        Unauthenticated, and available before first-run setup is complete, so every page (including login and setup)
+        can show the source link that AGPL-3.0 section 13 requires. Deliberately carries no version number, so
+        anonymous visitors can't tell which release is running.
       operationId: getAbout
       security: []
       responses:
@@ -42,7 +51,143 @@ paths:
               schema:
                 $ref: "#/components/schemas/About"
 
+  /api/v1/auth/csrf:
+    get:
+      summary: CSRF token for the current visitor
+      description: >-
+        Unauthenticated. Returns the token to send as X-CSRF-Token. For a logged-in visitor it is the session's token;
+        otherwise it is bound to an anonymous cookie, which this call sets if the visitor doesn't have one yet. The
+        login page calls this before POST /auth/login. An anonymous token stops working once the visitor logs in.
+      operationId: getCSRFToken
+      security: []
+      responses:
+        "200":
+          description: The token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CSRFToken"
+
+  /api/v1/auth/login:
+    post:
+      summary: Log in
+      description: >-
+        Unauthenticated, but needs the anonymous CSRF token from GET /auth/csrf. Tries the enabled login methods in
+        order. On success, sets the session cookie (replacing any previous session) and returns the new session,
+        including its CSRF token. Failed attempts are limited per client address and per username; while a limit
+        applies, attempts are refused with 429 without checking the credentials.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          description: Wrong username or password (code invalid_credentials). Doesn't say which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >-
+            The credentials were correct but the user has no role in this app (code no_access), or the CSRF or
+            Origin check failed (code csrf_failed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/auth/logout:
+    post:
+      summary: Log out
+      description: Ends the current session and clears the session cookie.
+      operationId: logout
+      responses:
+        "204":
+          description: Logged out.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/auth/session:
+    get:
+      summary: The current session
+      description: >-
+        Returns the logged-in user and the session's CSRF token, or 401 when there is no session. The SPA calls this
+        on load.
+      operationId: getSession
+      responses:
+        "200":
+          description: The current session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
 components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: pihole_rbac_session
+
+  responses:
+    Unauthenticated:
+      description: No valid session (code unauthenticated).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: >-
+        Not allowed (code forbidden), or the CSRF or Origin check failed on a state-changing request (code
+        csrf_failed).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationFailed:
+      description: The request body is malformed or a field is invalid (code validation_failed).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnsupportedMediaType:
+      description: The request body isn't application/json (code unsupported_media_type).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Too many failed attempts (code rate_limited). Retry after the given number of seconds.
+      headers:
+        Retry-After:
+          description: Seconds until another attempt is allowed.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
   schemas:
     About:
       type: object
@@ -59,6 +204,62 @@ components:
           description: SPDX licence identifier.
           examples: ["AGPL-3.0-or-later"]
 
+    CSRFToken:
+      type: object
+      additionalProperties: false
+      required: [csrf_token]
+      properties:
+        csrf_token:
+          type: string
+          description: Send as the X-CSRF-Token header on every state-changing request.
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Case-insensitive; surrounding spaces are ignored.
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+
+    SessionUser:
+      type: object
+      additionalProperties: false
+      required: [id, username, source]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        source:
+          type: string
+          enum: [local, ldap]
+
+    CurrentSession:
+      type: object
+      additionalProperties: false
+      required: [user, public_id, expires_at, csrf_token]
+      properties:
+        user:
+          $ref: "#/components/schemas/SessionUser"
+        public_id:
+          type: string
+          description: Identifies this session in the sessions list and the audit log. Can't be used to authenticate.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the session ends at the latest. It also ends after a period without requests.
+        csrf_token:
+          type: string
+          description: Send as the X-CSRF-Token header on every state-changing request.
+
     # The standard error envelope returned by every /api/v1 endpoint on failure.
     Error:
       type: object
@@ -66,17 +267,24 @@ components:
       required: [error]
       properties:
         error:
+          $ref: "#/components/schemas/ErrorBody"
+
+    ErrorBody:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: >-
+            Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed,
+            unsupported_media_type, not_found, conflict, invariant_violated, rate_limited, setup_required,
+            invalid_credentials, no_access, internal, pihole_unreachable, pihole_auth_rejected,
+            pihole_status_error.
+        message:
+          type: string
+          description: Human-readable message, safe to show to the user.
+        details:
           type: object
-          additionalProperties: false
-          required: [code, message]
-          properties:
-            code:
-              type: string
-              description: Stable machine-readable code, e.g. forbidden, validation_failed, pihole_unreachable.
-            message:
-              type: string
-              description: Human-readable message, safe to show to the user.
-            details:
-              type: object
-              additionalProperties: true
-              description: Optional structured context, e.g. which instance failed.
+          additionalProperties: true
+          description: Optional structured context, e.g. which instance failed.

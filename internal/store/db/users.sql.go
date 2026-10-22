@@ -10,6 +10,20 @@ import (
 	"database/sql"
 )
 
+const addUserRole = `-- name: AddUserRole :exec
+INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)
+`
+
+type AddUserRoleParams struct {
+	UserID int64
+	RoleID int64
+}
+
+func (q *Queries) AddUserRole(ctx context.Context, arg AddUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, addUserRole, arg.UserID, arg.RoleID)
+	return err
+}
+
 const createLocalUser = `-- name: CreateLocalUser :one
 
 INSERT INTO users (username, source, password_hash, created_at)

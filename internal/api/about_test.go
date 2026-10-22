@@ -6,7 +6,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
@@ -22,29 +21,27 @@ func TestGetAbout(t *testing.T) {
 		{"post rejected", http.MethodPost, http.StatusMethodNotAllowed},
 		{"delete rejected", http.MethodDelete, http.StatusMethodNotAllowed},
 	}
-	mux := NewMux()
+	e := newTestEnv(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, httptest.NewRequest(tt.method, "/api/v1/about", nil))
-			if rec.Code != tt.wantCode {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.wantCode)
+			if res := e.client("10.0.0.1:1").do(tt.method, "/api/v1/about", nil); res.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d", res.Code, tt.wantCode)
 			}
 		})
 	}
 }
 
-// The body must match the spec exactly: source_url and license, nothing else (in particular, no version).
+// The body must match the spec exactly: source_url and license, nothing else (in particular, no version). It is
+// public, so it works without a session.
 func TestGetAboutBody(t *testing.T) {
-	rec := httptest.NewRecorder()
-	NewMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/about", nil))
+	res := newTestEnv(t).client("10.0.0.1:1").do(http.MethodGet, "/api/v1/about", nil)
 
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+	if ct := res.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json", ct)
 	}
 	var body map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid JSON %q: %v", rec.Body.String(), err)
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON %q: %v", res.Body.String(), err)
 	}
 	want := map[string]string{"source_url": buildinfo.Source, "license": buildinfo.License}
 	if len(body) != len(want) {

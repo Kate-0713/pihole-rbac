@@ -22,8 +22,9 @@ $ErrorActionPreference = 'Stop'
 Push-Location -Path $PSScriptRoot
 
 $Bin = 'bin\pihole-rbac.exe'
-# sqlc is pinned in tools/go.mod, not the main go.mod (see the comment there).
+# sqlc and oapi-codegen are pinned in tools/go.mod, not the main go.mod (see the comment there).
 $Sqlc = @('tool', '-modfile=tools/go.mod', 'sqlc')
+$Oapi = @('tool', '-modfile=tools/go.mod', 'oapi-codegen', '-config', 'api/oapi-codegen.yaml', 'api/openapi.yaml')
 $Pkg = 'github.com/Kate-0713/pihole-rbac/internal/buildinfo'
 $env:CGO_ENABLED = '0'
 if (-not $env:PIHOLE_RBAC_DATA_DIR) {
@@ -93,9 +94,13 @@ try {
         }
         'generate' {
             Invoke-Native 'go' ($Sqlc + 'generate')
+            Invoke-Native 'go' $Oapi
         }
         'generate-check' {
+            # Regenerates internal/api/gen in place, then fails if that changed anything.
             Invoke-Native 'go' ($Sqlc + 'diff')
+            Invoke-Native 'go' $Oapi
+            Invoke-Native 'git' @('diff', '--exit-code', '--', 'internal/api/gen')
         }
         'dev-api' {
             New-Item -ItemType Directory -Force -Path $env:PIHOLE_RBAC_DATA_DIR | Out-Null
