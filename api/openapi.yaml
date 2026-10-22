@@ -1,0 +1,20 @@
+# API contract (spec-first). Every request/response shape is defined here before its handler.
+openapi: 3.1.0
+info:
+  title: pihole-rbac
+  version: 2.0.0-dev
+paths:
+  /healthz:
+    get:
+      summary: Liveness check
+      description: Unauthenticated. Returns only "ok", for Docker health checks and the LXC updater.
+      operationId: healthz
+      security: []
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: ok

@@ -1,0 +1,44 @@
+# GoReleaser config.
+# Docker images and minisign signatures come later.
+version: 2
+
+project_name: pihole-rbac
+
+before:
+  hooks:
+    - npm --prefix web ci
+    - npm --prefix web run build
+
+builds:
+  - id: pihole-rbac
+    main: ./cmd/pihole-rbac
+    binary: pihole-rbac
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X pihole-rbac/internal/buildinfo.Version={{ .Version }}
+      - -X pihole-rbac/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X pihole-rbac/internal/buildinfo.Date={{ .Date }}
+    hooks:
+      post:
+        # Refuse to release a binary without the UI. Only the native-arch
+        # binary can run on the build host, so check that one.
+        - cmd: >-
+            sh -c 'if [ "{{ .Arch }}" = "{{ .Runtime.Goarch }}" ]; then "{{ .Path }}" version | grep -qx "frontend: embedded"; fi'
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
+
+changelog:
+  sort: asc

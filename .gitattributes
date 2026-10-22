@@ -1,0 +1,11 @@
+# Normalise to LF in the repo. Files that run on Linux stay LF in a Windows
+# checkout too, so a clone on Windows can't break them.
+* text=auto eol=lf
+
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+*.png   binary
+*.ico   binary
+*.svg   text

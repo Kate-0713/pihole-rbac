@@ -1,0 +1,17 @@
+# Build output
+/bin/
+/dist/
+
+# Dev data dir (SQLite DB, session key) used by `make dev-api` / `.\build.ps1 dev-api`
+/.devdata/
+
+# Local env files with secrets
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
