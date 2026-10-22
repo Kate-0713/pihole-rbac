@@ -37,7 +37,7 @@ build: web ## Build the frontend, then the binary with it embedded
 	@$(MAKE) --no-print-directory check-embedded
 
 check-embedded: ## Fail unless the built binary contains the frontend
-	@./$(BIN) version | tee /dev/stderr | grep -q '^frontend: embedded$$' \
+	@out="$$(./$(BIN) version)"; echo "$$out"; grep -qx 'frontend: embedded' <<< "$$out" \
 		|| { echo "error: frontend is not embedded in $(BIN)" >&2; exit 1; }
 
 test: ## go vet and go test

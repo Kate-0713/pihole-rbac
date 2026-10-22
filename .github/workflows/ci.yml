@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         # Windows keeps the local dev loop honest; releases are Linux-only.
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-26.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       CGO_ENABLED: "0"
@@ -55,11 +55,13 @@ jobs:
         shell: bash
         run: |
           go build -trimpath -o bin/pihole-rbac${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/pihole-rbac
-          ./bin/pihole-rbac version | tee /dev/stderr | grep -qx 'frontend: embedded'
+          out="$(./bin/pihole-rbac version)"
+          echo "$out"
+          grep -qx 'frontend: embedded' <<< "$out"
 
   snapshot:
     name: goreleaser snapshot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: test
     steps:
       - uses: actions/checkout@v5
