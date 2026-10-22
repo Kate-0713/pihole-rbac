@@ -40,7 +40,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Check generated sqlc code is up to date
-        run: go tool -modfile=tools/go.mod sqlc diff
+        run: go tool "-modfile=tools/go.mod" sqlc diff
 
       - name: Install web dependencies
         run: npm --prefix web ci
