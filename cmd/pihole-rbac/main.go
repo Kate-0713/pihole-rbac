@@ -16,6 +16,9 @@ import (
 
 	"github.com/Kate-0713/pihole-rbac/internal/api"
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
+	"github.com/Kate-0713/pihole-rbac/internal/config"
+	"github.com/Kate-0713/pihole-rbac/internal/secrets"
+	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/web"
 )
 
@@ -55,13 +58,33 @@ func versionText() string {
 }
 
 func serve() error {
-	addr := os.Getenv("PIHOLE_RBAC_LISTEN")
-	if addr == "" {
-		addr = ":8080"
+	cfg, err := config.FromEnv()
+	if err != nil {
+		return fmt.Errorf("configuration: %w", err)
 	}
+	// Replaced by the file-and-stdout logger ported from v1.
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	slog.SetDefault(logger)
+
+	// Secrets before the database: a misconfigured secret should stop startup before any migration runs.
+	sec, err := secrets.Load(secrets.Options{DataDir: cfg.DataDir})
+	if err != nil {
+		return fmt.Errorf("secrets: %w", err)
+	}
+	logSecrets(logger, sec)
+
+	// SIGTERM is what systemd and Docker send; os.Interrupt covers Ctrl+C on Windows and Linux.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	st, err := store.Open(ctx, store.Options{DataDir: cfg.DataDir, Logger: logger})
+	if err != nil {
+		return err
+	}
+	defer st.Close()
 
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.Listen,
 		Handler:           api.NewMux(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
@@ -70,13 +93,9 @@ func serve() error {
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	// SIGTERM is what systemd and Docker send; os.Interrupt covers Ctrl+C on Windows and Linux.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	errc := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "addr", addr, "version", buildinfo.Version)
+		logger.Info("listening", "addr", cfg.Listen, "version", buildinfo.Version, "data_dir", cfg.DataDir)
 		errc <- srv.ListenAndServe()
 	}()
 
@@ -87,9 +106,25 @@ func serve() error {
 		}
 		return err
 	case <-ctx.Done():
-		slog.Info("shutting down")
+		logger.Info("shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// logSecrets logs which secrets are set and where from. Never values.
+func logSecrets(logger *slog.Logger, sec *secrets.Manager) {
+	attrs := make([]any, 0, 8)
+	for _, s := range sec.Status() {
+		state := "missing"
+		if s.Set {
+			state = string(s.Source)
+		}
+		attrs = append(attrs, s.Name, state)
+	}
+	logger.Info("secrets loaded", attrs...)
+	if sec.Cipher() == nil {
+		logger.Warn("PIHOLE_RBAC_SECRET_KEY is not set: notification credentials can't be stored until it is")
 	}
 }

@@ -456,6 +456,13 @@ func TestConstraints(t *testing.T) {
 			 VALUES (x'00', 'AAAAAAAAAAAAAAAAAAAAAA', 1, 0, 1, 0, 0)`, Check},
 		{"notification secret is all or nothing", nil,
 			`INSERT INTO notification_channels (kind, name, secret_ciphertext, created_at) VALUES ('discord', 'd', x'01', 0)`, Check},
+		{"channel env_name is upper case", nil,
+			`INSERT INTO notification_channels (kind, name, env_name, created_at) VALUES ('discord', 'd', 'alerts', 0)`, Check},
+		{"channel env_name isn't empty", nil,
+			`INSERT INTO notification_channels (kind, name, env_name, created_at) VALUES ('discord', 'd', '', 0)`, Check},
+		{"channel env_name is unique",
+			[]string{`INSERT INTO notification_channels (kind, name, env_name, created_at) VALUES ('discord', 'd1', 'ALERTS', 0)`},
+			`INSERT INTO notification_channels (kind, name, env_name, created_at) VALUES ('matrix', 'm1', 'ALERTS', 0)`, Unique},
 		{"update target version looks like a tag", nil,
 			`INSERT INTO update_requests (requested_at, target_version) VALUES (0, 'https://evil.example/x')`, Check},
 	}

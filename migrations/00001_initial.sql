@@ -228,6 +228,8 @@ CREATE TABLE notification_channels (
     id                INTEGER PRIMARY KEY,
     kind              TEXT    NOT NULL CHECK (kind IN ('discord', 'matrix')),
     name              TEXT    NOT NULL UNIQUE CHECK (name <> ''),
+    -- Optional. When PIHOLE_RBAC_NOTIFY_<env_name>_SECRET (or _FILE) is set, it overrides the stored secret.
+    env_name          TEXT    UNIQUE CHECK (env_name IS NULL OR (env_name <> '' AND env_name NOT GLOB '*[^A-Z0-9_]*')),
     config            TEXT    NOT NULL DEFAULT '{}' CHECK (json_valid(config)),
     secret_ciphertext BLOB,
     secret_nonce      BLOB    CHECK (secret_nonce IS NULL OR length(secret_nonce) = 12),

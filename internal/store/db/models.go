@@ -70,6 +70,7 @@ type NotificationChannel struct {
 	ID               int64
 	Kind             string
 	Name             string
+	EnvName          sql.NullString
 	Config           string
 	SecretCiphertext []byte
 	SecretNonce      []byte
