@@ -14,10 +14,13 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE     ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -s -w -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).Date=$(DATE)
 
+# sqlc is pinned in tools/go.mod, not the main go.mod (see the comment there).
+SQLC     := go tool -modfile=tools/go.mod sqlc
+
 export CGO_ENABLED := 0
 export PIHOLE_RBAC_DATA_DIR ?= $(CURDIR)/.devdata
 
-.PHONY: help web web-check build check-embedded test dev-api dev-web snapshot clean
+.PHONY: help web web-check build check-embedded test generate generate-check dev-api dev-web snapshot clean
 
 help: ## List tasks
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-15s %s\n", $$1, $$2}'
@@ -43,6 +46,12 @@ check-embedded: ## Fail unless the built binary contains the frontend
 test: ## go vet and go test
 	go vet ./...
 	go test ./...
+
+generate: ## Regenerate the sqlc code in internal/store/db
+	$(SQLC) generate
+
+generate-check: ## Fail if the generated sqlc code is out of date
+	$(SQLC) diff
 
 dev-api: ## Run the API on :8080 with the dev data dir (no frontend build needed)
 	@mkdir -p "$(PIHOLE_RBAC_DATA_DIR)"

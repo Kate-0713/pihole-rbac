@@ -14,7 +14,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'web', 'web-check', 'build', 'check-embedded', 'test', 'dev-api', 'dev-web', 'snapshot', 'clean')]
+    [ValidateSet('help', 'web', 'web-check', 'build', 'check-embedded', 'test', 'generate', 'generate-check', 'dev-api', 'dev-web', 'snapshot', 'clean')]
     [string]$Task = 'help'
 )
 
@@ -22,6 +22,8 @@ $ErrorActionPreference = 'Stop'
 Push-Location -Path $PSScriptRoot
 
 $Bin = 'bin\pihole-rbac.exe'
+# sqlc is pinned in tools/go.mod, not the main go.mod (see the comment there).
+$Sqlc = @('tool', '-modfile=tools/go.mod', 'sqlc')
 $Pkg = 'github.com/Kate-0713/pihole-rbac/internal/buildinfo'
 $env:CGO_ENABLED = '0'
 if (-not $env:PIHOLE_RBAC_DATA_DIR) {
@@ -64,7 +66,7 @@ function Test-Embedded {
 try {
     switch ($Task) {
         'help' {
-            Write-Host 'Tasks: web, web-check, build, check-embedded, test, dev-api, dev-web, snapshot, clean'
+            Write-Host 'Tasks: web, web-check, build, check-embedded, test, generate, generate-check, dev-api, dev-web, snapshot, clean'
         }
         'web' {
             Install-WebDeps
@@ -88,6 +90,12 @@ try {
         'test' {
             Invoke-Native 'go' @('vet', './...')
             Invoke-Native 'go' @('test', './...')
+        }
+        'generate' {
+            Invoke-Native 'go' ($Sqlc + 'generate')
+        }
+        'generate-check' {
+            Invoke-Native 'go' ($Sqlc + 'diff')
         }
         'dev-api' {
             New-Item -ItemType Directory -Force -Path $env:PIHOLE_RBAC_DATA_DIR | Out-Null

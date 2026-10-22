@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# sqlc reads the goose migrations as the schema (it skips the Down sections)
+# and generates internal/store/db. Run: make generate / .\build.ps1 generate
+version: "2"
+sql:
+  - engine: sqlite
+    schema: migrations
+    queries: queries
+    gen:
+      go:
+        package: db
+        out: internal/store/db
+        emit_empty_slices: true
