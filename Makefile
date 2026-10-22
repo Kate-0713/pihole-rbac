@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Build tasks for Linux and CI. build.ps1 provides the same tasks on Windows;
 # keep the two in step (same task names, same underlying commands).
 
@@ -5,7 +8,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 BIN      := bin/pihole-rbac
-PKG      := pihole-rbac/internal/buildinfo
+PKG      := github.com/Kate-0713/pihole-rbac/internal/buildinfo
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE     ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)

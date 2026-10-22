@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Kate O'Grady
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package web embeds the built SvelteKit SPA.
 //
 // adapter-static writes to web/build/app. web/build/.keep is committed so the

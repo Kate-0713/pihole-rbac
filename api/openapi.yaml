@@ -1,8 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # API contract (spec-first). Every request/response shape is defined here before its handler.
 openapi: 3.1.0
 info:
   title: pihole-rbac
   version: 2.0.0-dev
+  license:
+    name: GNU Affero General Public License v3.0 or later
+    identifier: AGPL-3.0-or-later
 paths:
   /healthz:
     get:
@@ -18,3 +24,59 @@ paths:
               schema:
                 type: string
                 const: ok
+
+  /api/v1/about:
+    get:
+      summary: Source code location and licence
+      description: >-
+        Unauthenticated, and available before first-run setup is complete, so every page (including login and setup) can show the
+        source link that AGPL-3.0 section 13 requires. Deliberately carries no version number, so anonymous visitors can't tell
+        which release is running.
+      operationId: getAbout
+      security: []
+      responses:
+        "200":
+          description: Where to get the source of the running build, and its licence.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/About"
+
+components:
+  schemas:
+    About:
+      type: object
+      additionalProperties: false
+      required: [source_url, license]
+      properties:
+        source_url:
+          type: string
+          format: uri
+          description: Where the source code of the running build can be obtained.
+          examples: ["https://github.com/Kate-0713/pihole-rbac"]
+        license:
+          type: string
+          description: SPDX licence identifier.
+          examples: ["AGPL-3.0-or-later"]
+
+    # The standard error envelope returned by every /api/v1 endpoint on failure.
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code, e.g. forbidden, validation_failed, pihole_unreachable.
+            message:
+              type: string
+              description: Human-readable message, safe to show to the user.
+            details:
+              type: object
+              additionalProperties: true
+              description: Optional structured context, e.g. which instance failed.

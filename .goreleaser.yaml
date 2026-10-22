@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # GoReleaser config.
 # Docker images and minisign signatures come later.
 version: 2
@@ -20,9 +23,9 @@ builds:
     flags: [-trimpath]
     ldflags:
       - -s -w
-      - -X pihole-rbac/internal/buildinfo.Version={{ .Version }}
-      - -X pihole-rbac/internal/buildinfo.Commit={{ .ShortCommit }}
-      - -X pihole-rbac/internal/buildinfo.Date={{ .Date }}
+      - -X github.com/Kate-0713/pihole-rbac/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/Kate-0713/pihole-rbac/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/Kate-0713/pihole-rbac/internal/buildinfo.Date={{ .Date }}
     hooks:
       post:
         # Refuse to release a binary without the UI. Only the native-arch
@@ -33,6 +36,10 @@ builds:
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # The licence must travel with every binary; listed explicitly because GoReleaser's defaults look for LICENSE*, not LICENCE*.
+    files:
+      - LICENCE.md
+      - README.md
 
 checksum:
   name_template: checksums.txt

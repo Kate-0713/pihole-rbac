@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Kate O'Grady
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package api holds the HTTP handlers and routing.
 package api
 
@@ -9,12 +12,4 @@ func Healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte("ok"))
-}
-
-// NewMux returns the router. Method-and-path patterns are the stdlib mux's
-// (Go 1.22+), so GET also matches HEAD and anything else gets a 405.
-func NewMux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", Healthz)
-	return mux
 }

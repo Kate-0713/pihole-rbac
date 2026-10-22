@@ -1,8 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Kate O'Grady
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package main
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
 )
 
 func TestRun(t *testing.T) {
@@ -28,5 +33,8 @@ func TestVersionTextReportsFrontend(t *testing.T) {
 	got := versionText()
 	if !strings.Contains(got, "frontend: embedded") && !strings.Contains(got, "frontend: not built") {
 		t.Fatalf("versionText() = %q, missing frontend line", got)
+	}
+	if !strings.Contains(got, "source: "+buildinfo.Source) {
+		t.Fatalf("versionText() = %q, missing source line", got)
 	}
 }

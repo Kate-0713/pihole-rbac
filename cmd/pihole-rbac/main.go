@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Kate O'Grady
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package main
 
 import (
@@ -11,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"pihole-rbac/internal/api"
-	"pihole-rbac/internal/buildinfo"
-	"pihole-rbac/web"
+	"github.com/Kate-0713/pihole-rbac/internal/api"
+	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
+	"github.com/Kate-0713/pihole-rbac/web"
 )
 
 func main() {
@@ -48,7 +51,7 @@ func versionText() string {
 	if _, built := web.Dist(); built {
 		frontend = "embedded"
 	}
-	return buildinfo.String() + "\nfrontend: " + frontend
+	return buildinfo.String() + "\nfrontend: " + frontend + "\nsource: " + buildinfo.Source + " (" + buildinfo.License + ")"
 }
 
 func serve() error {

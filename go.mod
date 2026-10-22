@@ -1,4 +1,4 @@
-module pihole-rbac
+module github.com/Kate-0713/pihole-rbac
 
 go 1.27.3
 

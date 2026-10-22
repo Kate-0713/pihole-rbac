@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 <#
 .SYNOPSIS
   Build tasks for Windows. Same task names and commands as the Makefile;
@@ -19,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 Push-Location -Path $PSScriptRoot
 
 $Bin = 'bin\pihole-rbac.exe'
-$Pkg = 'pihole-rbac/internal/buildinfo'
+$Pkg = 'github.com/Kate-0713/pihole-rbac/internal/buildinfo'
 $env:CGO_ENABLED = '0'
 if (-not $env:PIHOLE_RBAC_DATA_DIR) {
     $env:PIHOLE_RBAC_DATA_DIR = Join-Path $PSScriptRoot '.devdata'
