@@ -68,6 +68,15 @@ const (
 	ActionInstanceDelete  = "instance_delete"
 	ActionInstanceTest    = "instance_test"
 
+	// Pi-hole writes, recorded after the call with the instance and its result. Target is the API target (i-<id>);
+	// the detail names the item. A write Pi-hole refused is a failure with its message.
+	ActionBlockingSet  = "blocking_set"
+	ActionDNSRestart   = "dns_restart"
+	ActionDomainAdd    = "domain_add"
+	ActionDomainUpdate = "domain_update"
+	ActionDomainDelete = "domain_delete"
+	ActionClientUpdate = "client_update"
+
 	// Sessions.
 	ActionLDAPRecheck = "ldap_recheck" // an LDAP user's session roles changed, or their sessions ended, at a recheck
 

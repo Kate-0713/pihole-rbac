@@ -306,7 +306,8 @@ func (p *Pool) record(ctx context.Context, m *member, err error) {
 	prev := m.health.State
 	m.lastUsed = now
 	switch {
-	case err == nil:
+	// Pi-hole refusing the content of a request (a duplicate domain, say) is the caller's problem, not Pi-hole's.
+	case err == nil, errors.Is(err, piholeapi.ErrRejected):
 		m.health.State, m.health.LastSuccess = StateUp, now
 		m.lastErr, m.downUntil = nil, time.Time{}
 	case piholeapi.Down(err):
@@ -325,6 +326,17 @@ func (p *Pool) record(ctx context.Context, m *member, err error) {
 	case state == StateUp && prev == StateDown:
 		p.logger.Info("pi-hole instance is back up", "instance", name)
 	}
+}
+
+// Name returns an enabled instance's current name, and false if it isn't in the pool.
+func (p *Pool) Name(id int64) (string, bool) {
+	m := p.get(id)
+	if m == nil {
+		return "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.name, true
 }
 
 // Health returns an instance's health, and false if it isn't in the pool (unknown or disabled).

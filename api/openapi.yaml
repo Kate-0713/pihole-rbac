@@ -488,6 +488,425 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/targets/{target}/summary:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: Dashboard figures for a target
+      description: >-
+        The blocking status, totals for the last 24 hours from Pi-hole's long-term database, and the live counters
+        since FTL last started. Needs any permission on the target. If any part can't be read, the whole request
+        fails.
+      operationId: getTargetSummary
+      x-permission: target:any
+      responses:
+        "200":
+          description: The figures.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetSummary"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/blocking:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: Whether blocking is on
+      description: Needs any permission on the target.
+      operationId: getBlocking
+      x-permission: target:any
+      responses:
+        "200":
+          description: The blocking status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockingStatus"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Turn blocking on or off
+      description: >-
+        Sets blocking to the given state; setting the state it already has is allowed. With `timer`, which needs
+        `enabled` false, Pi-hole turns blocking back on after that many seconds. Audited as blocking_set.
+      operationId: setBlocking
+      x-permission: target:blocking.toggle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockingInput"
+      responses:
+        "200":
+          description: The blocking status after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockingStatus"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/dns/restart:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    post:
+      summary: Restart Pi-hole's DNS resolver
+      description: >-
+        Checks that the Pi-hole is reachable, then asks it to restart its resolver. The API goes down with the
+        resolver, so a connection that drops during the restart is a 200 with `confirmed` false rather than an error.
+        Audited as dns_restart.
+      operationId: restartDNS
+      x-permission: target:dns.restart
+      responses:
+        "200":
+          description: The restart was requested.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSRestartResult"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/domains:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: The allow and deny lists
+      description: Every entry, unpaged, since Pi-hole returns the lists whole.
+      operationId: listDomains
+      x-permission: target:domains.view
+      responses:
+        "200":
+          description: The entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add a domain to a list
+      description: >-
+        Adds an enabled entry. The groups must exist on the Pi-hole. Without `groups`, the entry goes in the Default
+        group (ID 0), as in Pi-hole's own interface; an empty list puts it in no group. Pi-hole refusing the entry
+        (already on that list, or not a valid domain or regex) is a 400 pihole_rejected. Audited as domain_add.
+      operationId: addDomain
+      x-permission: target:domains.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainInput"
+      responses:
+        "201":
+          description: The entry as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    patch:
+      summary: Change a list entry's groups or comment
+      description: >-
+        The body names the entry by domain, type and kind, which must match it exactly, and gives the fields to
+        change; fields left out keep their value, and so does whether the entry is enabled. An entry that doesn't
+        exist is a 404: it is never created. Audited as domain_update, with the groups before and after.
+      operationId: updateDomain
+      x-permission: target:domains.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainUpdate"
+      responses:
+        "200":
+          description: The entry as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a list entry
+      description: >-
+        The body names the entry by domain, type and kind, which must match it exactly. An entry that doesn't exist
+        is a 404. Audited as domain_delete, with the entry's groups and comment.
+      operationId: deleteDomain
+      x-permission: target:domains.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainKey"
+      responses:
+        "204":
+          description: Deleted.
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/clients:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: The configured clients
+      description: Every client, unpaged, since Pi-hole returns the list whole.
+      operationId: listClients
+      x-permission: target:clients.view
+      responses:
+        "200":
+          description: The clients.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    patch:
+      summary: Change a client's groups or comment
+      description: >-
+        The body names the client by its identifier, which must match exactly, and gives the fields to change;
+        fields left out keep their value. A client that doesn't exist is a 404: it is never created. Audited as
+        client_update, with the groups before and after.
+      operationId: updateClient
+      x-permission: target:clients.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientUpdate"
+      responses:
+        "200":
+          description: The client as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeClient"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/groups:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: The Pi-hole's groups
+      description: >-
+        Pi-hole's own groups (not instance groups), so group IDs on domains and clients can be shown by name. Needs
+        any permission on the target.
+      operationId: listPiholeGroups
+      x-permission: target:any
+      responses:
+        "200":
+          description: The groups.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/queries:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: The newest entries of the query log
+      description: >-
+        Reads the newest `length` entries, newest first, then keeps those matching the filters, so a filtered result
+        can hold fewer than `length` entries.
+      operationId: listQueries
+      x-permission: target:querylog.view
+      parameters:
+        - name: length
+          in: query
+          description: How many of the newest entries to read, 1 to 1000. Default 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+        - name: domain
+          in: query
+          description: Keep entries whose domain contains this, ignoring case.
+          schema:
+            type: string
+            maxLength: 255
+        - name: client
+          in: query
+          description: Keep entries whose client address or name contains this, ignoring case.
+          schema:
+            type: string
+            maxLength: 255
+      responses:
+        "200":
+          description: The entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryLog"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
 components:
   parameters:
     InstanceID:
@@ -499,6 +918,18 @@ components:
         type: integer
         format: int64
         minimum: 1
+
+    TargetID:
+      name: target
+      in: path
+      required: true
+      description: >-
+        `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are
+        built.
+      schema:
+        type: string
+        pattern: "^[ig]-[1-9][0-9]*$"
+        examples: ["i-1"]
 
   securitySchemes:
     session:
@@ -564,6 +995,33 @@ components:
       description: >-
         The connection test failed (code pihole_unreachable, pihole_auth_rejected or pihole_status_error), so nothing
         was changed. `details.instance` names the instance and `details.detail` has the underlying error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidOrRejected:
+      description: >-
+        A field is invalid (code validation_failed), or the Pi-hole refused the request's content (code
+        pihole_rejected): a duplicate entry, say, or a domain it doesn't accept. For pihole_rejected,
+        `details.instance` names the instance and `details.pihole_message` has Pi-hole's reason, which is Pi-hole's
+        text: show it as text.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TargetUnavailable:
+      description: >-
+        The instance can't be used: its password variable isn't set (code instance_password_missing) or its settings
+        can't be used (code instance_misconfigured). `details.instance` names it.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TargetPiholeFailed:
+      description: >-
+        The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected)
+        or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. The underlying
+        error goes to the server log only.
       content:
         application/json:
           schema:
@@ -922,6 +1380,347 @@ components:
           type: string
           description: The underlying error, such as a TLS or connection error. Never contains the password.
 
+    TargetSummary:
+      type: object
+      additionalProperties: false
+      required: [blocking, last_24h, live]
+      properties:
+        blocking:
+          $ref: "#/components/schemas/BlockingStatus"
+        last_24h:
+          $ref: "#/components/schemas/DatabaseTotals"
+        live:
+          $ref: "#/components/schemas/LiveCounters"
+
+    DatabaseTotals:
+      type: object
+      additionalProperties: false
+      description: Totals for the last 24 hours from Pi-hole's long-term database, unaffected by FTL restarts.
+      required: [queries, blocked, percent_blocked, clients]
+      properties:
+        queries:
+          type: integer
+        blocked:
+          type: integer
+        percent_blocked:
+          type: number
+          format: double
+        clients:
+          type: integer
+
+    LiveCounters:
+      type: object
+      additionalProperties: false
+      description: Counters since FTL last started.
+      required:
+        [queries, blocked, percent_blocked, unique_domains, forwarded, cached, active_clients, total_clients, domains_on_blocklist, status, replies]
+      properties:
+        queries:
+          type: integer
+        blocked:
+          type: integer
+        percent_blocked:
+          type: number
+          format: double
+        unique_domains:
+          type: integer
+        forwarded:
+          type: integer
+        cached:
+          type: integer
+        active_clients:
+          type: integer
+        total_clients:
+          type: integer
+        domains_on_blocklist:
+          type: integer
+          description: Domains on the Pi-hole's blocklists (gravity).
+        status:
+          type: object
+          description: Queries by FTL's result code (GRAVITY, FORWARDED, CACHE and so on).
+          additionalProperties:
+            type: integer
+        replies:
+          type: object
+          description: Queries by reply type (IP, NXDOMAIN, CNAME and so on).
+          additionalProperties:
+            type: integer
+
+    BlockingStatus:
+      type: object
+      additionalProperties: false
+      required: [blocking]
+      properties:
+        blocking:
+          type: string
+          enum: [enabled, disabled, failed, unknown]
+          description: failed and unknown mean Pi-hole couldn't tell.
+        timer:
+          type: integer
+          description: Seconds until blocking changes back, rounded up. Absent when no timer is running.
+
+    BlockingInput:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        timer:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          description: Only with `enabled` false. Seconds until Pi-hole turns blocking back on.
+
+    DNSRestartResult:
+      type: object
+      additionalProperties: false
+      required: [confirmed]
+      properties:
+        confirmed:
+          type: boolean
+          description: >-
+            False when the connection dropped while the restart was being requested, which happens when the restart
+            goes ahead: check the dashboard in a few seconds.
+
+    DomainList:
+      type: object
+      additionalProperties: false
+      required: [domains]
+      properties:
+        domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/Domain"
+
+    Domain:
+      type: object
+      additionalProperties: false
+      required: [domain, type, kind, comment, groups, enabled]
+      properties:
+        domain:
+          type: string
+        type:
+          type: string
+          enum: [allow, deny]
+        kind:
+          type: string
+          enum: [exact, regex]
+        comment:
+          type: string
+        groups:
+          type: array
+          description: IDs of the Pi-hole groups the entry is in. See the target's groups for their names.
+          items:
+            type: integer
+        enabled:
+          type: boolean
+          description: Read-only here.
+        added_at:
+          type: string
+          format: date-time
+          description: Absent if Pi-hole didn't report it.
+        modified_at:
+          type: string
+          format: date-time
+          description: Absent if Pi-hole didn't report it.
+
+    DomainKey:
+      type: object
+      additionalProperties: false
+      required: [domain, type, kind]
+      description: Names a list entry. The same domain can be on both lists, and be both an exact and a regex entry.
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        type:
+          type: string
+          enum: [allow, deny]
+        kind:
+          type: string
+          enum: [exact, regex]
+
+    DomainInput:
+      type: object
+      additionalProperties: false
+      required: [domain, type, kind]
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: >-
+            Surrounding spaces are ignored. An exact domain is at most 255 bytes; a regex at most 1024. Pi-hole checks
+            the rest.
+        type:
+          type: string
+          enum: [allow, deny]
+        kind:
+          type: string
+          enum: [exact, regex]
+        comment:
+          type: string
+          maxLength: 500
+        groups:
+          type: array
+          maxItems: 1000
+          items:
+            type: integer
+            minimum: 0
+
+    DomainUpdate:
+      type: object
+      additionalProperties: false
+      required: [domain, type, kind]
+      description: Names the entry and gives at least one of comment and groups.
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        type:
+          type: string
+          enum: [allow, deny]
+        kind:
+          type: string
+          enum: [exact, regex]
+        comment:
+          type: string
+          maxLength: 500
+        groups:
+          type: array
+          maxItems: 1000
+          description: Replaces the entry's groups.
+          items:
+            type: integer
+            minimum: 0
+
+    ClientList:
+      type: object
+      additionalProperties: false
+      required: [clients]
+      properties:
+        clients:
+          type: array
+          items:
+            $ref: "#/components/schemas/PiholeClient"
+
+    PiholeClient:
+      type: object
+      additionalProperties: false
+      required: [client, comment, groups]
+      properties:
+        client:
+          type: string
+          description: The IP address, MAC address, hostname or subnet the client was added with. Identifies it.
+        name:
+          type: string
+          description: The hostname Pi-hole resolved, if any.
+        comment:
+          type: string
+        groups:
+          type: array
+          items:
+            type: integer
+        added_at:
+          type: string
+          format: date-time
+        modified_at:
+          type: string
+          format: date-time
+
+    ClientUpdate:
+      type: object
+      additionalProperties: false
+      required: [client]
+      description: Names the client and gives at least one of comment and groups.
+      properties:
+        client:
+          type: string
+          minLength: 1
+          maxLength: 255
+        comment:
+          type: string
+          maxLength: 500
+        groups:
+          type: array
+          maxItems: 1000
+          description: Replaces the client's groups.
+          items:
+            type: integer
+            minimum: 0
+
+    PiholeGroupList:
+      type: object
+      additionalProperties: false
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/PiholeGroup"
+
+    PiholeGroup:
+      type: object
+      additionalProperties: false
+      required: [id, name, comment, enabled]
+      properties:
+        id:
+          type: integer
+          description: Pi-hole's ID for the group, which differs between Pi-holes.
+        name:
+          type: string
+        comment:
+          type: string
+        enabled:
+          type: boolean
+
+    QueryLog:
+      type: object
+      additionalProperties: false
+      required: [queries]
+      properties:
+        queries:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueryLogEntry"
+
+    QueryLogEntry:
+      type: object
+      additionalProperties: false
+      required: [time, type, domain, client_ip, status, reply_type]
+      properties:
+        time:
+          type: string
+          format: date-time
+        type:
+          type: string
+          description: The record type asked for (A, AAAA, PTR and so on).
+        domain:
+          type: string
+        client_ip:
+          type: string
+        client_name:
+          type: string
+          description: Absent when Pi-hole has no name for the client.
+        status:
+          type: string
+          description: FTL's result (GRAVITY, FORWARDED, CACHE, DENYLIST and so on).
+        reply_type:
+          type: string
+        reply_time_ms:
+          type: number
+          format: double
+          description: Absent when there was no reply.
+        upstream:
+          type: string
+          description: Absent when the query wasn't forwarded.
+        dnssec:
+          type: string
+          description: Absent when Pi-hole didn't report a DNSSEC status.
+
     # The standard error envelope returned by every /api/v1 endpoint on failure.
     Error:
       type: object
@@ -942,7 +1741,7 @@ components:
             Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed,
             unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required,
             invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected,
-            pihole_status_error, instance_password_missing, instance_misconfigured.
+            pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured.
         message:
           type: string
           description: Human-readable message, safe to show to the user.

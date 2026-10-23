@@ -17,13 +17,17 @@ const (
 	accessPublic  = "public"  // no session needed: `security: []` in the spec, no x-permission
 	accessSession = "session" // any session: x-permission: session
 	targetPrefix  = "target:" // the handler checks the permission against a target: x-permission: target:<permission>
+	// accessTargetAny: the handler checks that the session holds at least one permission on the target, for reads every
+	// user of a target needs (its dashboard, its Pi-hole group names).
+	accessTargetAny = targetPrefix + "any"
 )
 
 // routePermission says what each operation needs, keyed by the mux pattern (r.Pattern). It repeats the x-permission
 // extensions of api/openapi.yaml, and TestRoutePermissionsMatchSpec checks the two against each other in both
 // directions, so an operation can't ship without a declared permission. A value is accessPublic, accessSession, a
-// global permission (checked by the gate) or "target:<permission>" (checked by the handler with authorize, once it has
-// parsed the target). Public operations still need the CSRF and Origin checks when they change state.
+// global permission (checked by the gate), "target:<permission>" (checked by the handler with authorize, once it has
+// parsed the target) or "target:any" (checked by the handler with authorizeAny). Public operations still need the CSRF
+// and Origin checks when they change state.
 var routePermission = map[string]string{
 	"GET /healthz":             accessPublic,
 	"GET /api/v1/about":        accessPublic,
@@ -48,6 +52,19 @@ var routePermission = map[string]string{
 	"POST /api/v1/instances/{id}/test":    string(rbac.InstancesManage),
 	"POST /api/v1/instances/{id}/enable":  string(rbac.InstancesManage),
 	"POST /api/v1/instances/{id}/disable": string(rbac.InstancesManage),
+
+	"GET /api/v1/targets/{target}/summary":      accessTargetAny,
+	"GET /api/v1/targets/{target}/blocking":     accessTargetAny,
+	"PUT /api/v1/targets/{target}/blocking":     targetPrefix + string(rbac.BlockingToggle),
+	"POST /api/v1/targets/{target}/dns/restart": targetPrefix + string(rbac.DNSRestart),
+	"GET /api/v1/targets/{target}/domains":      targetPrefix + string(rbac.DomainsView),
+	"POST /api/v1/targets/{target}/domains":     targetPrefix + string(rbac.DomainsEdit),
+	"PATCH /api/v1/targets/{target}/domains":    targetPrefix + string(rbac.DomainsEdit),
+	"DELETE /api/v1/targets/{target}/domains":   targetPrefix + string(rbac.DomainsEdit),
+	"GET /api/v1/targets/{target}/clients":      targetPrefix + string(rbac.ClientsView),
+	"PATCH /api/v1/targets/{target}/clients":    targetPrefix + string(rbac.ClientsEdit),
+	"GET /api/v1/targets/{target}/groups":       accessTargetAny,
+	"GET /api/v1/targets/{target}/queries":      targetPrefix + string(rbac.QueryLogView),
 }
 
 // parseAccess splits a routePermission value. ok is false for a value that isn't valid: unknown permission, a
@@ -56,6 +73,8 @@ func parseAccess(v string) (kind, permission string, ok bool) {
 	switch {
 	case v == accessPublic || v == accessSession:
 		return v, "", true
+	case v == accessTargetAny:
+		return "target", "", true
 	case strings.HasPrefix(v, targetPrefix):
 		p := rbac.Permission(strings.TrimPrefix(v, targetPrefix))
 		return "target", string(p), p.Known() && p.Class() != rbac.ClassGlobal

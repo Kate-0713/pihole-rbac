@@ -9,12 +9,181 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for BlockingStatusBlocking.
+const (
+	BlockingStatusBlockingDisabled BlockingStatusBlocking = "disabled"
+	BlockingStatusBlockingEnabled  BlockingStatusBlocking = "enabled"
+	BlockingStatusBlockingFailed   BlockingStatusBlocking = "failed"
+	BlockingStatusBlockingUnknown  BlockingStatusBlocking = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the BlockingStatusBlocking enum.
+func (e BlockingStatusBlocking) Valid() bool {
+	switch e {
+	case BlockingStatusBlockingDisabled:
+		return true
+	case BlockingStatusBlockingEnabled:
+		return true
+	case BlockingStatusBlockingFailed:
+		return true
+	case BlockingStatusBlockingUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainKind.
+const (
+	DomainKindExact DomainKind = "exact"
+	DomainKindRegex DomainKind = "regex"
+)
+
+// Valid indicates whether the value is a known member of the DomainKind enum.
+func (e DomainKind) Valid() bool {
+	switch e {
+	case DomainKindExact:
+		return true
+	case DomainKindRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainType.
+const (
+	DomainTypeAllow DomainType = "allow"
+	DomainTypeDeny  DomainType = "deny"
+)
+
+// Valid indicates whether the value is a known member of the DomainType enum.
+func (e DomainType) Valid() bool {
+	switch e {
+	case DomainTypeAllow:
+		return true
+	case DomainTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainInputKind.
+const (
+	DomainInputKindExact DomainInputKind = "exact"
+	DomainInputKindRegex DomainInputKind = "regex"
+)
+
+// Valid indicates whether the value is a known member of the DomainInputKind enum.
+func (e DomainInputKind) Valid() bool {
+	switch e {
+	case DomainInputKindExact:
+		return true
+	case DomainInputKindRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainInputType.
+const (
+	DomainInputTypeAllow DomainInputType = "allow"
+	DomainInputTypeDeny  DomainInputType = "deny"
+)
+
+// Valid indicates whether the value is a known member of the DomainInputType enum.
+func (e DomainInputType) Valid() bool {
+	switch e {
+	case DomainInputTypeAllow:
+		return true
+	case DomainInputTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainKeyKind.
+const (
+	DomainKeyKindExact DomainKeyKind = "exact"
+	DomainKeyKindRegex DomainKeyKind = "regex"
+)
+
+// Valid indicates whether the value is a known member of the DomainKeyKind enum.
+func (e DomainKeyKind) Valid() bool {
+	switch e {
+	case DomainKeyKindExact:
+		return true
+	case DomainKeyKindRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainKeyType.
+const (
+	DomainKeyTypeAllow DomainKeyType = "allow"
+	DomainKeyTypeDeny  DomainKeyType = "deny"
+)
+
+// Valid indicates whether the value is a known member of the DomainKeyType enum.
+func (e DomainKeyType) Valid() bool {
+	switch e {
+	case DomainKeyTypeAllow:
+		return true
+	case DomainKeyTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainUpdateKind.
+const (
+	DomainUpdateKindExact DomainUpdateKind = "exact"
+	DomainUpdateKindRegex DomainUpdateKind = "regex"
+)
+
+// Valid indicates whether the value is a known member of the DomainUpdateKind enum.
+func (e DomainUpdateKind) Valid() bool {
+	switch e {
+	case DomainUpdateKindExact:
+		return true
+	case DomainUpdateKindRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainUpdateType.
+const (
+	DomainUpdateTypeAllow DomainUpdateType = "allow"
+	DomainUpdateTypeDeny  DomainUpdateType = "deny"
+)
+
+// Valid indicates whether the value is a known member of the DomainUpdateType enum.
+func (e DomainUpdateType) Valid() bool {
+	switch e {
+	case DomainUpdateTypeAllow:
+		return true
+	case DomainUpdateTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for InstanceTlsMode.
 const (
@@ -36,19 +205,19 @@ func (e InstanceTlsMode) Valid() bool {
 
 // Defines values for InstanceHealthState.
 const (
-	Down    InstanceHealthState = "down"
-	Unknown InstanceHealthState = "unknown"
-	Up      InstanceHealthState = "up"
+	InstanceHealthStateDown    InstanceHealthState = "down"
+	InstanceHealthStateUnknown InstanceHealthState = "unknown"
+	InstanceHealthStateUp      InstanceHealthState = "up"
 )
 
 // Valid indicates whether the value is a known member of the InstanceHealthState enum.
 func (e InstanceHealthState) Valid() bool {
 	switch e {
-	case Down:
+	case InstanceHealthStateDown:
 		return true
-	case Unknown:
+	case InstanceHealthStateUnknown:
 		return true
-	case Up:
+	case InstanceHealthStateUp:
 		return true
 	default:
 		return false
@@ -197,10 +366,44 @@ type About struct {
 	SourceUrl string `json:"source_url"`
 }
 
+// BlockingInput defines model for BlockingInput.
+type BlockingInput struct {
+	Enabled bool `json:"enabled"`
+
+	// Timer Only with `enabled` false. Seconds until Pi-hole turns blocking back on.
+	Timer *int `json:"timer,omitempty"`
+}
+
+// BlockingStatus defines model for BlockingStatus.
+type BlockingStatus struct {
+	// Blocking failed and unknown mean Pi-hole couldn't tell.
+	Blocking BlockingStatusBlocking `json:"blocking"`
+
+	// Timer Seconds until blocking changes back, rounded up. Absent when no timer is running.
+	Timer *int `json:"timer,omitempty"`
+}
+
+// BlockingStatusBlocking failed and unknown mean Pi-hole couldn't tell.
+type BlockingStatusBlocking string
+
 // CSRFToken defines model for CSRFToken.
 type CSRFToken struct {
 	// CsrfToken Send as the X-CSRF-Token header on every state-changing request.
 	CsrfToken string `json:"csrf_token"`
+}
+
+// ClientList defines model for ClientList.
+type ClientList struct {
+	Clients []PiholeClient `json:"clients"`
+}
+
+// ClientUpdate Names the client and gives at least one of comment and groups.
+type ClientUpdate struct {
+	Client  string  `json:"client"`
+	Comment *string `json:"comment,omitempty"`
+
+	// Groups Replaces the client's groups.
+	Groups *[]int `json:"groups,omitempty"`
 }
 
 // CurrentSession defines model for CurrentSession.
@@ -219,6 +422,97 @@ type CurrentSession struct {
 	User     SessionUser `json:"user"`
 }
 
+// DNSRestartResult defines model for DNSRestartResult.
+type DNSRestartResult struct {
+	// Confirmed False when the connection dropped while the restart was being requested, which happens when the restart goes ahead: check the dashboard in a few seconds.
+	Confirmed bool `json:"confirmed"`
+}
+
+// DatabaseTotals Totals for the last 24 hours from Pi-hole's long-term database, unaffected by FTL restarts.
+type DatabaseTotals struct {
+	Blocked        int     `json:"blocked"`
+	Clients        int     `json:"clients"`
+	PercentBlocked float64 `json:"percent_blocked"`
+	Queries        int     `json:"queries"`
+}
+
+// Domain defines model for Domain.
+type Domain struct {
+	// AddedAt Absent if Pi-hole didn't report it.
+	AddedAt *time.Time `json:"added_at,omitempty"`
+	Comment string     `json:"comment"`
+	Domain  string     `json:"domain"`
+
+	// Enabled Read-only here.
+	Enabled bool `json:"enabled"`
+
+	// Groups IDs of the Pi-hole groups the entry is in. See the target's groups for their names.
+	Groups []int      `json:"groups"`
+	Kind   DomainKind `json:"kind"`
+
+	// ModifiedAt Absent if Pi-hole didn't report it.
+	ModifiedAt *time.Time `json:"modified_at,omitempty"`
+	Type       DomainType `json:"type"`
+}
+
+// DomainKind defines model for Domain.Kind.
+type DomainKind string
+
+// DomainType defines model for Domain.Type.
+type DomainType string
+
+// DomainInput defines model for DomainInput.
+type DomainInput struct {
+	Comment *string `json:"comment,omitempty"`
+
+	// Domain Surrounding spaces are ignored. An exact domain is at most 255 bytes; a regex at most 1024. Pi-hole checks the rest.
+	Domain string          `json:"domain"`
+	Groups *[]int          `json:"groups,omitempty"`
+	Kind   DomainInputKind `json:"kind"`
+	Type   DomainInputType `json:"type"`
+}
+
+// DomainInputKind defines model for DomainInput.Kind.
+type DomainInputKind string
+
+// DomainInputType defines model for DomainInput.Type.
+type DomainInputType string
+
+// DomainKey Names a list entry. The same domain can be on both lists, and be both an exact and a regex entry.
+type DomainKey struct {
+	Domain string        `json:"domain"`
+	Kind   DomainKeyKind `json:"kind"`
+	Type   DomainKeyType `json:"type"`
+}
+
+// DomainKeyKind defines model for DomainKey.Kind.
+type DomainKeyKind string
+
+// DomainKeyType defines model for DomainKey.Type.
+type DomainKeyType string
+
+// DomainList defines model for DomainList.
+type DomainList struct {
+	Domains []Domain `json:"domains"`
+}
+
+// DomainUpdate Names the entry and gives at least one of comment and groups.
+type DomainUpdate struct {
+	Comment *string `json:"comment,omitempty"`
+	Domain  string  `json:"domain"`
+
+	// Groups Replaces the entry's groups.
+	Groups *[]int           `json:"groups,omitempty"`
+	Kind   DomainUpdateKind `json:"kind"`
+	Type   DomainUpdateType `json:"type"`
+}
+
+// DomainUpdateKind defines model for DomainUpdate.Kind.
+type DomainUpdateKind string
+
+// DomainUpdateType defines model for DomainUpdate.Type.
+type DomainUpdateType string
+
 // Error defines model for Error.
 type Error struct {
 	Error ErrorBody `json:"error"`
@@ -226,7 +520,7 @@ type Error struct {
 
 // ErrorBody defines model for ErrorBody.
 type ErrorBody struct {
-	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error, instance_password_missing, instance_misconfigured.
+	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured.
 	Code string `json:"code"`
 
 	// Details Optional structured context, e.g. which instance failed.
@@ -328,6 +622,27 @@ type InstanceTestResult struct {
 	Ok    bool               `json:"ok"`
 }
 
+// LiveCounters Counters since FTL last started.
+type LiveCounters struct {
+	ActiveClients int `json:"active_clients"`
+	Blocked       int `json:"blocked"`
+	Cached        int `json:"cached"`
+
+	// DomainsOnBlocklist Domains on the Pi-hole's blocklists (gravity).
+	DomainsOnBlocklist int     `json:"domains_on_blocklist"`
+	Forwarded          int     `json:"forwarded"`
+	PercentBlocked     float64 `json:"percent_blocked"`
+	Queries            int     `json:"queries"`
+
+	// Replies Queries by reply type (IP, NXDOMAIN, CNAME and so on).
+	Replies map[string]int `json:"replies"`
+
+	// Status Queries by FTL's result code (GRAVITY, FORWARDED, CACHE and so on).
+	Status        map[string]int `json:"status"`
+	TotalClients  int            `json:"total_clients"`
+	UniqueDomains int            `json:"unique_domains"`
+}
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Password string `json:"password"`
@@ -345,6 +660,66 @@ type Permissions struct {
 	//
 	// Examples: {"g-2":["domains.view","drift.view"],"i-1":["domains.view"]}
 	Targets map[string][]string `json:"targets"`
+}
+
+// PiholeClient defines model for PiholeClient.
+type PiholeClient struct {
+	AddedAt *time.Time `json:"added_at,omitempty"`
+
+	// Client The IP address, MAC address, hostname or subnet the client was added with. Identifies it.
+	Client     string     `json:"client"`
+	Comment    string     `json:"comment"`
+	Groups     []int      `json:"groups"`
+	ModifiedAt *time.Time `json:"modified_at,omitempty"`
+
+	// Name The hostname Pi-hole resolved, if any.
+	Name *string `json:"name,omitempty"`
+}
+
+// PiholeGroup defines model for PiholeGroup.
+type PiholeGroup struct {
+	Comment string `json:"comment"`
+	Enabled bool   `json:"enabled"`
+
+	// Id Pi-hole's ID for the group, which differs between Pi-holes.
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// PiholeGroupList defines model for PiholeGroupList.
+type PiholeGroupList struct {
+	Groups []PiholeGroup `json:"groups"`
+}
+
+// QueryLog defines model for QueryLog.
+type QueryLog struct {
+	Queries []QueryLogEntry `json:"queries"`
+}
+
+// QueryLogEntry defines model for QueryLogEntry.
+type QueryLogEntry struct {
+	ClientIp string `json:"client_ip"`
+
+	// ClientName Absent when Pi-hole has no name for the client.
+	ClientName *string `json:"client_name,omitempty"`
+
+	// Dnssec Absent when Pi-hole didn't report a DNSSEC status.
+	Dnssec *string `json:"dnssec,omitempty"`
+	Domain string  `json:"domain"`
+
+	// ReplyTimeMs Absent when there was no reply.
+	ReplyTimeMs *float64 `json:"reply_time_ms,omitempty"`
+	ReplyType   string   `json:"reply_type"`
+
+	// Status FTL's result (GRAVITY, FORWARDED, CACHE, DENYLIST and so on).
+	Status string    `json:"status"`
+	Time   time.Time `json:"time"`
+
+	// Type The record type asked for (A, AAAA, PTR and so on).
+	Type string `json:"type"`
+
+	// Upstream Absent when the query wasn't forwarded.
+	Upstream *string `json:"upstream,omitempty"`
 }
 
 // ReloadFailure defines model for ReloadFailure.
@@ -436,8 +811,22 @@ type TargetList struct {
 	Targets []Target `json:"targets"`
 }
 
+// TargetSummary defines model for TargetSummary.
+type TargetSummary struct {
+	Blocking BlockingStatus `json:"blocking"`
+
+	// Last24h Totals for the last 24 hours from Pi-hole's long-term database, unaffected by FTL restarts.
+	Last24h DatabaseTotals `json:"last_24h"`
+
+	// Live Counters since FTL last started.
+	Live LiveCounters `json:"live"`
+}
+
 // InstanceID defines model for InstanceID.
 type InstanceID = int64
+
+// TargetID Examples: i-1
+type TargetID = string
 
 // Conflict defines model for Conflict.
 type Conflict = Error
@@ -447,6 +836,9 @@ type Forbidden = Error
 
 // InstanceConflict defines model for InstanceConflict.
 type InstanceConflict = Error
+
+// InvalidOrRejected defines model for InvalidOrRejected.
+type InvalidOrRejected = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
@@ -460,6 +852,12 @@ type RateLimited = Error
 // SetupRequired defines model for SetupRequired.
 type SetupRequired = Error
 
+// TargetPiholeFailed defines model for TargetPiholeFailed.
+type TargetPiholeFailed = Error
+
+// TargetUnavailable defines model for TargetUnavailable.
+type TargetUnavailable = Error
+
 // Unauthenticated defines model for Unauthenticated.
 type Unauthenticated = Error
 
@@ -468,6 +866,18 @@ type UnsupportedMediaType = Error
 
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
+
+// ListQueriesParams defines parameters for ListQueries.
+type ListQueriesParams struct {
+	// Length How many of the newest entries to read, 1 to 1000. Default 100.
+	Length *int `form:"length,omitempty" json:"length,omitempty"`
+
+	// Domain Keep entries whose domain contains this, ignoring case.
+	Domain *string `form:"domain,omitempty" json:"domain,omitempty"`
+
+	// Client Keep entries whose client address or name contains this, ignoring case.
+	Client *string `form:"client,omitempty" json:"client,omitempty"`
+}
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
@@ -480,6 +890,21 @@ type UpdateInstanceJSONRequestBody = InstanceInput
 
 // CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
 type CompleteSetupJSONRequestBody = SetupRequest
+
+// SetBlockingJSONRequestBody defines body for SetBlocking for application/json ContentType.
+type SetBlockingJSONRequestBody = BlockingInput
+
+// UpdateClientJSONRequestBody defines body for UpdateClient for application/json ContentType.
+type UpdateClientJSONRequestBody = ClientUpdate
+
+// DeleteDomainJSONRequestBody defines body for DeleteDomain for application/json ContentType.
+type DeleteDomainJSONRequestBody = DomainKey
+
+// UpdateDomainJSONRequestBody defines body for UpdateDomain for application/json ContentType.
+type UpdateDomainJSONRequestBody = DomainUpdate
+
+// AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
+type AddDomainJSONRequestBody = DomainInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -537,6 +962,42 @@ type ServerInterface interface {
 	// ListTargets The instances the user can act on
 	// (GET /api/v1/targets)
 	ListTargets(w http.ResponseWriter, r *http.Request)
+	// GetBlocking Whether blocking is on
+	// (GET /api/v1/targets/{target}/blocking)
+	GetBlocking(w http.ResponseWriter, r *http.Request, target TargetID)
+	// SetBlocking Turn blocking on or off
+	// (PUT /api/v1/targets/{target}/blocking)
+	SetBlocking(w http.ResponseWriter, r *http.Request, target TargetID)
+	// ListClients The configured clients
+	// (GET /api/v1/targets/{target}/clients)
+	ListClients(w http.ResponseWriter, r *http.Request, target TargetID)
+	// UpdateClient Change a client's groups or comment
+	// (PATCH /api/v1/targets/{target}/clients)
+	UpdateClient(w http.ResponseWriter, r *http.Request, target TargetID)
+	// RestartDNS Restart Pi-hole's DNS resolver
+	// (POST /api/v1/targets/{target}/dns/restart)
+	RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID)
+	// DeleteDomain Delete a list entry
+	// (DELETE /api/v1/targets/{target}/domains)
+	DeleteDomain(w http.ResponseWriter, r *http.Request, target TargetID)
+	// ListDomains The allow and deny lists
+	// (GET /api/v1/targets/{target}/domains)
+	ListDomains(w http.ResponseWriter, r *http.Request, target TargetID)
+	// UpdateDomain Change a list entry's groups or comment
+	// (PATCH /api/v1/targets/{target}/domains)
+	UpdateDomain(w http.ResponseWriter, r *http.Request, target TargetID)
+	// AddDomain Add a domain to a list
+	// (POST /api/v1/targets/{target}/domains)
+	AddDomain(w http.ResponseWriter, r *http.Request, target TargetID)
+	// ListPiholeGroups The Pi-hole's groups
+	// (GET /api/v1/targets/{target}/groups)
+	ListPiholeGroups(w http.ResponseWriter, r *http.Request, target TargetID)
+	// ListQueries The newest entries of the query log
+	// (GET /api/v1/targets/{target}/queries)
+	ListQueries(w http.ResponseWriter, r *http.Request, target TargetID, params ListQueriesParams)
+	// GetTargetSummary Dashboard figures for a target
+	// (GET /api/v1/targets/{target}/summary)
+	GetTargetSummary(w http.ResponseWriter, r *http.Request, target TargetID)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(w http.ResponseWriter, r *http.Request)
@@ -875,6 +1336,360 @@ func (siw *ServerInterfaceWrapper) ListTargets(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetBlocking operation middleware
+func (siw *ServerInterfaceWrapper) GetBlocking(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBlocking(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetBlocking operation middleware
+func (siw *ServerInterfaceWrapper) SetBlocking(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetBlocking(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListClients operation middleware
+func (siw *ServerInterfaceWrapper) ListClients(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListClients(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateClient operation middleware
+func (siw *ServerInterfaceWrapper) UpdateClient(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateClient(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestartDNS operation middleware
+func (siw *ServerInterfaceWrapper) RestartDNS(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestartDNS(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDomain operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDomain(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDomains operation middleware
+func (siw *ServerInterfaceWrapper) ListDomains(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDomains(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDomain operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDomain(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddDomain operation middleware
+func (siw *ServerInterfaceWrapper) AddDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddDomain(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPiholeGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListPiholeGroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPiholeGroups(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListQueries operation middleware
+func (siw *ServerInterfaceWrapper) ListQueries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListQueriesParams
+
+	// ------------- Optional query parameter "length" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "length", r.URL.Query(), &params.Length, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "length"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "length", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "domain" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "domain", r.URL.Query(), &params.Domain, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "domain"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "client" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListQueries(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTargetSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetTargetSummary(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTargetSummary(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Healthz operation middleware
 func (siw *ServerInterfaceWrapper) Healthz(w http.ResponseWriter, r *http.Request) {
 
@@ -1028,6 +1843,18 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/test", wrapper.TestInstance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/enable", wrapper.EnableInstance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/disable", wrapper.DisableInstance)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/summary", wrapper.GetTargetSummary)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/blocking", wrapper.GetBlocking)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/targets/{target}/blocking", wrapper.SetBlocking)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/dns/restart", wrapper.RestartDNS)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/domains", wrapper.DeleteDomain)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/domains", wrapper.ListDomains)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/domains", wrapper.UpdateDomain)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/domains", wrapper.AddDomain)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/clients", wrapper.ListClients)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/clients", wrapper.UpdateClient)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.ListPiholeGroups)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/queries", wrapper.ListQueries)
 
 	return m
 }
@@ -1037,6 +1864,8 @@ type ConflictJSONResponse Error
 type ForbiddenJSONResponse Error
 
 type InstanceConflictJSONResponse Error
+
+type InvalidOrRejectedJSONResponse Error
 
 type NotFoundJSONResponse Error
 
@@ -1052,6 +1881,10 @@ type RateLimitedJSONResponse struct {
 }
 
 type SetupRequiredJSONResponse Error
+
+type TargetPiholeFailedJSONResponse Error
+
+type TargetUnavailableJSONResponse Error
 
 type UnauthenticatedJSONResponse Error
 
@@ -2359,6 +3192,1526 @@ func (response ListTargets503JSONResponse) VisitListTargetsResponse(w http.Respo
 	return err
 }
 
+type GetBlockingRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type GetBlockingResponseObject interface {
+	VisitGetBlockingResponse(w http.ResponseWriter) error
+}
+
+type GetBlocking200JSONResponse BlockingStatus
+
+func (response GetBlocking200JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBlocking400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetBlocking400JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBlocking401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetBlocking401JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBlocking403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetBlocking403JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBlocking404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetBlocking404JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBlocking409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response GetBlocking409JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBlocking502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response GetBlocking502JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBlocking503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetBlocking503JSONResponse) VisitGetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlockingRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *SetBlockingJSONRequestBody
+}
+
+type SetBlockingResponseObject interface {
+	VisitSetBlockingResponse(w http.ResponseWriter) error
+}
+
+type SetBlocking200JSONResponse BlockingStatus
+
+func (response SetBlocking200JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response SetBlocking400JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetBlocking401JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetBlocking403JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SetBlocking404JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response SetBlocking409JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetBlocking415JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response SetBlocking502JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetBlocking503JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClientsRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListClientsResponseObject interface {
+	VisitListClientsResponse(w http.ResponseWriter) error
+}
+
+type ListClients200JSONResponse ClientList
+
+func (response ListClients200JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClients400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListClients400JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClients401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListClients401JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClients403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListClients403JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClients404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListClients404JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClients409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListClients409JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClients502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListClients502JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClients503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListClients503JSONResponse) VisitListClientsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClientRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *UpdateClientJSONRequestBody
+}
+
+type UpdateClientResponseObject interface {
+	VisitUpdateClientResponse(w http.ResponseWriter) error
+}
+
+type UpdateClient200JSONResponse PiholeClient
+
+func (response UpdateClient200JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateClient400JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateClient401JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateClient403JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateClient404JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response UpdateClient409JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateClient415JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateClient502JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateClient503JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNSRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type RestartDNSResponseObject interface {
+	VisitRestartDNSResponse(w http.ResponseWriter) error
+}
+
+type RestartDNS200JSONResponse DNSRestartResult
+
+func (response RestartDNS200JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response RestartDNS400JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RestartDNS401JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RestartDNS403JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RestartDNS404JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response RestartDNS409JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response RestartDNS502JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RestartDNS503JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomainRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *DeleteDomainJSONRequestBody
+}
+
+type DeleteDomainResponseObject interface {
+	VisitDeleteDomainResponse(w http.ResponseWriter) error
+}
+
+type DeleteDomain204Response struct {
+}
+
+func (response DeleteDomain204Response) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteDomain400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response DeleteDomain400JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteDomain401JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteDomain403JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteDomain404JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response DeleteDomain409JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DeleteDomain415JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response DeleteDomain502JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDomain503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteDomain503JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomainsRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListDomainsResponseObject interface {
+	VisitListDomainsResponse(w http.ResponseWriter) error
+}
+
+type ListDomains200JSONResponse DomainList
+
+func (response ListDomains200JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListDomains400JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListDomains401JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListDomains403JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListDomains404JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListDomains409JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListDomains502JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListDomains503JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomainRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *UpdateDomainJSONRequestBody
+}
+
+type UpdateDomainResponseObject interface {
+	VisitUpdateDomainResponse(w http.ResponseWriter) error
+}
+
+type UpdateDomain200JSONResponse Domain
+
+func (response UpdateDomain200JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateDomain400JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateDomain401JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateDomain403JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateDomain404JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response UpdateDomain409JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateDomain415JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateDomain502JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateDomain503JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomainRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *AddDomainJSONRequestBody
+}
+
+type AddDomainResponseObject interface {
+	VisitAddDomainResponse(w http.ResponseWriter) error
+}
+
+type AddDomain201JSONResponse Domain
+
+func (response AddDomain201JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response AddDomain400JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddDomain401JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddDomain403JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddDomain404JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response AddDomain409JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response AddDomain415JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response AddDomain502JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response AddDomain503JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroupsRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListPiholeGroupsResponseObject interface {
+	VisitListPiholeGroupsResponse(w http.ResponseWriter) error
+}
+
+type ListPiholeGroups200JSONResponse PiholeGroupList
+
+func (response ListPiholeGroups200JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroups400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListPiholeGroups400JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroups401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListPiholeGroups401JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroups403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListPiholeGroups403JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroups404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListPiholeGroups404JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroups409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListPiholeGroups409JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroups502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListPiholeGroups502JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPiholeGroups503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListPiholeGroups503JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueriesRequestObject struct {
+	Target TargetID `json:"target"`
+	Params ListQueriesParams
+}
+
+type ListQueriesResponseObject interface {
+	VisitListQueriesResponse(w http.ResponseWriter) error
+}
+
+type ListQueries200JSONResponse QueryLog
+
+func (response ListQueries200JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueries400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListQueries400JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueries401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListQueries401JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueries403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListQueries403JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueries404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListQueries404JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueries409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListQueries409JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueries502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListQueries502JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQueries503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListQueries503JSONResponse) VisitListQueriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummaryRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type GetTargetSummaryResponseObject interface {
+	VisitGetTargetSummaryResponse(w http.ResponseWriter) error
+}
+
+type GetTargetSummary200JSONResponse TargetSummary
+
+func (response GetTargetSummary200JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummary400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetTargetSummary400JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummary401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetTargetSummary401JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummary403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetTargetSummary403JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummary404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetTargetSummary404JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummary409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response GetTargetSummary409JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummary502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response GetTargetSummary502JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTargetSummary503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetTargetSummary503JSONResponse) VisitGetTargetSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type HealthzRequestObject struct {
 }
 
@@ -2433,6 +4786,42 @@ type StrictServerInterface interface {
 	// ListTargets The instances the user can act on
 	// (GET /api/v1/targets)
 	ListTargets(ctx context.Context, request ListTargetsRequestObject) (ListTargetsResponseObject, error)
+	// GetBlocking Whether blocking is on
+	// (GET /api/v1/targets/{target}/blocking)
+	GetBlocking(ctx context.Context, request GetBlockingRequestObject) (GetBlockingResponseObject, error)
+	// SetBlocking Turn blocking on or off
+	// (PUT /api/v1/targets/{target}/blocking)
+	SetBlocking(ctx context.Context, request SetBlockingRequestObject) (SetBlockingResponseObject, error)
+	// ListClients The configured clients
+	// (GET /api/v1/targets/{target}/clients)
+	ListClients(ctx context.Context, request ListClientsRequestObject) (ListClientsResponseObject, error)
+	// UpdateClient Change a client's groups or comment
+	// (PATCH /api/v1/targets/{target}/clients)
+	UpdateClient(ctx context.Context, request UpdateClientRequestObject) (UpdateClientResponseObject, error)
+	// RestartDNS Restart Pi-hole's DNS resolver
+	// (POST /api/v1/targets/{target}/dns/restart)
+	RestartDNS(ctx context.Context, request RestartDNSRequestObject) (RestartDNSResponseObject, error)
+	// DeleteDomain Delete a list entry
+	// (DELETE /api/v1/targets/{target}/domains)
+	DeleteDomain(ctx context.Context, request DeleteDomainRequestObject) (DeleteDomainResponseObject, error)
+	// ListDomains The allow and deny lists
+	// (GET /api/v1/targets/{target}/domains)
+	ListDomains(ctx context.Context, request ListDomainsRequestObject) (ListDomainsResponseObject, error)
+	// UpdateDomain Change a list entry's groups or comment
+	// (PATCH /api/v1/targets/{target}/domains)
+	UpdateDomain(ctx context.Context, request UpdateDomainRequestObject) (UpdateDomainResponseObject, error)
+	// AddDomain Add a domain to a list
+	// (POST /api/v1/targets/{target}/domains)
+	AddDomain(ctx context.Context, request AddDomainRequestObject) (AddDomainResponseObject, error)
+	// ListPiholeGroups The Pi-hole's groups
+	// (GET /api/v1/targets/{target}/groups)
+	ListPiholeGroups(ctx context.Context, request ListPiholeGroupsRequestObject) (ListPiholeGroupsResponseObject, error)
+	// ListQueries The newest entries of the query log
+	// (GET /api/v1/targets/{target}/queries)
+	ListQueries(ctx context.Context, request ListQueriesRequestObject) (ListQueriesResponseObject, error)
+	// GetTargetSummary Dashboard figures for a target
+	// (GET /api/v1/targets/{target}/summary)
+	GetTargetSummary(ctx context.Context, request GetTargetSummaryRequestObject) (GetTargetSummaryResponseObject, error)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(ctx context.Context, request HealthzRequestObject) (HealthzResponseObject, error)
@@ -2942,6 +5331,354 @@ func (sh *strictHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListTargetsResponseObject); ok {
 		if err := validResponse.VisitListTargetsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBlocking operation middleware
+func (sh *strictHandler) GetBlocking(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request GetBlockingRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBlocking(ctx, request.(GetBlockingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBlocking")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBlockingResponseObject); ok {
+		if err := validResponse.VisitGetBlockingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetBlocking operation middleware
+func (sh *strictHandler) SetBlocking(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request SetBlockingRequestObject
+
+	request.Target = target
+
+	var body SetBlockingJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetBlocking(ctx, request.(SetBlockingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetBlocking")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetBlockingResponseObject); ok {
+		if err := validResponse.VisitSetBlockingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListClients operation middleware
+func (sh *strictHandler) ListClients(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListClientsRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListClients(ctx, request.(ListClientsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListClients")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListClientsResponseObject); ok {
+		if err := validResponse.VisitListClientsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateClient operation middleware
+func (sh *strictHandler) UpdateClient(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request UpdateClientRequestObject
+
+	request.Target = target
+
+	var body UpdateClientJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateClient(ctx, request.(UpdateClientRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateClient")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateClientResponseObject); ok {
+		if err := validResponse.VisitUpdateClientResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RestartDNS operation middleware
+func (sh *strictHandler) RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request RestartDNSRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestartDNS(ctx, request.(RestartDNSRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestartDNS")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestartDNSResponseObject); ok {
+		if err := validResponse.VisitRestartDNSResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteDomain operation middleware
+func (sh *strictHandler) DeleteDomain(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request DeleteDomainRequestObject
+
+	request.Target = target
+
+	var body DeleteDomainJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteDomain(ctx, request.(DeleteDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteDomainResponseObject); ok {
+		if err := validResponse.VisitDeleteDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDomains operation middleware
+func (sh *strictHandler) ListDomains(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListDomainsRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDomains(ctx, request.(ListDomainsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDomains")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDomainsResponseObject); ok {
+		if err := validResponse.VisitListDomainsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateDomain operation middleware
+func (sh *strictHandler) UpdateDomain(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request UpdateDomainRequestObject
+
+	request.Target = target
+
+	var body UpdateDomainJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateDomain(ctx, request.(UpdateDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateDomainResponseObject); ok {
+		if err := validResponse.VisitUpdateDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddDomain operation middleware
+func (sh *strictHandler) AddDomain(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request AddDomainRequestObject
+
+	request.Target = target
+
+	var body AddDomainJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddDomain(ctx, request.(AddDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddDomainResponseObject); ok {
+		if err := validResponse.VisitAddDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPiholeGroups operation middleware
+func (sh *strictHandler) ListPiholeGroups(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListPiholeGroupsRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPiholeGroups(ctx, request.(ListPiholeGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPiholeGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPiholeGroupsResponseObject); ok {
+		if err := validResponse.VisitListPiholeGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListQueries operation middleware
+func (sh *strictHandler) ListQueries(w http.ResponseWriter, r *http.Request, target TargetID, params ListQueriesParams) {
+	var request ListQueriesRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListQueries(ctx, request.(ListQueriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListQueries")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListQueriesResponseObject); ok {
+		if err := validResponse.VisitListQueriesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTargetSummary operation middleware
+func (sh *strictHandler) GetTargetSummary(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request GetTargetSummaryRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTargetSummary(ctx, request.(GetTargetSummaryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTargetSummary")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTargetSummaryResponseObject); ok {
+		if err := validResponse.VisitGetTargetSummaryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

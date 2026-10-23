@@ -46,6 +46,11 @@ func ForbiddenOn(p Permission, t Target) *Error {
 		"You need the %s permission on %s to do that.", p, t)
 }
 
+// ForbiddenAny is the refusal for a target the user holds no permission on at all.
+func ForbiddenAny(t Target) *Error {
+	return newError(CodeForbidden, map[string]any{"target": t.String()}, "You don't have access to %s.", t)
+}
+
 // AsError returns err as an *Error, if it is one.
 func AsError(err error) (*Error, bool) {
 	var e *Error

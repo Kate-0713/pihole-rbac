@@ -125,7 +125,7 @@ func TestSessionReuse(t *testing.T) {
 			if tt.between != nil {
 				tt.between(ph)
 			}
-			if err := c.SetBlocking(ctx, false); err != nil {
+			if _, err := c.SetBlocking(ctx, false, 0); err != nil {
 				t.Fatalf("second call: %v", err)
 			}
 			if got := ph.Logins(); got != tt.wantLogins {
@@ -342,17 +342,23 @@ func TestDomainPathsAreWhitelisted(t *testing.T) {
 		ok   bool
 	}{
 		{"add allow exact", func() error {
-			return c.AddDomain(ctx, piholeapi.DomainEntry{Domain: "example.com", Type: "allow", Kind: "exact"})
+			_, err := c.AddDomain(ctx, piholeapi.DomainEntry{Domain: "example.com", Type: "allow", Kind: "exact"})
+			return err
 		}, true},
 		{"add bad type", func() error {
-			return c.AddDomain(ctx, piholeapi.DomainEntry{Domain: "example.com", Type: "allow/../../auth", Kind: "exact"})
+			_, err := c.AddDomain(ctx, piholeapi.DomainEntry{Domain: "example.com", Type: "allow/../../auth", Kind: "exact"})
+			return err
 		}, false},
 		{"update bad kind", func() error {
-			return c.UpdateDomainGroups(ctx, "example.com", "deny", "glob", "", nil)
+			_, err := c.UpdateDomain(ctx, piholeapi.DomainEntry{Domain: "example.com", Type: "deny", Kind: "glob"})
+			return err
 		}, false},
 		{"update deny regex", func() error {
-			return c.UpdateDomainGroups(ctx, `^ads?\.`, "deny", "regex", "", nil)
+			_, err := c.UpdateDomain(ctx, piholeapi.DomainEntry{Domain: `^ads?\.`, Type: "deny", Kind: "regex"})
+			return err
 		}, true},
+		{"delete bad type", func() error { return c.DeleteDomain(ctx, "example.com", "block", "exact") }, false},
+		{"delete allow exact", func() error { return c.DeleteDomain(ctx, "example.com", "allow", "exact") }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -383,10 +389,13 @@ func TestPathValuesAreEscaped(t *testing.T) {
 		return true
 	})
 	c := newClient(t, ph.URL)
-	if err := c.UpdateClientGroups(ctx, "10.0.0.0/24", "lab", nil); err != nil {
+	if _, err := c.UpdateClientGroups(ctx, "10.0.0.0/24", "lab", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.UpdateDomainGroups(ctx, "a/b?c", "deny", "exact", "", []int{1}); err != nil {
+	if _, err := c.UpdateDomain(ctx, piholeapi.DomainEntry{Domain: "a/b?c", Type: "deny", Kind: "exact", Groups: []int{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteDomain(ctx, "a/b?c", "deny", "regex"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.ListQueries(ctx, 5000); err != nil {
@@ -395,6 +404,7 @@ func TestPathValuesAreEscaped(t *testing.T) {
 	want := []string{
 		"/api/clients/10.0.0.0%2F24?",
 		"/api/domains/deny/exact/a%2Fb%3Fc?",
+		"/api/domains/deny/regex/a%2Fb%3Fc?",
 		"/api/queries?length=1000",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {

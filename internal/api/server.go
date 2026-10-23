@@ -235,8 +235,9 @@ func (s *Server) paramError(w http.ResponseWriter, _ *http.Request, _ error) {
 }
 
 // responseError handles an error returned by a handler: a refusal from the rbac package is answered as such (see
-// refuse), and a failed connection test as a Pi-hole or instance error (see testFailed); anything else is an
-// unexpected failure, logged in full but reported to the client only as "internal".
+// refuse), a failed connection test as a Pi-hole or instance error (see testFailed), and a failed Pi-hole call on a
+// target likewise (see piholeFailed); anything else is an unexpected failure, logged in full but reported to the
+// client only as "internal".
 func (s *Server) responseError(w http.ResponseWriter, r *http.Request, err error) {
 	if e, ok := rbac.AsError(err); ok {
 		s.refuse(w, r, e)
@@ -245,6 +246,11 @@ func (s *Server) responseError(w http.ResponseWriter, r *http.Request, err error
 	var te *instances.TestError
 	if errors.As(err, &te) {
 		s.testFailed(w, te)
+		return
+	}
+	var pf *piholeFailure
+	if errors.As(err, &pf) {
+		s.piholeFailed(w, r, pf)
 		return
 	}
 	s.Logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)

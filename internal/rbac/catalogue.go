@@ -73,7 +73,7 @@ type Info struct {
 
 var catalogue = []Info{
 	{DomainsView, ClassInstance, "List domains"},
-	{DomainsEdit, ClassInstance, "Add domains, edit their groups and comments"},
+	{DomainsEdit, ClassInstance, "Add and delete domains, edit their groups and comments"},
 	{ClientsView, ClassInstance, "List clients"},
 	{ClientsEdit, ClassInstance, "Edit client groups and comments"},
 	{QueryLogView, ClassInstance, "View the query log"},

@@ -95,8 +95,12 @@ func TestDoRecordsHealth(t *testing.T) {
 	p, _, clk := newPool(t)
 	up := piholetest.New(t, password)
 	up.Handle(func(w http.ResponseWriter, r *http.Request) bool {
-		if r.URL.Path == "/api/domains" {
-			http.Error(w, "nope", http.StatusBadRequest)
+		switch r.URL.Path {
+		case "/api/domains":
+			http.Error(w, "nope", http.StatusInternalServerError)
+			return true
+		case "/api/groups":
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return true
 		}
 		return false
@@ -114,7 +118,7 @@ func TestDoRecordsHealth(t *testing.T) {
 		t.Fatalf("after success: %+v", h)
 	}
 
-	// A refused request means Pi-hole is up: no backoff, the error code is kept.
+	// A failed request means Pi-hole is up: no backoff, the error code is kept.
 	clk.advance(time.Second)
 	err := p.Do(ctx, 1, func(ctx context.Context, c *piholeapi.Client) error {
 		_, err := c.ListDomains(ctx)
@@ -125,10 +129,24 @@ func TestDoRecordsHealth(t *testing.T) {
 	}
 	h, _ = p.Health(1)
 	if h.State != StateUp || h.LastError != piholeapi.CodeStatusError || !h.LastFailure.Equal(clk.now()) {
-		t.Fatalf("after a refused request: %+v", h)
+		t.Fatalf("after a failed request: %+v", h)
 	}
 	if err := p.Do(ctx, 1, status); err != nil {
-		t.Fatalf("call after a refused request: %v", err)
+		t.Fatalf("call after a failed request: %v", err)
+	}
+
+	// Pi-hole rejecting the content of a request is a success as far as health goes.
+	clk.advance(time.Second)
+	err = p.Do(ctx, 1, func(ctx context.Context, c *piholeapi.Client) error {
+		_, err := c.ListGroups(ctx)
+		return err
+	})
+	if Kind(err) != piholeapi.CodeRejected {
+		t.Fatalf("ListGroups: %v", err)
+	}
+	h, _ = p.Health(1)
+	if h.State != StateUp || !h.LastSuccess.Equal(clk.now()) || h.LastFailure.Equal(clk.now()) {
+		t.Fatalf("after a rejected request: %+v", h)
 	}
 }
 

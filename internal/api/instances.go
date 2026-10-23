@@ -231,7 +231,7 @@ func (s *Server) instanceJSON(inst instances.Instance) gen.Instance {
 func (s *Server) health(id int64) *gen.InstanceHealth {
 	h, ok := s.Instances.Pool.Health(id)
 	if !ok {
-		return &gen.InstanceHealth{State: gen.Unknown}
+		return &gen.InstanceHealth{State: gen.InstanceHealthState(instances.StateUnknown)}
 	}
 	out := &gen.InstanceHealth{State: gen.InstanceHealthState(h.State)}
 	if !h.LastSuccess.IsZero() {

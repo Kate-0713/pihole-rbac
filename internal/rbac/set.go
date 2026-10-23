@@ -63,6 +63,17 @@ func (s *Set) Can(p Permission, t Target) bool {
 	return false
 }
 
+// CanAny reports whether the set allows at least one instance- or group-class permission on a target. It gates reads
+// that every user of a target needs, such as its dashboard and the names of its Pi-hole groups.
+func (s *Set) CanAny(t Target) bool {
+	for p := range s.scopes {
+		if s.Can(p, t) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Set) covers(sc Scope, t Target) bool {
 	switch sc.Type {
 	case ScopeAll:

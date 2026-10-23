@@ -6,6 +6,10 @@ package piholeapi
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Callers tell failures apart with errors.Is and errors.As rather than by parsing messages: Pi-hole being down is a
@@ -28,14 +32,75 @@ var ErrInvalidArgument = errors.New("piholeapi: invalid argument")
 // in flight.
 var ErrClosed = errors.New("piholeapi: client closed")
 
-// StatusError is a call that got an HTTP status outside 2xx.
+// ErrRejected matches a request Pi-hole understood but refused because of what it asked for: a 400 answer, or a
+// 2xx answer that lists the item under processed.errors (a duplicate or malformed domain, say). Pi-hole is up; the
+// caller's input was the problem. Use errors.As with *RejectedError for Pi-hole's message.
+var ErrRejected = errors.New("pihole rejected the request")
+
+// StatusError is a call that got an HTTP status outside 2xx. Message is Pi-hole's own error message, if it sent one,
+// cleaned for display (see cleanMessage).
 type StatusError struct {
 	Code         int
 	Method, Path string
+	Message      string
 }
 
 func (e *StatusError) Error() string {
-	return fmt.Sprintf("pihole returned status %d for %s %s", e.Code, e.Method, e.Path)
+	s := fmt.Sprintf("pihole returned status %d for %s %s", e.Code, e.Method, e.Path)
+	if e.Message != "" {
+		s += ": " + e.Message
+	}
+	return s
+}
+
+// RejectedError is a request Pi-hole refused because of its content. Message is Pi-hole's reason, cleaned for
+// display; Item is the item it was about, when Pi-hole names one. Both come from Pi-hole, so they are data: show them
+// as text, never as markup.
+type RejectedError struct {
+	Method, Path string
+	Item         string
+	Message      string
+}
+
+func (e *RejectedError) Error() string {
+	s := "pihole rejected " + e.Method + " " + e.Path
+	if e.Item != "" {
+		s += " for " + strconv.Quote(e.Item)
+	}
+	if e.Message != "" {
+		s += ": " + e.Message
+	}
+	return s
+}
+
+func (e *RejectedError) Is(target error) bool { return target == ErrRejected }
+
+// maxMessageRunes caps a message taken from Pi-hole, so a misbehaving server can't fill an audit row or a toast.
+const maxMessageRunes = 300
+
+// cleanMessage makes a message from Pi-hole safe to log and show: control characters (newlines included, which
+// could otherwise forge log lines) become spaces, runs of spaces collapse, and it is cut to maxMessageRunes.
+func cleanMessage(s string) string {
+	var b strings.Builder
+	space, n := false, 0
+	for _, r := range s {
+		if r == utf8.RuneError || unicode.IsControl(r) || unicode.IsSpace(r) {
+			space = b.Len() > 0
+			continue
+		}
+		if n >= maxMessageRunes {
+			b.WriteString("…")
+			break
+		}
+		if space {
+			b.WriteByte(' ')
+			n++
+			space = false
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String()
 }
 
 // unreachableError keeps the underlying error for the logs while matching ErrUnreachable.
@@ -64,6 +129,7 @@ const (
 	CodeUnreachable  = "pihole_unreachable"
 	CodeAuthRejected = "pihole_auth_rejected"
 	CodeStatusError  = "pihole_status_error"
+	CodeRejected     = "pihole_rejected"
 )
 
 // Kind returns the API error code for err, or "" if err isn't a Pi-hole failure (a cancelled request, say, or a bug).
@@ -71,6 +137,8 @@ const (
 func Kind(err error) string {
 	var se *StatusError
 	switch {
+	case errors.Is(err, ErrRejected):
+		return CodeRejected
 	case errors.Is(err, ErrUnreachable):
 		return CodeUnreachable
 	case errors.Is(err, ErrAuthRejected):

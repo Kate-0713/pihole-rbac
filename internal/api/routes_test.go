@@ -101,7 +101,7 @@ func TestRoutePermissionsMatchSpec(t *testing.T) {
 func TestRoutePermissionValues(t *testing.T) {
 	for pattern, v := range routePermission {
 		if _, _, ok := parseAccess(v); !ok {
-			t.Errorf("%s: %q isn't public, session, a global permission or target:<non-global permission>", pattern, v)
+			t.Errorf("%s: %q isn't public, session, a global permission, target:any or target:<non-global permission>", pattern, v)
 		}
 	}
 	tests := []struct {
@@ -115,6 +115,7 @@ func TestRoutePermissionValues(t *testing.T) {
 		{"config.reload", "global", "config.reload", true},
 		{"target:domains.edit", "target", "domains.edit", true},
 		{"target:drift.reconcile", "target", "drift.reconcile", true},
+		{"target:any", "target", "", true},
 		{"domains.edit", "global", "domains.edit", false},          // target-scoped, so it needs the target: prefix
 		{"target:config.reload", "target", "config.reload", false}, // global, so the gate checks it
 		{"nonsense.perm", "global", "nonsense.perm", false},

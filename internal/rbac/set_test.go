@@ -79,6 +79,33 @@ func TestCan(t *testing.T) {
 	}
 }
 
+func TestCanAny(t *testing.T) {
+	tests := []struct {
+		name   string
+		grants []Grant
+		target Target
+		want   bool
+	}{
+		{"nothing", nil, InstanceTarget(1), false},
+		{"global permissions don't count", []Grant{g(AuditView, AllScope()), g(UsersManage, AllScope())}, InstanceTarget(1), false},
+		{"one instance permission", []Grant{g(QueryLogView, InstanceScope(1))}, InstanceTarget(1), true},
+		{"on another instance", []Grant{g(QueryLogView, InstanceScope(2))}, InstanceTarget(1), false},
+		{"through an independent group", []Grant{g(DomainsView, GroupScope(10))}, InstanceTarget(2), true},
+		{"mirrored group grant doesn't cover a member", []Grant{g(DomainsView, GroupScope(20))}, InstanceTarget(3), false},
+		{"mirrored group grant covers the group", []Grant{g(DriftView, GroupScope(20))}, GroupTarget(20), true},
+		{"scope all", []Grant{g(DNSRestart, AllScope())}, InstanceTarget(6), true},
+		{"target that doesn't exist", []Grant{g(DNSRestart, AllScope())}, InstanceTarget(99), false},
+		{"independent group isn't a target", []Grant{g(DomainsView, AllScope())}, GroupTarget(10), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NewSet(tt.grants, fixture()).CanAny(tt.target); got != tt.want {
+				t.Errorf("CanAny(%s) = %v, want %v", tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCanGlobal(t *testing.T) {
 	s := NewSet([]Grant{
 		g(UsersManage, AllScope()),

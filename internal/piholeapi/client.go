@@ -340,15 +340,76 @@ func (c *Client) send(ctx context.Context, method, path, sid string, payload []b
 	}
 	defer drain(resp)
 	if resp.StatusCode/100 != 2 {
-		return resp.StatusCode, &StatusError{Code: resp.StatusCode, Method: method, Path: path}
+		return resp.StatusCode, statusError(resp, method, path)
 	}
 	if out == nil {
 		return resp.StatusCode, nil
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(out); err != nil {
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(out)
+	if _, isWrite := out.(*writeResponse); isWrite && errors.Is(err, io.EOF) {
+		return resp.StatusCode, nil // a write answered with an empty body: nothing to check
+	}
+	if err != nil {
 		return resp.StatusCode, &badResponseError{what: "response to " + method + " " + path, err: err}
 	}
 	return resp.StatusCode, nil
+}
+
+// piholeError is the body Pi-hole sends with an error status.
+type piholeError struct {
+	Error struct {
+		Key     string `json:"key"`
+		Message string `json:"message"`
+		Hint    any    `json:"hint"` // a string, or null
+	} `json:"error"`
+}
+
+// statusError builds the error for a non-2xx answer, with Pi-hole's message if the body has one. A 400 means Pi-hole
+// refused the request's content, which is a RejectedError rather than a sign of trouble with Pi-hole.
+func statusError(resp *http.Response, method, path string) error {
+	var body piholeError
+	_ = json.NewDecoder(io.LimitReader(resp.Body, maxAuthBytes)).Decode(&body)
+	msg := body.Error.Message
+	if hint, ok := body.Error.Hint.(string); ok && hint != "" {
+		msg += " (" + hint + ")"
+	}
+	msg = cleanMessage(msg)
+	if resp.StatusCode == http.StatusBadRequest {
+		return &RejectedError{Method: method, Path: path, Message: msg}
+	}
+	return &StatusError{Code: resp.StatusCode, Method: method, Path: path, Message: msg}
+}
+
+// writeResponse is the part of a write's response this client reads. Pi-hole reports items it couldn't add or
+// change under processed.errors, with a 2xx status, and returns the entries as saved under domains or clients.
+type writeResponse struct {
+	Domains   []DomainEntry `json:"domains"`
+	Clients   []ClientEntry `json:"clients"`
+	Processed *struct {
+		Errors []struct {
+			Item  any    `json:"item"` // usually a string; a number for some endpoints
+			Error string `json:"error"`
+		} `json:"errors"`
+	} `json:"processed"`
+}
+
+// write makes a state-changing call and turns an item Pi-hole lists under processed.errors into a RejectedError.
+func (c *Client) write(ctx context.Context, method, path string, body any, out *writeResponse) error {
+	if out == nil {
+		out = new(writeResponse)
+	}
+	if err := c.do(ctx, method, path, body, out); err != nil {
+		return err
+	}
+	if out.Processed == nil || len(out.Processed.Errors) == 0 {
+		return nil
+	}
+	first := out.Processed.Errors[0]
+	item := ""
+	if first.Item != nil {
+		item = cleanMessage(fmt.Sprint(first.Item))
+	}
+	return &RejectedError{Method: method, Path: path, Item: item, Message: cleanMessage(first.Error)}
 }
 
 // transportError reports a cancelled or expired caller context as itself, so a user closing the page isn't
@@ -368,9 +429,17 @@ func drain(resp *http.Response) {
 
 // --- API calls ---
 
+// Blocking states Pi-hole reports. Failed and unknown mean FTL couldn't tell.
+const (
+	BlockingEnabled  = "enabled"
+	BlockingDisabled = "disabled"
+)
+
 // Status is the response of /api/dns/blocking.
 type Status struct {
-	Blocking string `json:"blocking"` // "enabled" or "disabled"
+	Blocking string `json:"blocking"` // "enabled", "disabled", "failed" or "unknown"
+	// Timer is how many seconds remain until blocking flips back, or nil when no timer is running.
+	Timer *float64 `json:"timer"`
 }
 
 // GetStatus returns the blocking status. It is also the health check: cheap, and it needs a valid login.
@@ -382,23 +451,48 @@ func (c *Client) GetStatus(ctx context.Context) (*Status, error) {
 	return &out, nil
 }
 
-// SetBlocking turns blocking on or off.
-func (c *Client) SetBlocking(ctx context.Context, enabled bool) error {
-	return c.do(ctx, http.MethodPost, "/api/dns/blocking", map[string]bool{"blocking": enabled}, nil)
+// MaxBlockingTimer is the longest timer SetBlocking accepts.
+const MaxBlockingTimer = 24 * time.Hour
+
+// SetBlocking turns blocking on or off and returns the new status. With a timer above zero, Pi-hole flips blocking
+// back once it runs out; it is sent in whole seconds, rounded up, and can't exceed MaxBlockingTimer.
+func (c *Client) SetBlocking(ctx context.Context, enabled bool, timer time.Duration) (*Status, error) {
+	if timer < 0 || timer > MaxBlockingTimer {
+		return nil, fmt.Errorf("%w: blocking timer %s", ErrInvalidArgument, timer)
+	}
+	body := struct {
+		Blocking bool   `json:"blocking"`
+		Timer    *int64 `json:"timer"` // null: no timer
+	}{Blocking: enabled}
+	if timer > 0 {
+		secs := int64((timer + time.Second - 1) / time.Second)
+		body.Timer = &secs
+	}
+	var out Status
+	if err := c.do(ctx, http.MethodPost, "/api/dns/blocking", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
-// RestartDNS restarts Pi-hole's DNS resolver.
+// RestartDNS restarts Pi-hole's DNS resolver. FTL's API goes down with it, so the request can fail with
+// ErrUnreachable even when the restart happened.
 func (c *Client) RestartDNS(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/action/restartdns", nil, nil)
 }
 
-// DomainEntry is one entry on Pi-hole's allow or deny list.
+// DomainEntry is one entry on Pi-hole's allow or deny list. Domain, Type and Kind identify it: the same domain can be
+// on both lists, or be both an exact and a regex entry. ID is Pi-hole's row ID, which differs between Pi-holes.
 type DomainEntry struct {
-	Domain  string `json:"domain"`
-	Type    string `json:"type"` // "allow" or "deny"
-	Kind    string `json:"kind"` // "exact" or "regex"
-	Comment string `json:"comment"`
-	Groups  []int  `json:"groups"`
+	ID           int    `json:"id"`
+	Domain       string `json:"domain"`
+	Type         string `json:"type"` // "allow" or "deny"
+	Kind         string `json:"kind"` // "exact" or "regex"
+	Comment      string `json:"comment"`
+	Groups       []int  `json:"groups"`
+	Enabled      bool   `json:"enabled"`
+	DateAdded    int64  `json:"date_added"`    // Unix seconds
+	DateModified int64  `json:"date_modified"` // Unix seconds
 }
 
 // ValidDomainType reports whether t is a domain list type Pi-hole accepts in a path.
@@ -417,6 +511,17 @@ func checkDomainPath(listType, kind string) error {
 	return nil
 }
 
+func domainPath(listType, kind, domain string) string {
+	return "/api/domains/" + listType + "/" + kind + "/" + url.PathEscape(domain)
+}
+
+func nonNil(ids []int) []int {
+	if ids == nil {
+		return []int{} // [] rather than null: no groups
+	}
+	return ids
+}
+
 // ListDomains returns every allow and deny list entry.
 func (c *Client) ListDomains(ctx context.Context) ([]DomainEntry, error) {
 	var out struct {
@@ -428,32 +533,65 @@ func (c *Client) ListDomains(ctx context.Context) ([]DomainEntry, error) {
 	return out.Domains, nil
 }
 
-// AddDomain adds a domain to the list named by entry.Type and entry.Kind.
-func (c *Client) AddDomain(ctx context.Context, entry DomainEntry) error {
+// AddDomain adds an enabled entry to the list named by entry.Type and entry.Kind, with its comment and groups, and
+// returns it as Pi-hole saved it (or as sent, if Pi-hole's answer doesn't include it). Pi-hole refusing it (already
+// on that list, or not a valid domain or regex) is a RejectedError.
+func (c *Client) AddDomain(ctx context.Context, entry DomainEntry) (DomainEntry, error) {
 	if err := checkDomainPath(entry.Type, entry.Kind); err != nil {
-		return err
+		return DomainEntry{}, err
 	}
-	if entry.Groups == nil {
-		entry.Groups = []int{}
-	}
-	return c.do(ctx, http.MethodPost, "/api/domains/"+entry.Type+"/"+entry.Kind, entry, nil)
-}
-
-// UpdateDomainGroups replaces a list entry's groups and comment. domain, listType and kind must match the existing
-// entry exactly: the same domain can be on both lists, or be both an exact and a regex entry.
-func (c *Client) UpdateDomainGroups(ctx context.Context, domain, listType, kind, comment string, groupIDs []int) error {
-	if err := checkDomainPath(listType, kind); err != nil {
-		return err
-	}
-	if groupIDs == nil {
-		groupIDs = []int{}
-	}
+	entry.Groups, entry.Enabled = nonNil(entry.Groups), true
 	body := struct {
 		Domain  string `json:"domain"`
 		Comment string `json:"comment"`
 		Groups  []int  `json:"groups"`
-	}{domain, comment, groupIDs}
-	return c.do(ctx, http.MethodPut, "/api/domains/"+listType+"/"+kind+"/"+url.PathEscape(domain), body, nil)
+		Enabled bool   `json:"enabled"`
+	}{entry.Domain, entry.Comment, entry.Groups, entry.Enabled}
+	var out writeResponse
+	if err := c.write(ctx, http.MethodPost, "/api/domains/"+entry.Type+"/"+entry.Kind, body, &out); err != nil {
+		return DomainEntry{}, err
+	}
+	return savedDomain(out, entry), nil
+}
+
+// UpdateDomain replaces an entry's comment, groups and enabled flag, and returns it as saved. Domain, Type and Kind
+// must match an existing entry exactly: Pi-hole's PUT creates the entry if it doesn't exist, so callers check that it
+// does first. Every field is sent, so nothing falls back to Pi-hole's defaults.
+func (c *Client) UpdateDomain(ctx context.Context, entry DomainEntry) (DomainEntry, error) {
+	if err := checkDomainPath(entry.Type, entry.Kind); err != nil {
+		return DomainEntry{}, err
+	}
+	entry.Groups = nonNil(entry.Groups)
+	body := struct {
+		Type    string `json:"type"`
+		Kind    string `json:"kind"`
+		Comment string `json:"comment"`
+		Groups  []int  `json:"groups"`
+		Enabled bool   `json:"enabled"`
+	}{entry.Type, entry.Kind, entry.Comment, entry.Groups, entry.Enabled}
+	var out writeResponse
+	if err := c.write(ctx, http.MethodPut, domainPath(entry.Type, entry.Kind, entry.Domain), body, &out); err != nil {
+		return DomainEntry{}, err
+	}
+	return savedDomain(out, entry), nil
+}
+
+// savedDomain picks the entry Pi-hole returned for sent, falling back to sent itself.
+func savedDomain(out writeResponse, sent DomainEntry) DomainEntry {
+	for _, d := range out.Domains {
+		if d.Domain == sent.Domain && d.Type == sent.Type && d.Kind == sent.Kind {
+			return d
+		}
+	}
+	return sent
+}
+
+// DeleteDomain removes an entry from the list named by listType and kind.
+func (c *Client) DeleteDomain(ctx context.Context, domain, listType, kind string) error {
+	if err := checkDomainPath(listType, kind); err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, domainPath(listType, kind, domain), nil, nil)
 }
 
 // DatabaseSummary is the response of /api/stats/database/summary: totals for a time window from Pi-hole's
@@ -540,11 +678,13 @@ func (c *Client) ListQueries(ctx context.Context, length int) ([]QueryLogEntry, 
 // ClientEntry is one entry from /api/clients. Pi-hole identifies a client by the IP, MAC address, hostname or subnet
 // it was added with (Client); ID is Pi-hole's own row ID, for display only. Updates address the client by Client.
 type ClientEntry struct {
-	ID      int    `json:"id"`
-	Client  string `json:"client"`
-	Name    string `json:"name"` // resolved hostname, read-only
-	Comment string `json:"comment"`
-	Groups  []int  `json:"groups"`
+	ID           int    `json:"id"`
+	Client       string `json:"client"`
+	Name         string `json:"name"` // resolved hostname, read-only
+	Comment      string `json:"comment"`
+	Groups       []int  `json:"groups"`
+	DateAdded    int64  `json:"date_added"`    // Unix seconds
+	DateModified int64  `json:"date_modified"` // Unix seconds
 }
 
 // ListClients returns every configured client.
@@ -558,18 +698,25 @@ func (c *Client) ListClients(ctx context.Context) ([]ClientEntry, error) {
 	return out.Clients, nil
 }
 
-// UpdateClientGroups replaces a client's groups and comment. clientIdentifier must match the client's existing
-// identifier exactly, or Pi-hole creates a new client instead.
-func (c *Client) UpdateClientGroups(ctx context.Context, clientIdentifier, comment string, groupIDs []int) error {
-	if groupIDs == nil {
-		groupIDs = []int{} // [] rather than null: no groups means the default group only
-	}
+// UpdateClientGroups replaces a client's groups and comment, and returns the client as saved (or nil if Pi-hole's
+// answer doesn't include it). clientIdentifier must match the client's existing identifier exactly: Pi-hole's PUT
+// creates the client if it doesn't exist, so callers check that it does first.
+func (c *Client) UpdateClientGroups(ctx context.Context, clientIdentifier, comment string, groupIDs []int) (*ClientEntry, error) {
 	body := struct {
 		Client  string `json:"client"`
 		Comment string `json:"comment"`
 		Groups  []int  `json:"groups"`
-	}{clientIdentifier, comment, groupIDs}
-	return c.do(ctx, http.MethodPut, "/api/clients/"+url.PathEscape(clientIdentifier), body, nil)
+	}{clientIdentifier, comment, nonNil(groupIDs)}
+	var out writeResponse
+	if err := c.write(ctx, http.MethodPut, "/api/clients/"+url.PathEscape(clientIdentifier), body, &out); err != nil {
+		return nil, err
+	}
+	for _, ce := range out.Clients {
+		if ce.Client == clientIdentifier {
+			return &ce, nil
+		}
+	}
+	return nil, nil
 }
 
 // Group is a Pi-hole group (not an instance group).
