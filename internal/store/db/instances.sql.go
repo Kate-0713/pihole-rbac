@@ -26,8 +26,19 @@ func (q *Queries) AddInstanceGroupMember(ctx context.Context, arg AddInstanceGro
 	return err
 }
 
+const countClientResetTargetsForInstance = `-- name: CountClientResetTargetsForInstance :one
+SELECT COUNT(*) FROM client_reset_targets WHERE instance_id = ?
+`
+
+func (q *Queries) CountClientResetTargetsForInstance(ctx context.Context, instanceID sql.NullInt64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countClientResetTargetsForInstance, instanceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createInstance = `-- name: CreateInstance :one
-INSERT INTO instances (name, base_url, env_name, created_at) VALUES (?, ?, ?, ?)
+INSERT INTO instances (name, base_url, env_name, tls_mode, ca_file, created_at) VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -35,14 +46,19 @@ type CreateInstanceParams struct {
 	Name      string
 	BaseUrl   string
 	EnvName   string
+	TlsMode   string
+	CaFile    sql.NullString
 	CreatedAt int64
 }
 
+// New instances start disabled; enabling one is a separate change that needs a successful connection test.
 func (q *Queries) CreateInstance(ctx context.Context, arg CreateInstanceParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, createInstance,
 		arg.Name,
 		arg.BaseUrl,
 		arg.EnvName,
+		arg.TlsMode,
+		arg.CaFile,
 		arg.CreatedAt,
 	)
 	var id int64
@@ -74,6 +90,35 @@ func (q *Queries) CreateInstanceGroup(ctx context.Context, arg CreateInstanceGro
 	return id, err
 }
 
+const deleteInstance = `-- name: DeleteInstance :exec
+DELETE FROM instances WHERE id = ?
+`
+
+func (q *Queries) DeleteInstance(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteInstance, id)
+	return err
+}
+
+const getInstance = `-- name: GetInstance :one
+SELECT id, name, base_url, env_name, tls_mode, ca_file, enabled, created_at FROM instances WHERE id = ?
+`
+
+func (q *Queries) GetInstance(ctx context.Context, id int64) (Instance, error) {
+	row := q.db.QueryRowContext(ctx, getInstance, id)
+	var i Instance
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.BaseUrl,
+		&i.EnvName,
+		&i.TlsMode,
+		&i.CaFile,
+		&i.Enabled,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listGroupMembership = `-- name: ListGroupMembership :many
 SELECT g.id AS group_id, g.mode, m.instance_id
 FROM instance_groups g
@@ -101,6 +146,35 @@ func (q *Queries) ListGroupMembership(ctx context.Context) ([]ListGroupMembershi
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupsWithInstance = `-- name: ListGroupsWithInstance :many
+SELECT g.name FROM instance_group_members m JOIN instance_groups g ON g.id = m.group_id
+WHERE m.instance_id = ?
+ORDER BY g.name
+`
+
+func (q *Queries) ListGroupsWithInstance(ctx context.Context, instanceID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listGroupsWithInstance, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -166,4 +240,109 @@ func (q *Queries) ListInstanceIDs(ctx context.Context) ([]int64, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const listInstances = `-- name: ListInstances :many
+SELECT id, name, base_url, env_name, tls_mode, ca_file, enabled, created_at FROM instances ORDER BY name
+`
+
+func (q *Queries) ListInstances(ctx context.Context) ([]Instance, error) {
+	rows, err := q.db.QueryContext(ctx, listInstances)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Instance{}
+	for rows.Next() {
+		var i Instance
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.BaseUrl,
+			&i.EnvName,
+			&i.TlsMode,
+			&i.CaFile,
+			&i.Enabled,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRolesWithGrantsOnInstance = `-- name: ListRolesWithGrantsOnInstance :many
+SELECT DISTINCT r.name FROM role_grants g JOIN roles r ON r.id = g.role_id
+WHERE g.instance_id = ?
+ORDER BY r.name
+`
+
+// What still refers to an instance, so a refused delete can say where it is used.
+func (q *Queries) ListRolesWithGrantsOnInstance(ctx context.Context, instanceID sql.NullInt64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listRolesWithGrantsOnInstance, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setInstanceEnabled = `-- name: SetInstanceEnabled :exec
+UPDATE instances SET enabled = ? WHERE id = ?
+`
+
+type SetInstanceEnabledParams struct {
+	Enabled bool
+	ID      int64
+}
+
+func (q *Queries) SetInstanceEnabled(ctx context.Context, arg SetInstanceEnabledParams) error {
+	_, err := q.db.ExecContext(ctx, setInstanceEnabled, arg.Enabled, arg.ID)
+	return err
+}
+
+const updateInstance = `-- name: UpdateInstance :exec
+UPDATE instances SET name = ?, base_url = ?, env_name = ?, tls_mode = ?, ca_file = ? WHERE id = ?
+`
+
+type UpdateInstanceParams struct {
+	Name    string
+	BaseUrl string
+	EnvName string
+	TlsMode string
+	CaFile  sql.NullString
+	ID      int64
+}
+
+func (q *Queries) UpdateInstance(ctx context.Context, arg UpdateInstanceParams) error {
+	_, err := q.db.ExecContext(ctx, updateInstance,
+		arg.Name,
+		arg.BaseUrl,
+		arg.EnvName,
+		arg.TlsMode,
+		arg.CaFile,
+		arg.ID,
+	)
+	return err
 }

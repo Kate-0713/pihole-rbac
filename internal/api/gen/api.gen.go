@@ -12,7 +12,93 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for InstanceTlsMode.
+const (
+	InstanceTlsModeInsecure InstanceTlsMode = "insecure"
+	InstanceTlsModeVerify   InstanceTlsMode = "verify"
+)
+
+// Valid indicates whether the value is a known member of the InstanceTlsMode enum.
+func (e InstanceTlsMode) Valid() bool {
+	switch e {
+	case InstanceTlsModeInsecure:
+		return true
+	case InstanceTlsModeVerify:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstanceHealthState.
+const (
+	Down    InstanceHealthState = "down"
+	Unknown InstanceHealthState = "unknown"
+	Up      InstanceHealthState = "up"
+)
+
+// Valid indicates whether the value is a known member of the InstanceHealthState enum.
+func (e InstanceHealthState) Valid() bool {
+	switch e {
+	case Down:
+		return true
+	case Unknown:
+		return true
+	case Up:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstanceInputTlsMode.
+const (
+	InstanceInputTlsModeInsecure InstanceInputTlsMode = "insecure"
+	InstanceInputTlsModeVerify   InstanceInputTlsMode = "verify"
+)
+
+// Valid indicates whether the value is a known member of the InstanceInputTlsMode enum.
+func (e InstanceInputTlsMode) Valid() bool {
+	switch e {
+	case InstanceInputTlsModeInsecure:
+		return true
+	case InstanceInputTlsModeVerify:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstanceTestErrorCode.
+const (
+	InstanceMisconfigured   InstanceTestErrorCode = "instance_misconfigured"
+	InstancePasswordMissing InstanceTestErrorCode = "instance_password_missing"
+	PiholeAuthRejected      InstanceTestErrorCode = "pihole_auth_rejected"
+	PiholeStatusError       InstanceTestErrorCode = "pihole_status_error"
+	PiholeUnreachable       InstanceTestErrorCode = "pihole_unreachable"
+)
+
+// Valid indicates whether the value is a known member of the InstanceTestErrorCode enum.
+func (e InstanceTestErrorCode) Valid() bool {
+	switch e {
+	case InstanceMisconfigured:
+		return true
+	case InstancePasswordMissing:
+		return true
+	case PiholeAuthRejected:
+		return true
+	case PiholeStatusError:
+		return true
+	case PiholeUnreachable:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for SecretStatusKind.
 const (
@@ -80,6 +166,24 @@ func (e SessionUserSource) Valid() bool {
 	}
 }
 
+// Defines values for TargetKind.
+const (
+	TargetKindGroup    TargetKind = "group"
+	TargetKindInstance TargetKind = "instance"
+)
+
+// Valid indicates whether the value is a known member of the TargetKind enum.
+func (e TargetKind) Valid() bool {
+	switch e {
+	case TargetKindGroup:
+		return true
+	case TargetKindInstance:
+		return true
+	default:
+		return false
+	}
+}
+
 // About defines model for About.
 type About struct {
 	// License SPDX licence identifier.
@@ -122,7 +226,7 @@ type Error struct {
 
 // ErrorBody defines model for ErrorBody.
 type ErrorBody struct {
-	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error.
+	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error, instance_password_missing, instance_misconfigured.
 	Code string `json:"code"`
 
 	// Details Optional structured context, e.g. which instance failed.
@@ -130,6 +234,98 @@ type ErrorBody struct {
 
 	// Message Human-readable message, safe to show to the user.
 	Message string `json:"message"`
+}
+
+// Instance defines model for Instance.
+type Instance struct {
+	BaseUrl string `json:"base_url"`
+
+	// CaFile Absent when no CA file is set.
+	CaFile    *string   `json:"ca_file,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	Enabled   bool      `json:"enabled"`
+	EnvName   string    `json:"env_name"`
+
+	// Health Present only for enabled instances.
+	Health *InstanceHealth `json:"health,omitempty"`
+	Id     int64           `json:"id"`
+	Name   string          `json:"name"`
+
+	// PasswordSet Whether that variable was set when the server started or last reloaded its secrets.
+	PasswordSet bool `json:"password_set"`
+
+	// PasswordVariable The variable the password is read from (or its _FILE form).
+	//
+	// Examples: PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD
+	PasswordVariable string          `json:"password_variable"`
+	TlsMode          InstanceTlsMode `json:"tls_mode"`
+}
+
+// InstanceTlsMode defines model for Instance.TlsMode.
+type InstanceTlsMode string
+
+// InstanceHealth Present only for enabled instances.
+type InstanceHealth struct {
+	// LastError The error code of the last failure, kept after a later success.
+	LastError   *string    `json:"last_error,omitempty"`
+	LastFailure *time.Time `json:"last_failure,omitempty"`
+	LastSuccess *time.Time `json:"last_success,omitempty"`
+
+	// State unknown until the first call; up when Pi-hole last answered with the password accepted; down when it was unreachable or refused the password, or the password or settings can't be used.
+	State InstanceHealthState `json:"state"`
+}
+
+// InstanceHealthState unknown until the first call; up when Pi-hole last answered with the password accepted; down when it was unreachable or refused the password, or the password or settings can't be used.
+type InstanceHealthState string
+
+// InstanceInput defines model for InstanceInput.
+type InstanceInput struct {
+	// BaseUrl http:// or https:// with a host and optional port; no username, password, query or fragment. A path prefix is allowed, but not one ending in /admin or /api. Stored without a trailing slash.
+	//
+	// Examples: https://pihole1.lan
+	BaseUrl string `json:"base_url"`
+
+	// CaFile Absolute path, on the server, of an extra CA bundle (PEM) to trust. Only with tls_mode verify and an https:// base URL. Checked when saved.
+	CaFile *string `json:"ca_file,omitempty"`
+
+	// EnvName Names the password variable, PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD. Unique.
+	//
+	// Examples: PIHOLE1
+	EnvName string `json:"env_name"`
+
+	// Name Unique, ignoring case. Surrounding spaces are ignored.
+	Name string `json:"name"`
+
+	// TlsMode How the Pi-hole's certificate is checked. verify if absent; insecure is for labs only.
+	TlsMode *InstanceInputTlsMode `json:"tls_mode,omitempty"`
+}
+
+// InstanceInputTlsMode How the Pi-hole's certificate is checked. verify if absent; insecure is for labs only.
+type InstanceInputTlsMode string
+
+// InstanceList defines model for InstanceList.
+type InstanceList struct {
+	Instances []Instance `json:"instances"`
+}
+
+// InstanceTestError defines model for InstanceTestError.
+type InstanceTestError struct {
+	Code InstanceTestErrorCode `json:"code"`
+
+	// Detail The underlying error, such as a TLS or connection error. Never contains the password.
+	Detail *string `json:"detail,omitempty"`
+
+	// Message What went wrong, for the admin.
+	Message string `json:"message"`
+}
+
+// InstanceTestErrorCode defines model for InstanceTestError.Code.
+type InstanceTestErrorCode string
+
+// InstanceTestResult defines model for InstanceTestResult.
+type InstanceTestResult struct {
+	Error *InstanceTestError `json:"error,omitempty"`
+	Ok    bool               `json:"ok"`
 }
 
 // LoginRequest defines model for LoginRequest.
@@ -219,8 +415,44 @@ type SetupStatus struct {
 	SetupRequired bool `json:"setup_required"`
 }
 
+// Target defines model for Target.
+type Target struct {
+	// Health Present only for enabled instances.
+	Health *InstanceHealth `json:"health,omitempty"`
+
+	// Id The target as used in URLs and the session's permissions, `i-<instance id>` or `g-<group id>`.
+	//
+	// Examples: i-1
+	Id   string     `json:"id"`
+	Kind TargetKind `json:"kind"`
+	Name string     `json:"name"`
+}
+
+// TargetKind defines model for Target.Kind.
+type TargetKind string
+
+// TargetList defines model for TargetList.
+type TargetList struct {
+	Targets []Target `json:"targets"`
+}
+
+// InstanceID defines model for InstanceID.
+type InstanceID = int64
+
+// Conflict defines model for Conflict.
+type Conflict = Error
+
 // Forbidden defines model for Forbidden.
 type Forbidden = Error
+
+// InstanceConflict defines model for InstanceConflict.
+type InstanceConflict = Error
+
+// NotFound defines model for NotFound.
+type NotFound = Error
+
+// PiholeFailed defines model for PiholeFailed.
+type PiholeFailed = Error
 
 // RateLimited defines model for RateLimited.
 type RateLimited = Error
@@ -239,6 +471,12 @@ type ValidationFailed = Error
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// CreateInstanceJSONRequestBody defines body for CreateInstance for application/json ContentType.
+type CreateInstanceJSONRequestBody = InstanceInput
+
+// UpdateInstanceJSONRequestBody defines body for UpdateInstance for application/json ContentType.
+type UpdateInstanceJSONRequestBody = InstanceInput
 
 // CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
 type CompleteSetupJSONRequestBody = SetupRequest
@@ -260,6 +498,30 @@ type ServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(w http.ResponseWriter, r *http.Request)
+	// ListInstances List the Pi-hole instances
+	// (GET /api/v1/instances)
+	ListInstances(w http.ResponseWriter, r *http.Request)
+	// CreateInstance Add a Pi-hole instance
+	// (POST /api/v1/instances)
+	CreateInstance(w http.ResponseWriter, r *http.Request)
+	// DeleteInstance Delete a Pi-hole instance
+	// (DELETE /api/v1/instances/{id})
+	DeleteInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
+	// GetInstance One Pi-hole instance
+	// (GET /api/v1/instances/{id})
+	GetInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
+	// UpdateInstance Change a Pi-hole instance's settings
+	// (PUT /api/v1/instances/{id})
+	UpdateInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
+	// DisableInstance Disable a Pi-hole instance
+	// (POST /api/v1/instances/{id}/disable)
+	DisableInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
+	// EnableInstance Enable a Pi-hole instance
+	// (POST /api/v1/instances/{id}/enable)
+	EnableInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
+	// TestInstance Test the connection to a Pi-hole instance
+	// (POST /api/v1/instances/{id}/test)
+	TestInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
 	// CompleteSetup Complete first-run setup
 	// (POST /api/v1/setup)
 	CompleteSetup(w http.ResponseWriter, r *http.Request)
@@ -272,6 +534,9 @@ type ServerInterface interface {
 	// ListSecrets List the secrets
 	// (GET /api/v1/system/secrets)
 	ListSecrets(w http.ResponseWriter, r *http.Request)
+	// ListTargets The instances the user can act on
+	// (GET /api/v1/targets)
+	ListTargets(w http.ResponseWriter, r *http.Request)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(w http.ResponseWriter, r *http.Request)
@@ -356,6 +621,190 @@ func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ListInstances operation middleware
+func (siw *ServerInterfaceWrapper) ListInstances(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListInstances(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateInstance operation middleware
+func (siw *ServerInterfaceWrapper) CreateInstance(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateInstance(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteInstance operation middleware
+func (siw *ServerInterfaceWrapper) DeleteInstance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InstanceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteInstance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInstance operation middleware
+func (siw *ServerInterfaceWrapper) GetInstance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InstanceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInstance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateInstance operation middleware
+func (siw *ServerInterfaceWrapper) UpdateInstance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InstanceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateInstance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableInstance operation middleware
+func (siw *ServerInterfaceWrapper) DisableInstance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InstanceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableInstance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableInstance operation middleware
+func (siw *ServerInterfaceWrapper) EnableInstance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InstanceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableInstance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestInstance operation middleware
+func (siw *ServerInterfaceWrapper) TestInstance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InstanceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestInstance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CompleteSetup operation middleware
 func (siw *ServerInterfaceWrapper) CompleteSetup(w http.ResponseWriter, r *http.Request) {
 
@@ -403,6 +852,20 @@ func (siw *ServerInterfaceWrapper) ListSecrets(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListSecrets(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTargets operation middleware
+func (siw *ServerInterfaceWrapper) ListTargets(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTargets(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -556,11 +1019,28 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/secrets", wrapper.ListSecrets)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/reload", wrapper.ReloadSecrets)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets", wrapper.ListTargets)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instances", wrapper.ListInstances)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances", wrapper.CreateInstance)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/instances/{id}", wrapper.DeleteInstance)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instances/{id}", wrapper.GetInstance)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/instances/{id}", wrapper.UpdateInstance)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/test", wrapper.TestInstance)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/enable", wrapper.EnableInstance)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/disable", wrapper.DisableInstance)
 
 	return m
 }
 
+type ConflictJSONResponse Error
+
 type ForbiddenJSONResponse Error
+
+type InstanceConflictJSONResponse Error
+
+type NotFoundJSONResponse Error
+
+type PiholeFailedJSONResponse Error
 
 type RateLimitedResponseHeaders struct {
 	RetryAfter *int
@@ -838,6 +1318,740 @@ func (response GetSession503JSONResponse) VisitGetSessionResponse(w http.Respons
 	return err
 }
 
+type ListInstancesRequestObject struct {
+}
+
+type ListInstancesResponseObject interface {
+	VisitListInstancesResponse(w http.ResponseWriter) error
+}
+
+type ListInstances200JSONResponse InstanceList
+
+func (response ListInstances200JSONResponse) VisitListInstancesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstances401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListInstances401JSONResponse) VisitListInstancesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstances403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListInstances403JSONResponse) VisitListInstancesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstances503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListInstances503JSONResponse) VisitListInstancesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceRequestObject struct {
+	Body *CreateInstanceJSONRequestBody
+}
+
+type CreateInstanceResponseObject interface {
+	VisitCreateInstanceResponse(w http.ResponseWriter) error
+}
+
+type CreateInstance201JSONResponse Instance
+
+func (response CreateInstance201JSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstance400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response CreateInstance400JSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstance401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateInstance401JSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateInstance403JSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstance409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateInstance409JSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstance415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response CreateInstance415JSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstance503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response CreateInstance503JSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstanceRequestObject struct {
+	Id InstanceID `json:"id"`
+}
+
+type DeleteInstanceResponseObject interface {
+	VisitDeleteInstanceResponse(w http.ResponseWriter) error
+}
+
+type DeleteInstance204Response struct {
+}
+
+func (response DeleteInstance204Response) VisitDeleteInstanceResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteInstance401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteInstance401JSONResponse) VisitDeleteInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteInstance403JSONResponse) VisitDeleteInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstance404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteInstance404JSONResponse) VisitDeleteInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstance409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteInstance409JSONResponse) VisitDeleteInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstance503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteInstance503JSONResponse) VisitDeleteInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstanceRequestObject struct {
+	Id InstanceID `json:"id"`
+}
+
+type GetInstanceResponseObject interface {
+	VisitGetInstanceResponse(w http.ResponseWriter) error
+}
+
+type GetInstance200JSONResponse Instance
+
+func (response GetInstance200JSONResponse) VisitGetInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstance401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetInstance401JSONResponse) VisitGetInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetInstance403JSONResponse) VisitGetInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstance404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetInstance404JSONResponse) VisitGetInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstance503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetInstance503JSONResponse) VisitGetInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceRequestObject struct {
+	Id   InstanceID `json:"id"`
+	Body *UpdateInstanceJSONRequestBody
+}
+
+type UpdateInstanceResponseObject interface {
+	VisitUpdateInstanceResponse(w http.ResponseWriter) error
+}
+
+type UpdateInstance200JSONResponse Instance
+
+func (response UpdateInstance200JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response UpdateInstance400JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateInstance401JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateInstance403JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateInstance404JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance409JSONResponse struct{ InstanceConflictJSONResponse }
+
+func (response UpdateInstance409JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateInstance415JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance502JSONResponse struct{ PiholeFailedJSONResponse }
+
+func (response UpdateInstance502JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstance503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateInstance503JSONResponse) VisitUpdateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableInstanceRequestObject struct {
+	Id InstanceID `json:"id"`
+}
+
+type DisableInstanceResponseObject interface {
+	VisitDisableInstanceResponse(w http.ResponseWriter) error
+}
+
+type DisableInstance200JSONResponse Instance
+
+func (response DisableInstance200JSONResponse) VisitDisableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableInstance401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DisableInstance401JSONResponse) VisitDisableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableInstance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DisableInstance403JSONResponse) VisitDisableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableInstance404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DisableInstance404JSONResponse) VisitDisableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableInstance503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DisableInstance503JSONResponse) VisitDisableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableInstanceRequestObject struct {
+	Id InstanceID `json:"id"`
+}
+
+type EnableInstanceResponseObject interface {
+	VisitEnableInstanceResponse(w http.ResponseWriter) error
+}
+
+type EnableInstance200JSONResponse Instance
+
+func (response EnableInstance200JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableInstance401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response EnableInstance401JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableInstance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response EnableInstance403JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableInstance404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response EnableInstance404JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableInstance409JSONResponse struct{ InstanceConflictJSONResponse }
+
+func (response EnableInstance409JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableInstance502JSONResponse struct{ PiholeFailedJSONResponse }
+
+func (response EnableInstance502JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableInstance503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response EnableInstance503JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestInstanceRequestObject struct {
+	Id InstanceID `json:"id"`
+}
+
+type TestInstanceResponseObject interface {
+	VisitTestInstanceResponse(w http.ResponseWriter) error
+}
+
+type TestInstance200JSONResponse InstanceTestResult
+
+func (response TestInstance200JSONResponse) VisitTestInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestInstance401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response TestInstance401JSONResponse) VisitTestInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestInstance403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response TestInstance403JSONResponse) VisitTestInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestInstance404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response TestInstance404JSONResponse) VisitTestInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestInstance503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response TestInstance503JSONResponse) VisitTestInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CompleteSetupRequestObject struct {
 	Body *CompleteSetupJSONRequestBody
 }
@@ -1096,6 +2310,55 @@ func (response ListSecrets503JSONResponse) VisitListSecretsResponse(w http.Respo
 	return err
 }
 
+type ListTargetsRequestObject struct {
+}
+
+type ListTargetsResponseObject interface {
+	VisitListTargetsResponse(w http.ResponseWriter) error
+}
+
+type ListTargets200JSONResponse TargetList
+
+func (response ListTargets200JSONResponse) VisitListTargetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTargets401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListTargets401JSONResponse) VisitListTargetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTargets503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListTargets503JSONResponse) VisitListTargetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type HealthzRequestObject struct {
 }
 
@@ -1131,6 +2394,30 @@ type StrictServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+	// ListInstances List the Pi-hole instances
+	// (GET /api/v1/instances)
+	ListInstances(ctx context.Context, request ListInstancesRequestObject) (ListInstancesResponseObject, error)
+	// CreateInstance Add a Pi-hole instance
+	// (POST /api/v1/instances)
+	CreateInstance(ctx context.Context, request CreateInstanceRequestObject) (CreateInstanceResponseObject, error)
+	// DeleteInstance Delete a Pi-hole instance
+	// (DELETE /api/v1/instances/{id})
+	DeleteInstance(ctx context.Context, request DeleteInstanceRequestObject) (DeleteInstanceResponseObject, error)
+	// GetInstance One Pi-hole instance
+	// (GET /api/v1/instances/{id})
+	GetInstance(ctx context.Context, request GetInstanceRequestObject) (GetInstanceResponseObject, error)
+	// UpdateInstance Change a Pi-hole instance's settings
+	// (PUT /api/v1/instances/{id})
+	UpdateInstance(ctx context.Context, request UpdateInstanceRequestObject) (UpdateInstanceResponseObject, error)
+	// DisableInstance Disable a Pi-hole instance
+	// (POST /api/v1/instances/{id}/disable)
+	DisableInstance(ctx context.Context, request DisableInstanceRequestObject) (DisableInstanceResponseObject, error)
+	// EnableInstance Enable a Pi-hole instance
+	// (POST /api/v1/instances/{id}/enable)
+	EnableInstance(ctx context.Context, request EnableInstanceRequestObject) (EnableInstanceResponseObject, error)
+	// TestInstance Test the connection to a Pi-hole instance
+	// (POST /api/v1/instances/{id}/test)
+	TestInstance(ctx context.Context, request TestInstanceRequestObject) (TestInstanceResponseObject, error)
 	// CompleteSetup Complete first-run setup
 	// (POST /api/v1/setup)
 	CompleteSetup(ctx context.Context, request CompleteSetupRequestObject) (CompleteSetupResponseObject, error)
@@ -1143,6 +2430,9 @@ type StrictServerInterface interface {
 	// ListSecrets List the secrets
 	// (GET /api/v1/system/secrets)
 	ListSecrets(ctx context.Context, request ListSecretsRequestObject) (ListSecretsResponseObject, error)
+	// ListTargets The instances the user can act on
+	// (GET /api/v1/targets)
+	ListTargets(ctx context.Context, request ListTargetsRequestObject) (ListTargetsResponseObject, error)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(ctx context.Context, request HealthzRequestObject) (HealthzResponseObject, error)
@@ -1314,6 +2604,224 @@ func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListInstances operation middleware
+func (sh *strictHandler) ListInstances(w http.ResponseWriter, r *http.Request) {
+	var request ListInstancesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListInstances(ctx, request.(ListInstancesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListInstances")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListInstancesResponseObject); ok {
+		if err := validResponse.VisitListInstancesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateInstance operation middleware
+func (sh *strictHandler) CreateInstance(w http.ResponseWriter, r *http.Request) {
+	var request CreateInstanceRequestObject
+
+	var body CreateInstanceJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateInstance(ctx, request.(CreateInstanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateInstance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateInstanceResponseObject); ok {
+		if err := validResponse.VisitCreateInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteInstance operation middleware
+func (sh *strictHandler) DeleteInstance(w http.ResponseWriter, r *http.Request, id InstanceID) {
+	var request DeleteInstanceRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteInstance(ctx, request.(DeleteInstanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteInstance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteInstanceResponseObject); ok {
+		if err := validResponse.VisitDeleteInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInstance operation middleware
+func (sh *strictHandler) GetInstance(w http.ResponseWriter, r *http.Request, id InstanceID) {
+	var request GetInstanceRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInstance(ctx, request.(GetInstanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInstance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInstanceResponseObject); ok {
+		if err := validResponse.VisitGetInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateInstance operation middleware
+func (sh *strictHandler) UpdateInstance(w http.ResponseWriter, r *http.Request, id InstanceID) {
+	var request UpdateInstanceRequestObject
+
+	request.Id = id
+
+	var body UpdateInstanceJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateInstance(ctx, request.(UpdateInstanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateInstance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateInstanceResponseObject); ok {
+		if err := validResponse.VisitUpdateInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DisableInstance operation middleware
+func (sh *strictHandler) DisableInstance(w http.ResponseWriter, r *http.Request, id InstanceID) {
+	var request DisableInstanceRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DisableInstance(ctx, request.(DisableInstanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DisableInstance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DisableInstanceResponseObject); ok {
+		if err := validResponse.VisitDisableInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EnableInstance operation middleware
+func (sh *strictHandler) EnableInstance(w http.ResponseWriter, r *http.Request, id InstanceID) {
+	var request EnableInstanceRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EnableInstance(ctx, request.(EnableInstanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EnableInstance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EnableInstanceResponseObject); ok {
+		if err := validResponse.VisitEnableInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TestInstance operation middleware
+func (sh *strictHandler) TestInstance(w http.ResponseWriter, r *http.Request, id InstanceID) {
+	var request TestInstanceRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TestInstance(ctx, request.(TestInstanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TestInstance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TestInstanceResponseObject); ok {
+		if err := validResponse.VisitTestInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CompleteSetup operation middleware
 func (sh *strictHandler) CompleteSetup(w http.ResponseWriter, r *http.Request) {
 	var request CompleteSetupRequestObject
@@ -1410,6 +2918,30 @@ func (sh *strictHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListSecretsResponseObject); ok {
 		if err := validResponse.VisitListSecretsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTargets operation middleware
+func (sh *strictHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
+	var request ListTargetsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTargets(ctx, request.(ListTargetsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTargets")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTargetsResponseObject); ok {
+		if err := validResponse.VisitListTargetsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

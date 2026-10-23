@@ -25,7 +25,7 @@ func (e *testEnv) topology() {
 	ctx := context.Background()
 	if err := e.st.WithTx(ctx, func(q *db.Queries) error {
 		for _, n := range []string{"A", "B", "C"} {
-			if _, err := q.CreateInstance(ctx, db.CreateInstanceParams{Name: n, BaseUrl: "http://" + n, EnvName: n, CreatedAt: 1}); err != nil {
+			if _, err := q.CreateInstance(ctx, db.CreateInstanceParams{Name: n, BaseUrl: "http://" + n, EnvName: n, TlsMode: "verify", CreatedAt: 1}); err != nil {
 				return err
 			}
 		}

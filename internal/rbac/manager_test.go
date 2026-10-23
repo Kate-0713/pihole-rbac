@@ -46,7 +46,7 @@ func newEnv(t *testing.T) *env {
 			return err
 		}
 		mk := func(name, env string) int64 {
-			id, err := q.CreateInstance(e.ctx, db.CreateInstanceParams{Name: name, BaseUrl: "https://" + name, EnvName: env, CreatedAt: 1})
+			id, err := q.CreateInstance(e.ctx, db.CreateInstanceParams{Name: name, BaseUrl: "https://" + name, EnvName: env, TlsMode: "verify", CreatedAt: 1})
 			if err != nil {
 				t.Fatal(err)
 			}

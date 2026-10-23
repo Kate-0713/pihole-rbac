@@ -35,8 +35,19 @@ var routePermission = map[string]string{
 	"POST /api/v1/auth/logout": accessSession,
 	"GET /api/v1/auth/session": accessSession,
 
+	"GET /api/v1/targets": accessSession,
+
 	"GET /api/v1/system/secrets": string(rbac.ConfigReload),
 	"POST /api/v1/system/reload": string(rbac.ConfigReload),
+
+	"GET /api/v1/instances":               string(rbac.InstancesManage),
+	"POST /api/v1/instances":              string(rbac.InstancesManage),
+	"GET /api/v1/instances/{id}":          string(rbac.InstancesManage),
+	"PUT /api/v1/instances/{id}":          string(rbac.InstancesManage),
+	"DELETE /api/v1/instances/{id}":       string(rbac.InstancesManage),
+	"POST /api/v1/instances/{id}/test":    string(rbac.InstancesManage),
+	"POST /api/v1/instances/{id}/enable":  string(rbac.InstancesManage),
+	"POST /api/v1/instances/{id}/disable": string(rbac.InstancesManage),
 }
 
 // parseAccess splits a routePermission value. ok is false for a value that isn't valid: unknown permission, a

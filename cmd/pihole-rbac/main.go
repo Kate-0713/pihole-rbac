@@ -21,6 +21,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
+	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/web"
@@ -115,12 +116,27 @@ func serve() error {
 	})
 	byIP, byUser := api.DefaultLoginLimits()
 	auditLog := audit.NewLogger(os.Stdout)
+	// One Pi-hole client per enabled instance. Closing the pool logs every client out of its Pi-hole, so sessions
+	// don't hold Pi-hole's API seats after a restart.
+	pool := instances.New(instances.Options{Passwords: sec, Logger: logger})
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		pool.Close(closeCtx)
+	}()
+	instanceService := &instances.Service{Store: st, Audit: auditLog, Pool: pool}
+	if err := instanceService.LoadPool(ctx); err != nil {
+		return err
+	}
+	go pool.Run(ctx)
+
 	server := api.New(api.Options{
 		Store:          st,
 		Sessions:       sessions,
 		Auth:           authn,
 		Audit:          auditLog,
 		Secrets:        sec,
+		Instances:      instanceService,
 		TrustedProxies: cfg.TrustedProxies,
 		LoginByIP:      byIP,
 		LoginByUser:    byUser,

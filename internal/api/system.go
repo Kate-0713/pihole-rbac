@@ -57,6 +57,11 @@ func (s *Server) ReloadSecrets(ctx context.Context, _ gen.ReloadSecretsRequestOb
 	}
 	ri := info(ctx)
 	res := s.Secrets.Reload()
+	// Only the instances whose password changed get a new Pi-hole client; the others keep their sessions.
+	var rebuilt []string
+	if s.Instances != nil {
+		rebuilt = s.Instances.Pool.ReloadPasswords()
+	}
 
 	out := gen.ReloadResult{
 		Changed:      append([]string{}, res.Changed...),
@@ -73,6 +78,9 @@ func (s *Server) ReloadSecrets(ctx context.Context, _ gen.ReloadSecretsRequestOb
 	entry := audit.Entry{
 		UserID: ri.sess.UserID, Username: ri.sess.Username, Action: audit.ActionConfigReload, IP: ri.ip,
 		Detail: map[string]any{"changed": out.Changed, "failed": failedNames},
+	}
+	if len(rebuilt) > 0 {
+		entry.Detail["instances_rebuilt"] = rebuilt
 	}
 	if len(res.Failed) > 0 {
 		entry.Err = errors.New("some secrets failed to reload")

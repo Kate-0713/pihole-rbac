@@ -21,6 +21,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
@@ -42,6 +43,7 @@ type Options struct {
 	Auth           auth.Authenticator
 	Audit          *audit.Logger
 	Secrets        *secrets.Manager
+	Instances      *instances.Service // instance changes, and the client pool for health and secret reloads
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
@@ -74,8 +76,9 @@ func New(o Options) *Server {
 		ResponseErrorHandlerFunc: s.responseError,
 	})
 	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{
-		BaseRouter:  s.mux,
-		Middlewares: []gen.MiddlewareFunc{s.gate},
+		BaseRouter:       s.mux,
+		Middlewares:      []gen.MiddlewareFunc{s.gate},
+		ErrorHandlerFunc: s.paramError,
 	})
 	s.mux.HandleFunc("/api/", s.apiNotFound)
 	return s
@@ -224,11 +227,24 @@ func (s *Server) requestError(w http.ResponseWriter, _ *http.Request, err error)
 	writeError(w, http.StatusBadRequest, "validation_failed", "The request body isn't valid JSON for this endpoint.")
 }
 
+// paramError handles a path parameter the generated code couldn't parse, such as a non-numeric ID. It runs before
+// the gate, so it reveals nothing beyond the route's shape.
+func (s *Server) paramError(w http.ResponseWriter, _ *http.Request, _ error) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeError(w, http.StatusBadRequest, "validation_failed", "A value in the URL isn't valid.")
+}
+
 // responseError handles an error returned by a handler: a refusal from the rbac package is answered as such (see
-// refuse); anything else is an unexpected failure, logged in full but reported to the client only as "internal".
+// refuse), and a failed connection test as a Pi-hole or instance error (see testFailed); anything else is an
+// unexpected failure, logged in full but reported to the client only as "internal".
 func (s *Server) responseError(w http.ResponseWriter, r *http.Request, err error) {
 	if e, ok := rbac.AsError(err); ok {
 		s.refuse(w, r, e)
+		return
+	}
+	var te *instances.TestError
+	if errors.As(err, &te) {
+		s.testFailed(w, te)
 		return
 	}
 	s.Logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)

@@ -59,6 +59,15 @@ const (
 	ActionUserDelete   = "user_delete"
 	ActionUserPassword = "user_password"
 
+	// Pi-hole instances. An enable or edit refused because the connection test failed is recorded as a failure.
+	// ActionInstanceTest only appears as the attempted action of a permission_denied row: a test changes nothing.
+	ActionInstanceCreate  = "instance_create"
+	ActionInstanceUpdate  = "instance_update"
+	ActionInstanceEnable  = "instance_enable"
+	ActionInstanceDisable = "instance_disable"
+	ActionInstanceDelete  = "instance_delete"
+	ActionInstanceTest    = "instance_test"
+
 	// Sessions.
 	ActionLDAPRecheck = "ldap_recheck" // an LDAP user's session roles changed, or their sessions ended, at a recheck
 

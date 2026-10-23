@@ -255,7 +255,251 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/targets:
+    get:
+      summary: The instances the user can act on
+      description: >-
+        Every enabled instance where the user holds at least one permission, by name, with its health. Mirrored groups
+        will be listed here too once they exist. The health comes from the server's own calls and a periodic check of
+        idle instances; it is held in memory, so it starts as unknown after a restart.
+      operationId: listTargets
+      x-permission: session
+      responses:
+        "200":
+          description: The targets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/instances:
+    get:
+      summary: List the Pi-hole instances
+      description: Every instance, by name, with its settings, whether its password variable is set, and its health.
+      operationId: listInstances
+      x-permission: instances.manage
+      responses:
+        "200":
+          description: The instances.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add a Pi-hole instance
+      description: >-
+        Creates the instance disabled. Its app password is read from the variable named in `password_variable`
+        (PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD, or _FILE), never from the API. Enable it once the variable is set.
+      operationId: createInstance
+      x-permission: instances.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceInput"
+      responses:
+        "201":
+          description: The new instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instance"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/instances/{id}:
+    parameters:
+      - $ref: "#/components/parameters/InstanceID"
+    get:
+      summary: One Pi-hole instance
+      operationId: getInstance
+      x-permission: instances.manage
+      responses:
+        "200":
+          description: The instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instance"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Change a Pi-hole instance's settings
+      description: >-
+        Replaces the settings. If the instance is enabled and the change affects how it connects (base URL, TLS
+        settings or env name), the new settings must pass a connection test first, or the change is refused; disable
+        the instance to save settings that don't work yet. A rename keeps the instance's Pi-hole session.
+      operationId: updateInstance
+      x-permission: instances.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceInput"
+      responses:
+        "200":
+          description: The instance as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instance"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InstanceConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/PiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a Pi-hole instance
+      description: >-
+        Refused with 409 while a role grant, an instance group or a client-reset target refers to the instance; the
+        message lists them, and `details` has `roles`, `groups` and `client_reset_targets`.
+      operationId: deleteInstance
+      x-permission: instances.manage
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/instances/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/InstanceID"
+    post:
+      summary: Test the connection to a Pi-hole instance
+      description: >-
+        Logs in to the Pi-hole with the stored settings and the current password, reads the blocking status and logs
+        out, without changing anything. Works on disabled instances. A failed test is still a 200, with `ok` false.
+      operationId: testInstance
+      x-permission: instances.manage
+      responses:
+        "200":
+          description: The result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceTestResult"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/instances/{id}/enable:
+    parameters:
+      - $ref: "#/components/parameters/InstanceID"
+    post:
+      summary: Enable a Pi-hole instance
+      description: >-
+        Runs a connection test with the stored settings and enables the instance only if it passes. Enabling an
+        enabled instance changes nothing.
+      operationId: enableInstance
+      x-permission: instances.manage
+      responses:
+        "200":
+          description: The instance, now enabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instance"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InstanceConflict"
+        "502":
+          $ref: "#/components/responses/PiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/instances/{id}/disable:
+    parameters:
+      - $ref: "#/components/parameters/InstanceID"
+    post:
+      summary: Disable a Pi-hole instance
+      description: Stops all calls to the instance and logs its client out of the Pi-hole. Disabling a disabled instance changes nothing.
+      operationId: disableInstance
+      x-permission: instances.manage
+      responses:
+        "200":
+          description: The instance, now disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instance"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
 components:
+  parameters:
+    InstanceID:
+      name: id
+      in: path
+      required: true
+      description: The instance's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
   securitySchemes:
     session:
       type: apiKey
@@ -291,6 +535,35 @@ components:
             $ref: "#/components/schemas/Error"
     SetupRequired:
       description: First-run setup hasn't been completed yet (code setup_required).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No such resource (code not_found).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: The change conflicts with existing data (code conflict); the message says how.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InstanceConflict:
+      description: >-
+        The change conflicts with existing data or with a change made at the same time (code conflict), or the
+        connection test couldn't run: the password variable isn't set (code instance_password_missing) or the settings
+        can't be used (code instance_misconfigured). `details.instance` names the instance for the last two.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PiholeFailed:
+      description: >-
+        The connection test failed (code pihole_unreachable, pihole_auth_rejected or pihole_status_error), so nothing
+        was changed. `details.instance` names the instance and `details.detail` has the underlying error.
       content:
         application/json:
           schema:
@@ -495,6 +768,160 @@ components:
           type: string
           description: Why the secret couldn't be loaded. Never contains the value.
 
+    TargetList:
+      type: object
+      additionalProperties: false
+      required: [targets]
+      properties:
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Target"
+
+    Target:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name]
+      properties:
+        id:
+          type: string
+          description: The target as used in URLs and the session's permissions, `i-<instance id>` or `g-<group id>`.
+          examples: ["i-1"]
+        kind:
+          type: string
+          enum: [instance, group]
+        name:
+          type: string
+        health:
+          $ref: "#/components/schemas/InstanceHealth"
+
+    InstanceInput:
+      type: object
+      additionalProperties: false
+      required: [name, base_url, env_name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Unique, ignoring case. Surrounding spaces are ignored.
+        base_url:
+          type: string
+          maxLength: 2048
+          description: >-
+            http:// or https:// with a host and optional port; no username, password, query or fragment. A path prefix
+            is allowed, but not one ending in /admin or /api. Stored without a trailing slash.
+          examples: ["https://pihole1.lan"]
+        env_name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Z0-9_]+$"
+          description: Names the password variable, PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD. Unique.
+          examples: ["PIHOLE1"]
+        tls_mode:
+          type: string
+          enum: [verify, insecure]
+          description: How the Pi-hole's certificate is checked. verify if absent; insecure is for labs only.
+        ca_file:
+          type: string
+          maxLength: 4096
+          description: >-
+            Absolute path, on the server, of an extra CA bundle (PEM) to trust. Only with tls_mode verify and an
+            https:// base URL. Checked when saved.
+
+    Instance:
+      type: object
+      additionalProperties: false
+      required: [id, name, base_url, env_name, tls_mode, enabled, created_at, password_variable, password_set]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        base_url:
+          type: string
+        env_name:
+          type: string
+        tls_mode:
+          type: string
+          enum: [verify, insecure]
+        ca_file:
+          type: string
+          description: Absent when no CA file is set.
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        password_variable:
+          type: string
+          description: The variable the password is read from (or its _FILE form).
+          examples: ["PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD"]
+        password_set:
+          type: boolean
+          description: Whether that variable was set when the server started or last reloaded its secrets.
+        health:
+          $ref: "#/components/schemas/InstanceHealth"
+
+    InstanceList:
+      type: object
+      additionalProperties: false
+      required: [instances]
+      properties:
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/Instance"
+
+    InstanceHealth:
+      type: object
+      additionalProperties: false
+      required: [state]
+      description: Present only for enabled instances.
+      properties:
+        state:
+          type: string
+          enum: [unknown, up, down]
+          description: >-
+            unknown until the first call; up when Pi-hole last answered with the password accepted; down when it was
+            unreachable or refused the password, or the password or settings can't be used.
+        last_success:
+          type: string
+          format: date-time
+        last_failure:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+          description: The error code of the last failure, kept after a later success.
+
+    InstanceTestResult:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        error:
+          $ref: "#/components/schemas/InstanceTestError"
+
+    InstanceTestError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [pihole_unreachable, pihole_auth_rejected, pihole_status_error, instance_password_missing, instance_misconfigured]
+        message:
+          type: string
+          description: What went wrong, for the admin.
+        detail:
+          type: string
+          description: The underlying error, such as a TLS or connection error. Never contains the password.
+
     # The standard error envelope returned by every /api/v1 endpoint on failure.
     Error:
       type: object
@@ -515,7 +942,7 @@ components:
             Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed,
             unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required,
             invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected,
-            pihole_status_error.
+            pihole_status_error, instance_password_missing, instance_misconfigured.
         message:
           type: string
           description: Human-readable message, safe to show to the user.

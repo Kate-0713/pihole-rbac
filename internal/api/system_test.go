@@ -218,7 +218,7 @@ func TestSecretsListNeverShowsValues(t *testing.T) {
 	ctx := context.Background()
 	if err := e.st.WithTx(ctx, func(q *db.Queries) error {
 		for _, n := range []string{"PIHOLE1", "PIHOLE2"} { // PIHOLE2 has no variable at all
-			if _, err := q.CreateInstance(ctx, db.CreateInstanceParams{Name: strings.ToLower(n), BaseUrl: "http://" + n, EnvName: n, CreatedAt: 1}); err != nil {
+			if _, err := q.CreateInstance(ctx, db.CreateInstanceParams{Name: strings.ToLower(n), BaseUrl: "http://" + n, EnvName: n, TlsMode: "verify", CreatedAt: 1}); err != nil {
 				return err
 			}
 		}
