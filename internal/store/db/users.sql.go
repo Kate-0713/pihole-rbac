@@ -24,6 +24,21 @@ func (q *Queries) AddUserRole(ctx context.Context, arg AddUserRoleParams) error 
 	return err
 }
 
+const countEnabledLocalAdmins = `-- name: CountEnabledLocalAdmins :one
+SELECT COUNT(*) FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+JOIN roles r ON r.id = ur.role_id
+WHERE r.builtin = 1 AND u.source = 'local' AND u.disabled = 0
+`
+
+// Invariant 2: enabled local users holding the builtin admin role.
+func (q *Queries) CountEnabledLocalAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countEnabledLocalAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createLDAPUser = `-- name: CreateLDAPUser :one
 INSERT INTO users (username, source, ldap_dn, created_at)
 VALUES (?, 'ldap', ?, ?)
@@ -72,6 +87,24 @@ func (q *Queries) CreateLocalUser(ctx context.Context, arg CreateLocalUserParams
 		&i.LastLoginAt,
 	)
 	return i, err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	return err
+}
+
+const deleteUserRoles = `-- name: DeleteUserRoles :exec
+DELETE FROM user_roles WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUserRoles(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUserRoles, userID)
+	return err
 }
 
 const getUser = `-- name: GetUser :one

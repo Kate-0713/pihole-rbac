@@ -94,12 +94,13 @@ func TestServeFailsBeforeOpeningStore(t *testing.T) {
 func TestNewAuthenticator(t *testing.T) {
 	ldapSettings := `{"url":"ldaps://dc01.example.local","bind_dn":"cn=svc,dc=example,dc=local","base_dn":"dc=example,dc=local","user_filter":"(uid=%s)"}`
 	tests := []struct {
-		name     string
-		settings map[string]string
-		wantErr  string
+		name          string
+		settings      map[string]string
+		wantErr       string
+		wantDirectory bool
 	}{
 		{name: "defaults: local only"},
-		{name: "local and ldap", settings: map[string]string{"auth": `{"methods":["local","ldap"]}`, "ldap": ldapSettings}},
+		{name: "local and ldap", settings: map[string]string{"auth": `{"methods":["local","ldap"]}`, "ldap": ldapSettings}, wantDirectory: true},
 		{name: "ldap enabled, not configured", settings: map[string]string{"auth": `{"methods":["ldap"]}`}, wantErr: "no LDAP settings"},
 		{name: "ldap settings invalid", settings: map[string]string{
 			"auth": `{"methods":["ldap"]}`,
@@ -127,9 +128,12 @@ func TestNewAuthenticator(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = newAuthenticator(ctx, st, sec, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+			_, directory, err := newAuthenticator(ctx, st, sec, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 			if tt.wantErr == "" && err != nil {
 				t.Fatal(err)
+			}
+			if tt.wantErr == "" && (directory != nil) != tt.wantDirectory {
+				t.Fatalf("directory = %v, want one: %v", directory, tt.wantDirectory)
 			}
 			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
 				t.Fatalf("err = %v, want it to mention %q", err, tt.wantErr)

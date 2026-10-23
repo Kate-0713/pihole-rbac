@@ -31,6 +31,12 @@ const (
 	DefaultLifetime    = 8 * time.Hour
 	DefaultIdleTimeout = time.Hour
 
+	// DefaultRecheckInterval is how often an LDAP user's group membership is rechecked during a session.
+	DefaultRecheckInterval = 10 * time.Minute
+	// DefaultRecheckGrace is how long past the recheck interval an LDAP session keeps its roles while the directory
+	// can't be reached. After that the session ends.
+	DefaultRecheckGrace = 30 * time.Minute
+
 	sessionIDSize = 32
 	publicIDSize  = 16
 	// touchInterval limits how often last_seen_at is written: once a minute per session is plenty for an idle
@@ -46,10 +52,14 @@ var b64 = base64.RawURLEncoding
 
 // SessionOptions configures Sessions. Zero durations take the defaults.
 type SessionOptions struct {
-	Lifetime       time.Duration // absolute, from login
-	IdleTimeout    time.Duration // since the last request
-	CookieSecure   config.CookieSecure
-	TrustedProxies []netip.Prefix
+	Lifetime    time.Duration // absolute, from login
+	IdleTimeout time.Duration // since the last request
+	// RecheckInterval and RecheckGrace bound how long an LDAP session can go without a successful role recheck: it
+	// ends once roles_checked_at is older than their sum. See Rechecker.
+	RecheckInterval time.Duration
+	RecheckGrace    time.Duration
+	CookieSecure    config.CookieSecure
+	TrustedProxies  []netip.Prefix
 }
 
 // Sessions stores sessions in SQLite. The cookie holds the session ID and an HMAC of it under the session key; the
@@ -69,6 +79,12 @@ func NewSessions(st *store.Store, key func() secrets.Value, opts SessionOptions)
 	}
 	if opts.IdleTimeout <= 0 {
 		opts.IdleTimeout = DefaultIdleTimeout
+	}
+	if opts.RecheckInterval <= 0 {
+		opts.RecheckInterval = DefaultRecheckInterval
+	}
+	if opts.RecheckGrace <= 0 {
+		opts.RecheckGrace = DefaultRecheckGrace
 	}
 	return &Sessions{st: st, key: key, opts: opts, now: time.Now}
 }
@@ -197,6 +213,14 @@ func (s *Sessions) Get(ctx context.Context, r *http.Request) (*Session, error) {
 	lastSeen := store.FromMillis(row.LastSeenAt)
 	if row.Disabled || !now.Before(store.FromMillis(row.ExpiresAt)) || now.Sub(lastSeen) >= s.opts.IdleTimeout {
 		// Best effort: Prune removes it later if this fails.
+		_ = s.st.WithTx(ctx, func(q *db.Queries) error { return q.DeleteSession(ctx, hash[:]) })
+		return nil, ErrNoSession
+	}
+
+	// An LDAP session whose roles haven't been confirmed for longer than the interval plus the grace period ends,
+	// even if the directory is the reason they couldn't be: fail closed rather than keep roles nobody has checked.
+	if Method(row.Source) == MethodLDAP &&
+		now.Sub(store.FromMillis(row.RolesCheckedAt)) > s.opts.RecheckInterval+s.opts.RecheckGrace {
 		_ = s.st.WithTx(ctx, func(q *db.Queries) error { return q.DeleteSession(ctx, hash[:]) })
 		return nil, ErrNoSession
 	}

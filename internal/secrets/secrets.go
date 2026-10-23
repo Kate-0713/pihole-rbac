@@ -354,3 +354,31 @@ func (m *Manager) Reload() ReloadResult {
 	}
 	return res
 }
+
+// Kind says what a secret is for.
+type Kind string
+
+const (
+	KindMasterKey        Kind = "master_key"
+	KindSessionKey       Kind = "session_key"
+	KindLDAPBindPassword Kind = "ldap_bind_password"
+	KindInstancePassword Kind = "instance_password"
+	KindChannelSecret    Kind = "channel_secret"
+)
+
+// KindOf returns the kind of the secret held in variable name, or "" for a name that isn't a secret variable.
+func KindOf(name string) Kind {
+	switch {
+	case name == VarSecretKey:
+		return KindMasterKey
+	case name == VarSessionKey:
+		return KindSessionKey
+	case name == VarLDAPBindPassword:
+		return KindLDAPBindPassword
+	case strings.HasPrefix(name, instancePrefix) && strings.HasSuffix(name, instanceSuffix):
+		return KindInstancePassword
+	case strings.HasPrefix(name, channelPrefix) && strings.HasSuffix(name, channelSuffix):
+		return KindChannelSecret
+	}
+	return ""
+}

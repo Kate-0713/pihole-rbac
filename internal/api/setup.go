@@ -105,7 +105,11 @@ func (s *Server) CompleteSetup(ctx context.Context, req gen.CompleteSetupRequest
 	s.Sessions.SetCookie(ri.w, ri.r, cookie, sess.ExpiresAt)
 	sess.Username = username
 	sess.Source = auth.MethodLocal
-	return gen.CompleteSetup200JSONResponse(s.currentSession(sess)), nil
+	cur, err := s.currentSession(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+	return gen.CompleteSetup200JSONResponse(cur), nil
 }
 
 func setupValidation(msg string) gen.CompleteSetup400JSONResponse {

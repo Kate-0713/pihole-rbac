@@ -34,3 +34,16 @@ UPDATE users SET ldap_dn = ? WHERE id = ?;
 
 -- name: SetUserPassword :exec
 UPDATE users SET password_hash = ? WHERE id = ?;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?;
+
+-- name: DeleteUserRoles :exec
+DELETE FROM user_roles WHERE user_id = ?;
+
+-- Invariant 2: enabled local users holding the builtin admin role.
+-- name: CountEnabledLocalAdmins :one
+SELECT COUNT(*) FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+JOIN roles r ON r.id = ur.role_id
+WHERE r.builtin = 1 AND u.source = 'local' AND u.disabled = 0;

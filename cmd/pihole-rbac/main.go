@@ -105,7 +105,7 @@ func serve() error {
 		return err
 	}
 
-	authn, err := newAuthenticator(ctx, st, sec, cfg.LDAPCAFile, logger)
+	authn, directory, err := newAuthenticator(ctx, st, sec, cfg.LDAPCAFile, logger)
 	if err != nil {
 		return err
 	}
@@ -114,17 +114,26 @@ func serve() error {
 		TrustedProxies: cfg.TrustedProxies,
 	})
 	byIP, byUser := api.DefaultLoginLimits()
+	auditLog := audit.NewLogger(os.Stdout)
 	server := api.New(api.Options{
 		Store:          st,
 		Sessions:       sessions,
 		Auth:           authn,
-		Audit:          audit.NewLogger(os.Stdout),
+		Audit:          auditLog,
+		Secrets:        sec,
 		TrustedProxies: cfg.TrustedProxies,
 		LoginByIP:      byIP,
 		LoginByUser:    byUser,
 		Logger:         logger,
 	})
 	go pruneSessions(ctx, sessions, logger)
+	rechecker := &auth.Rechecker{
+		Store:     st,
+		Audit:     auditLog,
+		Directory: func() auth.Directory { return directory },
+		Logger:    logger,
+	}
+	go rechecker.Run(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
@@ -157,26 +166,28 @@ func serve() error {
 }
 
 // newAuthenticator builds the login chain from the saved login settings. It is swappable so saving new settings can
-// replace it without a restart.
-func newAuthenticator(ctx context.Context, st *store.Store, sec *secrets.Manager, ldapCAFile string, logger *slog.Logger) (*auth.SwappableAuthenticator, error) {
+// replace it without a restart. The directory is what the session recheck asks about logged-in LDAP users; it is nil
+// when LDAP login isn't enabled.
+func newAuthenticator(ctx context.Context, st *store.Store, sec *secrets.Manager, ldapCAFile string, logger *slog.Logger) (*auth.SwappableAuthenticator, auth.Directory, error) {
 	settings, err := auth.LoadSettings(ctx, st.Read())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	var directory auth.Directory
 	available := map[auth.Method]auth.Authenticator{
 		auth.MethodLocal: auth.NewLocalAuthenticator(auth.StoreUsers{St: st}),
 	}
 	if slices.Contains(settings.Methods, auth.MethodLDAP) {
 		ls, found, err := auth.LoadLDAPSettings(ctx, st.Read())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !found {
-			return nil, errors.New("LDAP login is enabled but no LDAP settings have been saved")
+			return nil, nil, errors.New("LDAP login is enabled but no LDAP settings have been saved")
 		}
 		ldapAuth, err := auth.NewLDAPAuthenticator(ls, sec.LDAPBindPassword, ldapCAFile)
 		if err != nil {
-			return nil, fmt.Errorf("LDAP: %w", err)
+			return nil, nil, fmt.Errorf("LDAP: %w", err)
 		}
 		if strings.HasPrefix(ls.URL, "ldap://") {
 			logger.Warn("LDAP uses ldap:// without TLS: passwords cross the network in the clear", "url", ls.URL)
@@ -185,12 +196,13 @@ func newAuthenticator(ctx context.Context, st *store.Store, sec *secrets.Manager
 			logger.Warn("LDAP login is enabled but PIHOLE_RBAC_LDAP_BIND_PASSWORD is not set; LDAP logins will fail")
 		}
 		available[auth.MethodLDAP] = ldapAuth
+		directory = ldapAuth
 	}
 	chain, err := auth.Build(settings.Methods, available)
 	if err != nil {
-		return nil, fmt.Errorf("login methods: %w", err)
+		return nil, nil, fmt.Errorf("login methods: %w", err)
 	}
-	return auth.NewSwappable(chain), nil
+	return auth.NewSwappable(chain), directory, nil
 }
 
 // pruneSessions deletes expired and idle sessions every 15 minutes until ctx ends.

@@ -470,3 +470,23 @@ func TestChannelOverrideDiscovery(t *testing.T) {
 		t.Fatalf("lowercase channel name: err = %v", err)
 	}
 }
+
+func TestKindOf(t *testing.T) {
+	tests := []struct {
+		name string
+		want Kind
+	}{
+		{VarSecretKey, KindMasterKey},
+		{VarSessionKey, KindSessionKey},
+		{VarLDAPBindPassword, KindLDAPBindPassword},
+		{InstanceVar("PIHOLE1"), KindInstancePassword},
+		{ChannelVar("OPS"), KindChannelSecret},
+		{"PIHOLE_RBAC_INSTANCE_X", ""},
+		{"HOME", ""},
+	}
+	for _, tt := range tests {
+		if got := KindOf(tt.name); got != tt.want {
+			t.Errorf("KindOf(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}

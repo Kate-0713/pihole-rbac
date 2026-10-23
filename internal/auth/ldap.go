@@ -204,6 +204,10 @@ func tlsConfigWithCNFallback(pool *x509.CertPool, host string) *tls.Config {
 	}
 }
 
+// ErrNoSuchUser is returned by Lookup when the directory has no single entry for the username: the user is gone, or
+// the filter matches several entries, which at login is refused as well.
+var ErrNoSuchUser = errors.New("no such user in the directory")
+
 // Authenticate binds as the service account, finds the user's DN with the escaped username, binds as the user to
 // check the password, binds back as the service account and searches for the groups that list the user as a member
 // (memberOf isn't reliably present across directories).
@@ -213,36 +217,20 @@ func (a *LDAPAuthenticator) Authenticate(ctx context.Context, username, password
 	if username == "" || password == "" {
 		return nil, ErrInvalidCredentials
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	bindPW, ok := a.bindPassword()
-	if !ok {
-		return nil, errors.New("PIHOLE_RBAC_LDAP_BIND_PASSWORD is not set")
-	}
-
-	conn, err := a.dial()
+	conn, bindPW, err := a.serviceConn(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	if err := conn.Bind(a.s.BindDN, bindPW.Reveal()); err != nil {
-		return nil, fmt.Errorf("service account bind failed: %w", err)
-	}
-	res, err := conn.Search(ldap.NewSearchRequest(
-		a.s.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
-		fmt.Sprintf(a.s.UserFilter, ldap.EscapeFilter(username)),
-		[]string{"dn"}, nil,
-	))
-	if err != nil {
-		return nil, fmt.Errorf("user search failed: %w", err)
-	}
-	if len(res.Entries) != 1 {
+	userDN, err := a.findUser(conn, username)
+	if errors.Is(err, ErrNoSuchUser) {
 		// No such user, or an ambiguous filter: either way, don't reveal which.
 		return nil, ErrInvalidCredentials
 	}
-	userDN := res.Entries[0].DN
+	if err != nil {
+		return nil, err
+	}
 
 	if err := conn.Bind(userDN, password); err != nil {
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
@@ -254,6 +242,68 @@ func (a *LDAPAuthenticator) Authenticate(ctx context.Context, username, password
 	if err := conn.Bind(a.s.BindDN, bindPW.Reveal()); err != nil {
 		return nil, fmt.Errorf("service account rebind failed: %w", err)
 	}
+	return a.identity(conn, username, userDN)
+}
+
+// Lookup finds a user's current DN and groups with the service account alone, for rechecking the roles of a user who
+// is already logged in. No password is involved, so nothing is bound as the user. It returns ErrNoSuchUser if the
+// directory no longer has exactly one entry for the username, and any other error if the directory couldn't be asked.
+func (a *LDAPAuthenticator) Lookup(ctx context.Context, username string) (*Identity, error) {
+	username = NormalizeUsername(username)
+	if username == "" {
+		return nil, ErrNoSuchUser
+	}
+	conn, _, err := a.serviceConn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	userDN, err := a.findUser(conn, username)
+	if err != nil {
+		return nil, err
+	}
+	return a.identity(conn, username, userDN)
+}
+
+// serviceConn connects and binds as the service account. The bind password is returned for a later rebind.
+func (a *LDAPAuthenticator) serviceConn(ctx context.Context) (ldapConn, secrets.Value, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, secrets.Value{}, err
+	}
+	bindPW, ok := a.bindPassword()
+	if !ok {
+		return nil, secrets.Value{}, errors.New("PIHOLE_RBAC_LDAP_BIND_PASSWORD is not set")
+	}
+	conn, err := a.dial()
+	if err != nil {
+		return nil, secrets.Value{}, err
+	}
+	if err := conn.Bind(a.s.BindDN, bindPW.Reveal()); err != nil {
+		conn.Close()
+		return nil, secrets.Value{}, fmt.Errorf("service account bind failed: %w", err)
+	}
+	return conn, bindPW, nil
+}
+
+// findUser returns the DN of the one entry the user filter finds for username, or ErrNoSuchUser.
+func (a *LDAPAuthenticator) findUser(conn ldapConn, username string) (string, error) {
+	res, err := conn.Search(ldap.NewSearchRequest(
+		a.s.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
+		fmt.Sprintf(a.s.UserFilter, ldap.EscapeFilter(username)),
+		[]string{"dn"}, nil,
+	))
+	if err != nil {
+		return "", fmt.Errorf("user search failed: %w", err)
+	}
+	if len(res.Entries) != 1 {
+		return "", ErrNoSuchUser
+	}
+	return res.Entries[0].DN, nil
+}
+
+// identity searches for the groups that list userDN as a member. conn must be bound as the service account.
+func (a *LDAPAuthenticator) identity(conn ldapConn, username, userDN string) (*Identity, error) {
 	groups, err := conn.Search(ldap.NewSearchRequest(
 		a.s.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
 		fmt.Sprintf("(member=%s)", ldap.EscapeFilter(userDN)),

@@ -39,6 +39,31 @@ const (
 	ActionSetup      = "setup"       // first-run setup completed (or a wrong setup token)
 	ActionSetupToken = "setup_token" // a new setup token was made with `pihole-rbac setup --print-token`
 	ActionResetAdmin = "reset_admin" // `pihole-rbac user reset-admin` was run
+
+	// Refusals of a state-changing request because the user lacks a permission, or would grant more than they hold.
+	ActionPermissionDenied = "permission_denied"
+
+	// Roles, grants and LDAP mappings.
+	ActionRoleCreate        = "role_create"
+	ActionRoleUpdate        = "role_update"
+	ActionRoleGrants        = "role_grants"
+	ActionRoleDelete        = "role_delete"
+	ActionLDAPMappingAdd    = "ldap_mapping_add"
+	ActionLDAPMappingRemove = "ldap_mapping_remove"
+
+	// Users.
+	ActionUserCreate   = "user_create"
+	ActionUserRoles    = "user_roles"
+	ActionUserDisable  = "user_disable"
+	ActionUserEnable   = "user_enable"
+	ActionUserDelete   = "user_delete"
+	ActionUserPassword = "user_password"
+
+	// Sessions.
+	ActionLDAPRecheck = "ldap_recheck" // an LDAP user's session roles changed, or their sessions ended, at a recheck
+
+	// System.
+	ActionConfigReload = "config_reload" // secrets were reloaded; the detail lists the names that changed or failed
 )
 
 // Entry is one audit event.

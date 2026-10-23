@@ -179,6 +179,7 @@ paths:
       summary: Log out
       description: Ends the current session and clears the session cookie.
       operationId: logout
+      x-permission: session
       responses:
         "204":
           description: Logged out.
@@ -193,9 +194,10 @@ paths:
     get:
       summary: The current session
       description: >-
-        Returns the logged-in user and the session's CSRF token, or 401 when there is no session. The SPA calls this
-        on load.
+        Returns the logged-in user, the session's CSRF token and the user's permissions, or 401 when there is no
+        session. The SPA calls this on load.
       operationId: getSession
+      x-permission: session
       responses:
         "200":
           description: The current session.
@@ -205,6 +207,51 @@ paths:
                 $ref: "#/components/schemas/CurrentSession"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/system/secrets:
+    get:
+      summary: List the secrets
+      description: >-
+        Every known secret with whether it is set and where it came from. Never the values. Instances in the
+        database whose password variable doesn't exist are listed as not set.
+      operationId: listSecrets
+      x-permission: config.reload
+      responses:
+        "200":
+          description: The secrets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/system/reload:
+    post:
+      summary: Reload the secrets
+      description: >-
+        Re-reads every secret that was given as a *_FILE variable. Plain environment variables only change on a
+        restart. A secret that fails to load keeps its previous value and is listed in `failed`; the response is 200
+        either way.
+      operationId: reloadSecrets
+      x-permission: config.reload
+      responses:
+        "200":
+          description: What the reload changed and what failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReloadResult"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/SetupRequired"
 
@@ -224,8 +271,8 @@ components:
             $ref: "#/components/schemas/Error"
     Forbidden:
       description: >-
-        Not allowed (code forbidden), or the CSRF or Origin check failed on a state-changing request (code
-        csrf_failed).
+        Not allowed (code forbidden, with `details.permission` naming the missing permission), or the CSRF or Origin
+        check failed on a state-changing request (code csrf_failed).
       content:
         application/json:
           schema:
@@ -349,7 +396,7 @@ components:
     CurrentSession:
       type: object
       additionalProperties: false
-      required: [user, public_id, expires_at, csrf_token]
+      required: [user, public_id, expires_at, csrf_token, permissions]
       properties:
         user:
           $ref: "#/components/schemas/SessionUser"
@@ -363,6 +410,90 @@ components:
         csrf_token:
           type: string
           description: Send as the X-CSRF-Token header on every state-changing request.
+        permissions:
+          $ref: "#/components/schemas/Permissions"
+
+    Permissions:
+      type: object
+      additionalProperties: false
+      required: [global, targets]
+      description: >-
+        What the user may do, worked out by the server from their roles and the current groups. The server checks
+        every request again; this is for the UI.
+      properties:
+        global:
+          type: array
+          items:
+            type: string
+          description: The global permissions the user holds, sorted.
+        targets:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: >-
+            By target (`i-<instance id>` or `g-<mirrored group id>`): the permissions the user holds there, sorted.
+            Lists every instance and mirrored group where the user holds at least one.
+          examples:
+            - { "i-1": ["domains.view"], "g-2": ["domains.view", "drift.view"] }
+
+    SecretList:
+      type: object
+      additionalProperties: false
+      required: [secrets]
+      properties:
+        secrets:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecretStatus"
+
+    SecretStatus:
+      type: object
+      additionalProperties: false
+      required: [name, kind, set]
+      properties:
+        name:
+          type: string
+          description: The environment variable, without a _FILE suffix.
+        kind:
+          type: string
+          enum: [master_key, session_key, ldap_bind_password, instance_password, channel_secret]
+        set:
+          type: boolean
+        source:
+          type: string
+          enum: [env, file, generated]
+          description: Where the value came from. Absent when the secret isn't set. Only `file` can change on a reload.
+
+    ReloadResult:
+      type: object
+      additionalProperties: false
+      required: [changed, failed, session_ended]
+      properties:
+        changed:
+          type: array
+          items:
+            type: string
+          description: Variables whose value changed.
+        failed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReloadFailure"
+        session_ended:
+          type: boolean
+          description: True when the session key changed, which ends every session including the caller's.
+
+    ReloadFailure:
+      type: object
+      additionalProperties: false
+      required: [name, message]
+      properties:
+        name:
+          type: string
+        message:
+          type: string
+          description: Why the secret couldn't be loaded. Never contains the value.
 
     # The standard error envelope returned by every /api/v1 endpoint on failure.
     Error:
@@ -382,7 +513,7 @@ components:
           type: string
           description: >-
             Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed,
-            unsupported_media_type, not_found, conflict, invariant_violated, rate_limited, setup_required,
+            unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required,
             invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected,
             pihole_status_error.
         message:

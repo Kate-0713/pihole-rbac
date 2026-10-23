@@ -6,19 +6,51 @@ package api
 import (
 	"net/http"
 	"strings"
+
+	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
 
 // Routes come from api/openapi.yaml through the generated gen.HandlerWithOptions; see New.
 
-// publicRoutes are the operations that work without a session: those with `security: []` in api/openapi.yaml.
-// State-changing requests among them still need the CSRF and Origin checks.
-var publicRoutes = map[string]bool{
-	"GET /healthz":             true,
-	"GET /api/v1/about":        true,
-	"GET /api/v1/auth/csrf":    true,
-	"POST /api/v1/auth/login":  true,
-	"GET /api/v1/setup/status": true,
-	"POST /api/v1/setup":       true,
+// Access values for routePermission besides a permission name.
+const (
+	accessPublic  = "public"  // no session needed: `security: []` in the spec, no x-permission
+	accessSession = "session" // any session: x-permission: session
+	targetPrefix  = "target:" // the handler checks the permission against a target: x-permission: target:<permission>
+)
+
+// routePermission says what each operation needs, keyed by the mux pattern (r.Pattern). It repeats the x-permission
+// extensions of api/openapi.yaml, and TestRoutePermissionsMatchSpec checks the two against each other in both
+// directions, so an operation can't ship without a declared permission. A value is accessPublic, accessSession, a
+// global permission (checked by the gate) or "target:<permission>" (checked by the handler with authorize, once it has
+// parsed the target). Public operations still need the CSRF and Origin checks when they change state.
+var routePermission = map[string]string{
+	"GET /healthz":             accessPublic,
+	"GET /api/v1/about":        accessPublic,
+	"GET /api/v1/auth/csrf":    accessPublic,
+	"POST /api/v1/auth/login":  accessPublic,
+	"GET /api/v1/setup/status": accessPublic,
+	"POST /api/v1/setup":       accessPublic,
+
+	"POST /api/v1/auth/logout": accessSession,
+	"GET /api/v1/auth/session": accessSession,
+
+	"GET /api/v1/system/secrets": string(rbac.ConfigReload),
+	"POST /api/v1/system/reload": string(rbac.ConfigReload),
+}
+
+// parseAccess splits a routePermission value. ok is false for a value that isn't valid: unknown permission, a
+// target-scoped one where a global one is needed, or the other way round.
+func parseAccess(v string) (kind, permission string, ok bool) {
+	switch {
+	case v == accessPublic || v == accessSession:
+		return v, "", true
+	case strings.HasPrefix(v, targetPrefix):
+		p := rbac.Permission(strings.TrimPrefix(v, targetPrefix))
+		return "target", string(p), p.Known() && p.Class() != rbac.ClassGlobal
+	}
+	p := rbac.Permission(v)
+	return "global", v, p.Known() && p.Class() == rbac.ClassGlobal
 }
 
 // setupRoutes are the operations that work before first-run setup is complete. Every other API route answers 503

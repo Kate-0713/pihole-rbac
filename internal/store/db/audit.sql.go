@@ -72,3 +72,42 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) (int64
 	err := row.Scan(&id)
 	return id, err
 }
+
+const listRecentAudit = `-- name: ListRecentAudit :many
+SELECT id, at, user_id, username, "action", target, instance_id, instance_name, result, detail, ip FROM audit_log ORDER BY id DESC LIMIT ?
+`
+
+func (q *Queries) ListRecentAudit(ctx context.Context, limit int64) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentAudit, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.At,
+			&i.UserID,
+			&i.Username,
+			&i.Action,
+			&i.Target,
+			&i.InstanceID,
+			&i.InstanceName,
+			&i.Result,
+			&i.Detail,
+			&i.Ip,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

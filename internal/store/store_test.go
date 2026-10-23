@@ -120,13 +120,7 @@ func TestReaderIsReadOnly(t *testing.T) {
 }
 
 func TestBuiltinAdminSeeded(t *testing.T) {
-	// Once internal/rbac holds the permission catalogue, this list should come from there instead.
-	want := []string{
-		"app.update", "audit.view", "blocking.toggle", "clientreset.run", "clients.edit", "clients.view",
-		"config.reload", "dns.restart", "domains.edit", "domains.view", "drift.reconcile", "drift.view",
-		"instances.manage", "notifications.manage", "querylog.view", "roles.manage", "sessions.manage",
-		"settings.manage", "users.manage",
-	}
+	// internal/rbac checks that the grants match the permission catalogue exactly; this only checks their shape.
 	s := openTest(t)
 	ctx := context.Background()
 	role, err := s.Read().GetRoleByName(ctx, "admin")
@@ -140,15 +134,13 @@ func TestBuiltinAdminSeeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
+	if len(grants) == 0 {
+		t.Fatal("admin role has no grants")
+	}
 	for _, g := range grants {
 		if g.ScopeType != "all" {
 			t.Errorf("admin grant %s has scope %q, want all", g.Permission, g.ScopeType)
 		}
-		got = append(got, g.Permission)
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("admin grants =\n  %v\nwant\n  %v", got, want)
 	}
 }
 

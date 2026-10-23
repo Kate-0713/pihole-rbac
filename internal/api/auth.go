@@ -40,20 +40,30 @@ func (s *Server) GetCSRFToken(ctx context.Context, _ gen.GetCSRFTokenRequestObje
 
 // GetSession returns the current session. The gate has already refused requests without one.
 func (s *Server) GetSession(ctx context.Context, _ gen.GetSessionRequestObject) (gen.GetSessionResponseObject, error) {
-	return gen.GetSession200JSONResponse(s.currentSession(info(ctx).sess)), nil
+	cur, err := s.currentSession(ctx, info(ctx).sess)
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetSession200JSONResponse(cur), nil
 }
 
-func (s *Server) currentSession(sess *auth.Session) gen.CurrentSession {
+// currentSession is the session object that GET /auth/session, login and setup return.
+func (s *Server) currentSession(ctx context.Context, sess *auth.Session) (gen.CurrentSession, error) {
+	perms, err := s.sessionPermissions(ctx, sess)
+	if err != nil {
+		return gen.CurrentSession{}, err
+	}
 	return gen.CurrentSession{
 		User: gen.SessionUser{
 			Id:       sess.UserID,
 			Username: sess.Username,
 			Source:   gen.SessionUserSource(sess.Source),
 		},
-		PublicId:  sess.PublicID,
-		ExpiresAt: sess.ExpiresAt.UTC(),
-		CsrfToken: s.Sessions.CSRFToken(sess),
-	}
+		PublicId:    sess.PublicID,
+		ExpiresAt:   sess.ExpiresAt.UTC(),
+		CsrfToken:   s.Sessions.CSRFToken(sess),
+		Permissions: perms,
+	}, nil
 }
 
 // Login checks the credentials and starts a session. Failed attempts count against the client address and the
@@ -159,7 +169,11 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 	s.Sessions.SetCookie(ri.w, ri.r, cookie, sess.ExpiresAt)
 	sess.Username = id.Username
 	sess.Source = id.Source
-	return gen.Login200JSONResponse(s.currentSession(sess)), nil
+	cur, err := s.currentSession(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+	return gen.Login200JSONResponse(cur), nil
 }
 
 // rolesFor returns the user row and role IDs for a verified identity, inside the login transaction.

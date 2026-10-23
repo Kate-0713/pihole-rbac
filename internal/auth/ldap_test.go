@@ -386,3 +386,73 @@ func TestLDAPTLSModes(t *testing.T) {
 		t.Fatal("a file with no certificate was accepted")
 	}
 }
+
+func TestLDAPLookup(t *testing.T) {
+	d := newFakeDirectory()
+	id, err := ldapAuthWith(t, d, "svc-secret").Lookup(context.Background(), " Alice ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantGroups := []string{"CN=Everyone,OU=Groups,DC=example,DC=local", "CN=Pihole-Admin,OU=Groups,DC=example,DC=local"}
+	if id.Username != "alice" || id.Source != MethodLDAP || id.DN != aliceDN || !slices.Equal(id.Groups, wantGroups) {
+		t.Fatalf("identity = %+v", id)
+	}
+	// Only the service account is ever bound: no password is involved.
+	if !slices.Equal(d.binds, []string{d.svcDN}) {
+		t.Fatalf("binds = %v", d.binds)
+	}
+	if !d.closed {
+		t.Fatal("connection not closed")
+	}
+}
+
+func TestLDAPLookupFailures(t *testing.T) {
+	tests := []struct {
+		name       string
+		user       string
+		bindPW     string
+		modify     func(*fakeDirectory)
+		noSuchUser bool
+	}{
+		{name: "unknown user", user: "mallory", bindPW: "svc-secret", noSuchUser: true},
+		{name: "empty username", user: "  ", bindPW: "svc-secret", noSuchUser: true},
+		{name: "ambiguous filter", user: "alice", bindPW: "svc-secret", noSuchUser: true,
+			modify: func(d *fakeDirectory) {
+				d.uids["alice"] = append(d.uids["alice"], "CN=Other Alice,DC=example,DC=local")
+			}},
+		{name: "wrong service password", user: "alice", bindPW: "wrong"},
+		{name: "no service password", user: "alice", bindPW: ""},
+		{name: "server unreachable", user: "alice", bindPW: "svc-secret",
+			modify: func(d *fakeDirectory) { d.dialErr = errors.New("connecting to LDAP: i/o timeout") }},
+		{name: "search fails", user: "alice", bindPW: "svc-secret",
+			modify: func(d *fakeDirectory) { d.searchErr = errors.New("busy") }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newFakeDirectory()
+			if tt.modify != nil {
+				tt.modify(d)
+			}
+			id, err := ldapAuthWith(t, d, tt.bindPW).Lookup(context.Background(), tt.user)
+			if err == nil || id != nil {
+				t.Fatalf("got %+v, %v; want an error", id, err)
+			}
+			if errors.Is(err, ErrNoSuchUser) != tt.noSuchUser {
+				t.Fatalf("err = %v; no such user = %v, want %v", err, errors.Is(err, ErrNoSuchUser), tt.noSuchUser)
+			}
+			if errors.Is(err, ErrInvalidCredentials) || strings.Contains(err.Error(), "svc-secret") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
+
+func TestLDAPLookupEscapesTheUsername(t *testing.T) {
+	d := newFakeDirectory()
+	if _, err := ldapAuthWith(t, d, "svc-secret").Lookup(context.Background(), "a*)(uid=*"); !errors.Is(err, ErrNoSuchUser) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(d.filters) != 1 || strings.Contains(d.filters[0], "*)(") {
+		t.Fatalf("filters = %q", d.filters)
+	}
+}

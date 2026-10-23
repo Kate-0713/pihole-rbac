@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const addSessionRole = `-- name: AddSessionRole :exec
@@ -20,6 +21,30 @@ type AddSessionRoleParams struct {
 
 func (q *Queries) AddSessionRole(ctx context.Context, arg AddSessionRoleParams) error {
 	_, err := q.db.ExecContext(ctx, addSessionRole, arg.SessionIDHash, arg.RoleID)
+	return err
+}
+
+const addSessionRoleForUser = `-- name: AddSessionRoleForUser :exec
+INSERT INTO session_roles (session_id_hash, role_id)
+SELECT id_hash, ?1 FROM sessions WHERE user_id = ?2
+`
+
+type AddSessionRoleForUserParams struct {
+	RoleID int64
+	UserID int64
+}
+
+func (q *Queries) AddSessionRoleForUser(ctx context.Context, arg AddSessionRoleForUserParams) error {
+	_, err := q.db.ExecContext(ctx, addSessionRoleForUser, arg.RoleID, arg.UserID)
+	return err
+}
+
+const clearSessionRolesForUser = `-- name: ClearSessionRolesForUser :exec
+DELETE FROM session_roles WHERE session_id_hash IN (SELECT id_hash FROM sessions WHERE user_id = ?)
+`
+
+func (q *Queries) ClearSessionRolesForUser(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, clearSessionRolesForUser, userID)
 	return err
 }
 
@@ -96,6 +121,23 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) (int64, 
 	return result.RowsAffected()
 }
 
+const deleteUserSessionsExcept = `-- name: DeleteUserSessionsExcept :execrows
+DELETE FROM sessions WHERE user_id = ? AND public_id <> ?
+`
+
+type DeleteUserSessionsExceptParams struct {
+	UserID   int64
+	PublicID string
+}
+
+func (q *Queries) DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSessionsExceptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserSessionsExcept, arg.UserID, arg.PublicID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getSessionWithUser = `-- name: GetSessionWithUser :one
 SELECT s.id_hash, s.public_id, s.user_id, s.created_at, s.expires_at, s.last_seen_at, s.roles_checked_at,
        s.ip, s.user_agent, u.username, u.source, u.disabled
@@ -139,6 +181,50 @@ func (q *Queries) GetSessionWithUser(ctx context.Context, idHash []byte) (GetSes
 	return i, err
 }
 
+const listLDAPUsersDueForRecheck = `-- name: ListLDAPUsersDueForRecheck :many
+SELECT DISTINCT u.id, u.username, u.disabled, u.ldap_dn
+FROM users u
+JOIN sessions s ON s.user_id = u.id
+WHERE u.source = 'ldap' AND s.roles_checked_at <= ?1
+ORDER BY u.id
+`
+
+type ListLDAPUsersDueForRecheckRow struct {
+	ID       int64
+	Username string
+	Disabled bool
+	LdapDn   sql.NullString
+}
+
+// The LDAP users with at least one session whose roles were last checked at or before cutoff.
+func (q *Queries) ListLDAPUsersDueForRecheck(ctx context.Context, cutoff int64) ([]ListLDAPUsersDueForRecheckRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLDAPUsersDueForRecheck, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLDAPUsersDueForRecheckRow{}
+	for rows.Next() {
+		var i ListLDAPUsersDueForRecheckRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Disabled,
+			&i.LdapDn,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionRoleIDs = `-- name: ListSessionRoleIDs :many
 SELECT role_id FROM session_roles WHERE session_id_hash = ? ORDER BY role_id
 `
@@ -164,6 +250,108 @@ func (q *Queries) ListSessionRoleIDs(ctx context.Context, sessionIDHash []byte) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const listSessionRoleIDsForUser = `-- name: ListSessionRoleIDsForUser :many
+SELECT DISTINCT sr.role_id FROM session_roles sr JOIN sessions s ON s.id_hash = sr.session_id_hash
+WHERE s.user_id = ?
+ORDER BY sr.role_id
+`
+
+// The roles held by any of a user's sessions. For LDAP users this is the only record of their roles.
+func (q *Queries) ListSessionRoleIDsForUser(ctx context.Context, userID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionRoleIDsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var role_id int64
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserSessions = `-- name: ListUserSessions :many
+SELECT id_hash, public_id, user_id, created_at, expires_at, last_seen_at, roles_checked_at, ip, user_agent FROM sessions WHERE user_id = ? ORDER BY created_at, public_id
+`
+
+func (q *Queries) ListUserSessions(ctx context.Context, userID int64) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, listUserSessions, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.IDHash,
+			&i.PublicID,
+			&i.UserID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RolesCheckedAt,
+			&i.Ip,
+			&i.UserAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markRoleSessionsDue = `-- name: MarkRoleSessionsDue :execrows
+UPDATE sessions SET roles_checked_at = MIN(roles_checked_at, CAST(?1 AS INTEGER))
+WHERE user_id IN (SELECT id FROM users WHERE source = 'ldap')
+  AND id_hash IN (SELECT session_id_hash FROM session_roles WHERE role_id = ?2)
+`
+
+type MarkRoleSessionsDueParams struct {
+	Due    int64
+	RoleID int64
+}
+
+// Makes the LDAP sessions holding a role due for recheck: roles_checked_at becomes at most due, which the caller
+// sets to one recheck interval ago. It never moves later, so a session's grace period can't be extended.
+func (q *Queries) MarkRoleSessionsDue(ctx context.Context, arg MarkRoleSessionsDueParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markRoleSessionsDue, arg.Due, arg.RoleID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setUserSessionsRolesChecked = `-- name: SetUserSessionsRolesChecked :exec
+UPDATE sessions SET roles_checked_at = ? WHERE user_id = ?
+`
+
+type SetUserSessionsRolesCheckedParams struct {
+	RolesCheckedAt int64
+	UserID         int64
+}
+
+func (q *Queries) SetUserSessionsRolesChecked(ctx context.Context, arg SetUserSessionsRolesCheckedParams) error {
+	_, err := q.db.ExecContext(ctx, setUserSessionsRolesChecked, arg.RolesCheckedAt, arg.UserID)
+	return err
 }
 
 const touchSession = `-- name: TouchSession :exec

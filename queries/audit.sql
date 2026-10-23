@@ -8,3 +8,6 @@ RETURNING id;
 
 -- name: GetAudit :one
 SELECT * FROM audit_log WHERE id = ?;
+
+-- name: ListRecentAudit :many
+SELECT * FROM audit_log ORDER BY id DESC LIMIT ?;

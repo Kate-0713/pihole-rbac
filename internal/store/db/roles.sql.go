@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 )
 
@@ -45,6 +46,30 @@ func (q *Queries) AddRoleLDAPGroup(ctx context.Context, arg AddRoleLDAPGroupPara
 	return err
 }
 
+const createLDAPMapping = `-- name: CreateLDAPMapping :one
+INSERT INTO role_ldap_groups (role_id, group_dn, group_dn_norm, created_at) VALUES (?, ?, ?, ?)
+RETURNING id
+`
+
+type CreateLDAPMappingParams struct {
+	RoleID      int64
+	GroupDn     string
+	GroupDnNorm string
+	CreatedAt   int64
+}
+
+func (q *Queries) CreateLDAPMapping(ctx context.Context, arg CreateLDAPMappingParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createLDAPMapping,
+		arg.RoleID,
+		arg.GroupDn,
+		arg.GroupDnNorm,
+		arg.CreatedAt,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createRole = `-- name: CreateRole :one
 INSERT INTO roles (name, description, created_at) VALUES (?, ?, ?)
 RETURNING id
@@ -63,12 +88,73 @@ func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (int64, 
 	return id, err
 }
 
+const deleteLDAPMapping = `-- name: DeleteLDAPMapping :exec
+DELETE FROM role_ldap_groups WHERE id = ?
+`
+
+func (q *Queries) DeleteLDAPMapping(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteLDAPMapping, id)
+	return err
+}
+
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = ?
+`
+
+func (q *Queries) DeleteRole(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteRole, id)
+	return err
+}
+
+const deleteRoleGrants = `-- name: DeleteRoleGrants :exec
+DELETE FROM role_grants WHERE role_id = ?
+`
+
+func (q *Queries) DeleteRoleGrants(ctx context.Context, roleID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteRoleGrants, roleID)
+	return err
+}
+
 const getBuiltinRole = `-- name: GetBuiltinRole :one
 SELECT id, name, description, builtin, created_at FROM roles WHERE builtin = 1
 `
 
 func (q *Queries) GetBuiltinRole(ctx context.Context) (Role, error) {
 	row := q.db.QueryRowContext(ctx, getBuiltinRole)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Builtin,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getLDAPMapping = `-- name: GetLDAPMapping :one
+SELECT id, role_id, group_dn, group_dn_norm, created_at FROM role_ldap_groups WHERE id = ?
+`
+
+func (q *Queries) GetLDAPMapping(ctx context.Context, id int64) (RoleLdapGroup, error) {
+	row := q.db.QueryRowContext(ctx, getLDAPMapping, id)
+	var i RoleLdapGroup
+	err := row.Scan(
+		&i.ID,
+		&i.RoleID,
+		&i.GroupDn,
+		&i.GroupDnNorm,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRole = `-- name: GetRole :one
+SELECT id, name, description, builtin, created_at FROM roles WHERE id = ?
+`
+
+func (q *Queries) GetRole(ctx context.Context, id int64) (Role, error) {
+	row := q.db.QueryRowContext(ctx, getRole, id)
 	var i Role
 	err := row.Scan(
 		&i.ID,
@@ -100,6 +186,29 @@ func (q *Queries) GetRoleByName(ctx context.Context, name string) (Role, error) 
 	return i, err
 }
 
+const insertGrant = `-- name: InsertGrant :exec
+INSERT INTO role_grants (role_id, permission, scope_type, instance_id, group_id) VALUES (?, ?, ?, ?, ?)
+`
+
+type InsertGrantParams struct {
+	RoleID     int64
+	Permission string
+	ScopeType  string
+	InstanceID sql.NullInt64
+	GroupID    sql.NullInt64
+}
+
+func (q *Queries) InsertGrant(ctx context.Context, arg InsertGrantParams) error {
+	_, err := q.db.ExecContext(ctx, insertGrant,
+		arg.RoleID,
+		arg.Permission,
+		arg.ScopeType,
+		arg.InstanceID,
+		arg.GroupID,
+	)
+	return err
+}
+
 const listGrantsForRole = `-- name: ListGrantsForRole :many
 SELECT id, role_id, permission, scope_type, instance_id, group_id FROM role_grants
 WHERE role_id = ?
@@ -122,6 +231,85 @@ func (q *Queries) ListGrantsForRole(ctx context.Context, roleID int64) ([]RoleGr
 			&i.ScopeType,
 			&i.InstanceID,
 			&i.GroupID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGrantsForRoles = `-- name: ListGrantsForRoles :many
+SELECT id, role_id, permission, scope_type, instance_id, group_id FROM role_grants
+WHERE role_id IN (/*SLICE:role_ids*/?)
+ORDER BY role_id, permission, scope_type, instance_id, group_id
+`
+
+func (q *Queries) ListGrantsForRoles(ctx context.Context, roleIds []int64) ([]RoleGrant, error) {
+	query := listGrantsForRoles
+	var queryParams []interface{}
+	if len(roleIds) > 0 {
+		for _, v := range roleIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:role_ids*/?", strings.Repeat(",?", len(roleIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:role_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RoleGrant{}
+	for rows.Next() {
+		var i RoleGrant
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.Permission,
+			&i.ScopeType,
+			&i.InstanceID,
+			&i.GroupID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLDAPMappingsForRole = `-- name: ListLDAPMappingsForRole :many
+SELECT id, role_id, group_dn, group_dn_norm, created_at FROM role_ldap_groups WHERE role_id = ? ORDER BY group_dn
+`
+
+func (q *Queries) ListLDAPMappingsForRole(ctx context.Context, roleID int64) ([]RoleLdapGroup, error) {
+	rows, err := q.db.QueryContext(ctx, listLDAPMappingsForRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RoleLdapGroup{}
+	for rows.Next() {
+		var i RoleLdapGroup
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.GroupDn,
+			&i.GroupDnNorm,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -173,4 +361,94 @@ func (q *Queries) ListRoleIDsForLDAPGroups(ctx context.Context, groupDns []strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRolesWithGrantsOnGroup = `-- name: ListRolesWithGrantsOnGroup :many
+SELECT DISTINCT r.name FROM role_grants g JOIN roles r ON r.id = g.role_id
+WHERE g.group_id = ?1 AND g.permission IN (/*SLICE:permissions*/?)
+ORDER BY r.name
+`
+
+type ListRolesWithGrantsOnGroupParams struct {
+	GroupID     sql.NullInt64
+	Permissions []string
+}
+
+// Roles holding any of the given permissions on a group, for the mirrored-to-independent check.
+func (q *Queries) ListRolesWithGrantsOnGroup(ctx context.Context, arg ListRolesWithGrantsOnGroupParams) ([]string, error) {
+	query := listRolesWithGrantsOnGroup
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.GroupID)
+	if len(arg.Permissions) > 0 {
+		for _, v := range arg.Permissions {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:permissions*/?", strings.Repeat(",?", len(arg.Permissions))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:permissions*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsernamesWithRole = `-- name: ListUsernamesWithRole :many
+SELECT u.username FROM user_roles ur JOIN users u ON u.id = ur.user_id
+WHERE ur.role_id = ?
+ORDER BY u.username
+`
+
+func (q *Queries) ListUsernamesWithRole(ctx context.Context, roleID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listUsernamesWithRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var username string
+		if err := rows.Scan(&username); err != nil {
+			return nil, err
+		}
+		items = append(items, username)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateRole = `-- name: UpdateRole :exec
+UPDATE roles SET name = ?, description = ? WHERE id = ?
+`
+
+type UpdateRoleParams struct {
+	Name        string
+	Description string
+	ID          int64
+}
+
+func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateRole, arg.Name, arg.Description, arg.ID)
+	return err
 }

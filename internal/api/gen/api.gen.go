@@ -14,6 +14,54 @@ import (
 	"time"
 )
 
+// Defines values for SecretStatusKind.
+const (
+	ChannelSecret    SecretStatusKind = "channel_secret"
+	InstancePassword SecretStatusKind = "instance_password"
+	LdapBindPassword SecretStatusKind = "ldap_bind_password"
+	MasterKey        SecretStatusKind = "master_key"
+	SessionKey       SecretStatusKind = "session_key"
+)
+
+// Valid indicates whether the value is a known member of the SecretStatusKind enum.
+func (e SecretStatusKind) Valid() bool {
+	switch e {
+	case ChannelSecret:
+		return true
+	case InstancePassword:
+		return true
+	case LdapBindPassword:
+		return true
+	case MasterKey:
+		return true
+	case SessionKey:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretStatusSource.
+const (
+	Env       SecretStatusSource = "env"
+	File      SecretStatusSource = "file"
+	Generated SecretStatusSource = "generated"
+)
+
+// Valid indicates whether the value is a known member of the SecretStatusSource enum.
+func (e SecretStatusSource) Valid() bool {
+	switch e {
+	case Env:
+		return true
+	case File:
+		return true
+	case Generated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionUserSource.
 const (
 	Ldap  SessionUserSource = "ldap"
@@ -59,6 +107,9 @@ type CurrentSession struct {
 	// ExpiresAt When the session ends at the latest. It also ends after a period without requests.
 	ExpiresAt time.Time `json:"expires_at"`
 
+	// Permissions What the user may do, worked out by the server from their roles and the current groups. The server checks every request again; this is for the UI.
+	Permissions Permissions `json:"permissions"`
+
 	// PublicId Identifies this session in the sessions list and the audit log. Can't be used to authenticate.
 	PublicId string      `json:"public_id"`
 	User     SessionUser `json:"user"`
@@ -71,7 +122,7 @@ type Error struct {
 
 // ErrorBody defines model for ErrorBody.
 type ErrorBody struct {
-	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error.
+	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error.
 	Code string `json:"code"`
 
 	// Details Optional structured context, e.g. which instance failed.
@@ -88,6 +139,57 @@ type LoginRequest struct {
 	// Username Case-insensitive; surrounding spaces are ignored.
 	Username string `json:"username"`
 }
+
+// Permissions What the user may do, worked out by the server from their roles and the current groups. The server checks every request again; this is for the UI.
+type Permissions struct {
+	// Global The global permissions the user holds, sorted.
+	Global []string `json:"global"`
+
+	// Targets By target (`i-<instance id>` or `g-<mirrored group id>`): the permissions the user holds there, sorted. Lists every instance and mirrored group where the user holds at least one.
+	//
+	// Examples: {"g-2":["domains.view","drift.view"],"i-1":["domains.view"]}
+	Targets map[string][]string `json:"targets"`
+}
+
+// ReloadFailure defines model for ReloadFailure.
+type ReloadFailure struct {
+	// Message Why the secret couldn't be loaded. Never contains the value.
+	Message string `json:"message"`
+	Name    string `json:"name"`
+}
+
+// ReloadResult defines model for ReloadResult.
+type ReloadResult struct {
+	// Changed Variables whose value changed.
+	Changed []string        `json:"changed"`
+	Failed  []ReloadFailure `json:"failed"`
+
+	// SessionEnded True when the session key changed, which ends every session including the caller's.
+	SessionEnded bool `json:"session_ended"`
+}
+
+// SecretList defines model for SecretList.
+type SecretList struct {
+	Secrets []SecretStatus `json:"secrets"`
+}
+
+// SecretStatus defines model for SecretStatus.
+type SecretStatus struct {
+	Kind SecretStatusKind `json:"kind"`
+
+	// Name The environment variable, without a _FILE suffix.
+	Name string `json:"name"`
+	Set  bool   `json:"set"`
+
+	// Source Where the value came from. Absent when the secret isn't set. Only `file` can change on a reload.
+	Source *SecretStatusSource `json:"source,omitempty"`
+}
+
+// SecretStatusKind defines model for SecretStatus.Kind.
+type SecretStatusKind string
+
+// SecretStatusSource Where the value came from. Absent when the secret isn't set. Only `file` can change on a reload.
+type SecretStatusSource string
 
 // SessionUser defines model for SessionUser.
 type SessionUser struct {
@@ -164,6 +266,12 @@ type ServerInterface interface {
 	// GetSetupStatus Whether first-run setup is still needed
 	// (GET /api/v1/setup/status)
 	GetSetupStatus(w http.ResponseWriter, r *http.Request)
+	// ReloadSecrets Reload the secrets
+	// (POST /api/v1/system/reload)
+	ReloadSecrets(w http.ResponseWriter, r *http.Request)
+	// ListSecrets List the secrets
+	// (GET /api/v1/system/secrets)
+	ListSecrets(w http.ResponseWriter, r *http.Request)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(w http.ResponseWriter, r *http.Request)
@@ -267,6 +375,34 @@ func (siw *ServerInterfaceWrapper) GetSetupStatus(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSetupStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReloadSecrets operation middleware
+func (siw *ServerInterfaceWrapper) ReloadSecrets(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReloadSecrets(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSecrets operation middleware
+func (siw *ServerInterfaceWrapper) ListSecrets(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSecrets(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -418,6 +554,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/session", wrapper.GetSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/secrets", wrapper.ListSecrets)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/reload", wrapper.ReloadSecrets)
 
 	return m
 }
@@ -832,6 +970,132 @@ func (response GetSetupStatus200JSONResponse) VisitGetSetupStatusResponse(w http
 	return err
 }
 
+type ReloadSecretsRequestObject struct {
+}
+
+type ReloadSecretsResponseObject interface {
+	VisitReloadSecretsResponse(w http.ResponseWriter) error
+}
+
+type ReloadSecrets200JSONResponse ReloadResult
+
+func (response ReloadSecrets200JSONResponse) VisitReloadSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReloadSecrets401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ReloadSecrets401JSONResponse) VisitReloadSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReloadSecrets403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ReloadSecrets403JSONResponse) VisitReloadSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReloadSecrets503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ReloadSecrets503JSONResponse) VisitReloadSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSecretsRequestObject struct {
+}
+
+type ListSecretsResponseObject interface {
+	VisitListSecretsResponse(w http.ResponseWriter) error
+}
+
+type ListSecrets200JSONResponse SecretList
+
+func (response ListSecrets200JSONResponse) VisitListSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSecrets401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSecrets401JSONResponse) VisitListSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSecrets403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSecrets403JSONResponse) VisitListSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSecrets503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListSecrets503JSONResponse) VisitListSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type HealthzRequestObject struct {
 }
 
@@ -873,6 +1137,12 @@ type StrictServerInterface interface {
 	// GetSetupStatus Whether first-run setup is still needed
 	// (GET /api/v1/setup/status)
 	GetSetupStatus(ctx context.Context, request GetSetupStatusRequestObject) (GetSetupStatusResponseObject, error)
+	// ReloadSecrets Reload the secrets
+	// (POST /api/v1/system/reload)
+	ReloadSecrets(ctx context.Context, request ReloadSecretsRequestObject) (ReloadSecretsResponseObject, error)
+	// ListSecrets List the secrets
+	// (GET /api/v1/system/secrets)
+	ListSecrets(ctx context.Context, request ListSecretsRequestObject) (ListSecretsResponseObject, error)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(ctx context.Context, request HealthzRequestObject) (HealthzResponseObject, error)
@@ -1092,6 +1362,54 @@ func (sh *strictHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSetupStatusResponseObject); ok {
 		if err := validResponse.VisitGetSetupStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReloadSecrets operation middleware
+func (sh *strictHandler) ReloadSecrets(w http.ResponseWriter, r *http.Request) {
+	var request ReloadSecretsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReloadSecrets(ctx, request.(ReloadSecretsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReloadSecrets")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReloadSecretsResponseObject); ok {
+		if err := validResponse.VisitReloadSecretsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSecrets operation middleware
+func (sh *strictHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
+	var request ListSecretsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSecrets(ctx, request.(ListSecretsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSecrets")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSecretsResponseObject); ok {
+		if err := validResponse.VisitListSecretsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

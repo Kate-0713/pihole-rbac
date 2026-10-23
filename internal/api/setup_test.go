@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +96,9 @@ func TestSetupFlow(t *testing.T) {
 	_ = json.Unmarshal(res.Body.Bytes(), &s)
 	if s.User.Username != "kate" || s.User.Source != gen.Local || res.cookie(auth.SessionCookie) == nil {
 		t.Fatalf("session = %+v", s)
+	}
+	if !slices.Contains(s.Permissions.Global, "users.manage") || len(s.Permissions.Targets) != 0 {
+		t.Fatalf("the new admin's permissions = %+v (no instances exist yet)", s.Permissions)
 	}
 
 	// Logged in straight away, as an admin.

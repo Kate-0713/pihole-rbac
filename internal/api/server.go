@@ -22,6 +22,8 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
+	"github.com/Kate-0713/pihole-rbac/internal/rbac"
+	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 )
 
@@ -39,6 +41,7 @@ type Options struct {
 	Sessions       *auth.Sessions
 	Auth           auth.Authenticator
 	Audit          *audit.Logger
+	Secrets        *secrets.Manager
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
@@ -100,6 +103,8 @@ type reqInfo struct {
 	r    *http.Request
 	sess *auth.Session // nil when there is no valid session
 	ip   string        // client address, from X-Forwarded-For only behind a trusted proxy
+
+	perms *rbac.Set // resolved on first use; see Server.permissions
 }
 
 type reqInfoKey struct{}
@@ -119,7 +124,8 @@ func isSafeMethod(m string) bool {
 
 // gate runs before every generated route (r.Pattern is set by then). For API routes it requires a JSON body on
 // state-changing requests, loads the session, checks the Origin and CSRF token on state-changing requests, and
-// refuses requests without a session unless the route is public.
+// refuses requests without a session unless the route is public, and refuses sessions that lack the global
+// permission the route declares in routePermission. A route missing from that table is refused: fail closed.
 func (s *Server) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -158,7 +164,13 @@ func (s *Server) gate(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "csrf_failed", "The request was refused because its CSRF token or origin didn't match. Reload the page and try again.")
 			return
 		}
-		if sess == nil && !publicRoutes[r.Pattern] {
+		access, declared := routePermission[r.Pattern]
+		if !declared {
+			s.Logger.Error("route has no declared permission", "pattern", r.Pattern)
+			writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+			return
+		}
+		if sess == nil && access != accessPublic {
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "You need to log in.")
 			return
 		}
@@ -166,6 +178,12 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		ri := &reqInfo{w: w, sess: sess, ip: ratelimit.ClientIP(r, s.TrustedProxies)}
 		r = r.WithContext(context.WithValue(r.Context(), reqInfoKey{}, ri))
 		ri.r = r
+		if kind, perm, _ := parseAccess(access); kind == "global" {
+			if err := s.requireGlobal(r.Context(), rbac.Permission(perm)); err != nil {
+				s.responseError(w, r, err)
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -206,9 +224,13 @@ func (s *Server) requestError(w http.ResponseWriter, _ *http.Request, err error)
 	writeError(w, http.StatusBadRequest, "validation_failed", "The request body isn't valid JSON for this endpoint.")
 }
 
-// responseError handles an error returned by a handler: an unexpected failure, logged in full but reported to the
-// client only as "internal".
+// responseError handles an error returned by a handler: a refusal from the rbac package is answered as such (see
+// refuse); anything else is an unexpected failure, logged in full but reported to the client only as "internal".
 func (s *Server) responseError(w http.ResponseWriter, r *http.Request, err error) {
+	if e, ok := rbac.AsError(err); ok {
+		s.refuse(w, r, e)
+		return
+	}
 	s.Logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 	writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 }

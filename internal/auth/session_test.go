@@ -422,3 +422,87 @@ func flipFirst(s string) string {
 	}
 	return "A" + s[1:]
 }
+
+// createLDAPUser makes an LDAP user row, as a first LDAP login does.
+func (e *sessionEnv) createLDAPUser(name string) int64 {
+	e.t.Helper()
+	var id int64
+	err := e.st.WithTx(context.Background(), func(q *db.Queries) error {
+		var err error
+		id, err = q.CreateLDAPUser(context.Background(), db.CreateLDAPUserParams{
+			Username: name, LdapDn: sql.NullString{String: "CN=" + name + ",DC=example", Valid: true}, CreatedAt: store.Millis(e.now),
+		})
+		return err
+	})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return id
+}
+
+// TestLDAPSessionEndsAfterIntervalAndGrace: an LDAP session whose roles haven't been confirmed for longer than the
+// recheck interval plus the grace period is refused. Local sessions have no such limit.
+func TestLDAPSessionEndsAfterIntervalAndGrace(t *testing.T) {
+	e := newSessionEnv(t, SessionOptions{IdleTimeout: 24 * time.Hour})
+	ldapUser := e.createLDAPUser("alice")
+	localUser := e.createUser("bob")
+	ldapCookie := e.login(ldapUser, 1)
+	localCookie := e.login(localUser, 1)
+
+	limit := DefaultRecheckInterval + DefaultRecheckGrace // 40 minutes
+	for _, step := range []struct {
+		name      string
+		advance   time.Duration
+		wantLDAP  bool
+		keepAlive bool // make a request with the local session so it isn't idle
+	}{
+		{"just logged in", 0, true, true},
+		{"a minute before the limit", limit - time.Minute, true, true},
+		{"at the limit", time.Minute, true, true},
+		{"just past the limit", time.Millisecond, false, true},
+	} {
+		e.now = e.now.Add(step.advance)
+		if got := e.valid(ldapCookie); got != step.wantLDAP {
+			t.Fatalf("%s: LDAP session valid = %v, want %v", step.name, got, step.wantLDAP)
+		}
+		if !e.valid(localCookie) {
+			t.Fatalf("%s: the local session ended", step.name)
+		}
+	}
+
+	// The refused session is gone, not just hidden.
+	if left, err := e.st.Read().ListUserSessions(context.Background(), ldapUser); err != nil || len(left) != 0 {
+		t.Fatalf("LDAP sessions left = %d, %v", len(left), err)
+	}
+}
+
+// TestRecheckKeepsLDAPSessionAlive: a successful check moves roles_checked_at, which restarts the clock.
+func TestRecheckKeepsLDAPSessionAlive(t *testing.T) {
+	e := newSessionEnv(t, SessionOptions{IdleTimeout: 24 * time.Hour})
+	user := e.createLDAPUser("alice")
+	c := e.login(user, 1)
+
+	e.now = e.now.Add(35 * time.Minute)
+	if err := e.st.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.SetUserSessionsRolesChecked(context.Background(), db.SetUserSessionsRolesCheckedParams{RolesCheckedAt: store.Millis(e.now), UserID: user})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.now = e.now.Add(35 * time.Minute) // 70 minutes after login, 35 after the check
+	if !e.valid(c) {
+		t.Fatal("session ended although it was checked 35 minutes ago")
+	}
+}
+
+func TestRecheckLimitsAreConfigurable(t *testing.T) {
+	e := newSessionEnv(t, SessionOptions{RecheckInterval: time.Minute, RecheckGrace: 2 * time.Minute})
+	c := e.login(e.createLDAPUser("alice"), 1)
+	e.now = e.now.Add(3 * time.Minute)
+	if !e.valid(c) {
+		t.Fatal("ended at exactly interval+grace")
+	}
+	e.now = e.now.Add(time.Second)
+	if e.valid(c) {
+		t.Fatal("still valid past interval+grace")
+	}
+}

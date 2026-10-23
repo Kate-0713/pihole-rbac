@@ -76,6 +76,12 @@ func newSetupEnv(t *testing.T, modify ...func(*Options)) *testEnv {
 	t.Cleanup(func() { st.Close() })
 
 	key := secrets.NewValue(bytes.Repeat([]byte{1}, secrets.KeySize))
+	sec, err := secrets.Load(secrets.Options{
+		DataDir: t.TempDir(), Getenv: func(string) string { return "" }, Environ: func() []string { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ca := &countingAuth{inner: auth.NewLocalAuthenticator(auth.StoreUsers{St: st})}
 	var auditBuf bytes.Buffer
 	o := Options{
@@ -83,6 +89,7 @@ func newSetupEnv(t *testing.T, modify ...func(*Options)) *testEnv {
 		Sessions: auth.NewSessions(st, func() secrets.Value { return key }, auth.SessionOptions{}),
 		Auth:     ca,
 		Audit:    audit.NewLogger(&auditBuf),
+		Secrets:  sec,
 		Logger:   quiet,
 	}
 	for _, m := range modify {
