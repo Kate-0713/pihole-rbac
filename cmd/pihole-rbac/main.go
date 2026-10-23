@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -85,7 +87,7 @@ func serve() error {
 	}
 	defer st.Close()
 
-	authn, err := newAuthenticator(ctx, st)
+	authn, err := newAuthenticator(ctx, st, sec, cfg.LDAPCAFile, logger)
 	if err != nil {
 		return err
 	}
@@ -138,14 +140,35 @@ func serve() error {
 
 // newAuthenticator builds the login chain from the saved login settings. It is swappable so saving new settings can
 // replace it without a restart.
-func newAuthenticator(ctx context.Context, st *store.Store) (*auth.SwappableAuthenticator, error) {
+func newAuthenticator(ctx context.Context, st *store.Store, sec *secrets.Manager, ldapCAFile string, logger *slog.Logger) (*auth.SwappableAuthenticator, error) {
 	settings, err := auth.LoadSettings(ctx, st.Read())
 	if err != nil {
 		return nil, err
 	}
-	chain, err := auth.Build(settings.Methods, map[auth.Method]auth.Authenticator{
+	available := map[auth.Method]auth.Authenticator{
 		auth.MethodLocal: auth.NewLocalAuthenticator(auth.StoreUsers{St: st}),
-	})
+	}
+	if slices.Contains(settings.Methods, auth.MethodLDAP) {
+		ls, found, err := auth.LoadLDAPSettings(ctx, st.Read())
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, errors.New("LDAP login is enabled but no LDAP settings have been saved")
+		}
+		ldapAuth, err := auth.NewLDAPAuthenticator(ls, sec.LDAPBindPassword, ldapCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("LDAP: %w", err)
+		}
+		if strings.HasPrefix(ls.URL, "ldap://") {
+			logger.Warn("LDAP uses ldap:// without TLS: passwords cross the network in the clear", "url", ls.URL)
+		}
+		if _, ok := sec.LDAPBindPassword(); !ok {
+			logger.Warn("LDAP login is enabled but PIHOLE_RBAC_LDAP_BIND_PASSWORD is not set; LDAP logins will fail")
+		}
+		available[auth.MethodLDAP] = ldapAuth
+	}
+	chain, err := auth.Build(settings.Methods, available)
 	if err != nil {
 		return nil, fmt.Errorf("login methods: %w", err)
 	}

@@ -128,13 +128,25 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 			return err
 		})
 	}
-	if errors.Is(err, auth.ErrNoAccess) {
-		// Valid credentials, so not a failed attempt for the limiter.
-		entry.Err = auth.ErrNoAccess
+	if errors.Is(err, auth.ErrNoAccess) || errors.Is(err, auth.ErrInvalidCredentials) {
+		// The password was right, so neither case is a failed attempt for the limiter. The audit entry keeps the
+		// reason (no role, a username clash with a local account, a disabled account) and, for LDAP, the user's
+		// DN and the groups the directory returned, so a broken group mapping is easy to spot.
+		entry.Err = err
 		entry.UserID = 0
+		if entry.Detail == nil {
+			entry.Detail = map[string]any{}
+		}
 		delete(entry.Detail, "session")
+		if id != nil && id.Source == auth.MethodLDAP {
+			entry.Detail["dn"] = id.DN
+			entry.Detail["groups"] = id.Groups
+		}
 		if err := s.Audit.Record(ctx, s.Store, entry); err != nil {
 			return nil, err
+		}
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			return gen.Login401JSONResponse(errorBody("invalid_credentials", msgInvalidCredentials)), nil
 		}
 		return gen.Login403JSONResponse(errorBody("no_access", msgNoAccess)), nil
 	}
@@ -156,8 +168,48 @@ func (s *Server) rolesFor(ctx context.Context, q *db.Queries, id *auth.Identity)
 	case auth.MethodLocal:
 		roles, err := q.ListUserRoleIDs(ctx, id.UserID)
 		return id.UserID, roles, err
+	case auth.MethodLDAP:
+		return s.ldapRoles(ctx, q, id)
 	}
 	return 0, nil, fmt.Errorf("no role lookup for login method %q", id.Source)
+}
+
+// ldapRoles finds or creates the LDAP user's row and maps their group DNs to roles through role_ldap_groups. The
+// row is created on first login, for the audit log and session links; if the user turns out to have no role, the
+// transaction rolls back and no row is left behind. Usernames are unique across local and LDAP accounts, so an
+// LDAP login for a local account's username is refused rather than merged.
+func (s *Server) ldapRoles(ctx context.Context, q *db.Queries, id *auth.Identity) (int64, []int64, error) {
+	norm, invalid := auth.NormalizeDNs(id.Groups)
+	if len(invalid) > 0 {
+		s.Logger.Warn("LDAP returned group DNs that don't parse; they can't match a role", "user", id.Username, "dns", invalid)
+	}
+	dn := sql.NullString{String: id.DN, Valid: true}
+
+	var userID int64
+	u, err := q.GetUserByUsername(ctx, id.Username)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		userID, err = q.CreateLDAPUser(ctx, db.CreateLDAPUserParams{Username: id.Username, LdapDn: dn, CreatedAt: store.Millis(time.Now())})
+		if err != nil {
+			return 0, nil, fmt.Errorf("create LDAP user: %w", err)
+		}
+	case err != nil:
+		return 0, nil, err
+	case auth.Method(u.Source) != auth.MethodLDAP:
+		return 0, nil, fmt.Errorf("%w: the username belongs to a local account", auth.ErrNoAccess)
+	case u.Disabled:
+		return 0, nil, fmt.Errorf("%w: account disabled", auth.ErrInvalidCredentials)
+	default:
+		userID = u.ID
+		if u.LdapDn != dn {
+			// The user was moved or renamed in the directory.
+			if err := q.SetUserLDAPDN(ctx, db.SetUserLDAPDNParams{LdapDn: dn, ID: userID}); err != nil {
+				return 0, nil, err
+			}
+		}
+	}
+	roles, err := q.ListRoleIDsForLDAPGroups(ctx, norm)
+	return userID, roles, err
 }
 
 func loginRateLimited(wait time.Duration) gen.Login429JSONResponse {

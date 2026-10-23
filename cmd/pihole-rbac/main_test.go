@@ -4,8 +4,11 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +17,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
+	"github.com/Kate-0713/pihole-rbac/internal/store/db"
 )
 
 func TestRun(t *testing.T) {
@@ -82,6 +86,53 @@ func TestServeFailsBeforeOpeningStore(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(dataDir, store.FileName)); !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("database was created before the error: %v", err)
+			}
+		})
+	}
+}
+
+func TestNewAuthenticator(t *testing.T) {
+	ldapSettings := `{"url":"ldaps://dc01.example.local","bind_dn":"cn=svc,dc=example,dc=local","base_dn":"dc=example,dc=local","user_filter":"(uid=%s)"}`
+	tests := []struct {
+		name     string
+		settings map[string]string
+		wantErr  string
+	}{
+		{name: "defaults: local only"},
+		{name: "local and ldap", settings: map[string]string{"auth": `{"methods":["local","ldap"]}`, "ldap": ldapSettings}},
+		{name: "ldap enabled, not configured", settings: map[string]string{"auth": `{"methods":["ldap"]}`}, wantErr: "no LDAP settings"},
+		{name: "ldap settings invalid", settings: map[string]string{
+			"auth": `{"methods":["ldap"]}`,
+			"ldap": `{"url":"http://dc01","bind_dn":"cn=svc,dc=x","base_dn":"dc=x","user_filter":"(uid=%s)"}`,
+		}, wantErr: "url"},
+		{name: "login settings invalid", settings: map[string]string{"auth": `{"methods":[]}`}, wantErr: "at least one"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			dir := t.TempDir()
+			st, err := store.Open(ctx, store.Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			for k, v := range tt.settings {
+				if err := st.WithTx(ctx, func(q *db.Queries) error {
+					return q.UpsertSetting(ctx, db.UpsertSettingParams{Key: k, Value: v})
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sec, err := secrets.Load(secrets.Options{DataDir: dir, Getenv: func(string) string { return "" }, Environ: func() []string { return nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = newAuthenticator(ctx, st, sec, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if tt.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("err = %v, want it to mention %q", err, tt.wantErr)
 			}
 		})
 	}

@@ -24,6 +24,25 @@ func (q *Queries) AddUserRole(ctx context.Context, arg AddUserRoleParams) error 
 	return err
 }
 
+const createLDAPUser = `-- name: CreateLDAPUser :one
+INSERT INTO users (username, source, ldap_dn, created_at)
+VALUES (?, 'ldap', ?, ?)
+RETURNING id
+`
+
+type CreateLDAPUserParams struct {
+	Username  string
+	LdapDn    sql.NullString
+	CreatedAt int64
+}
+
+func (q *Queries) CreateLDAPUser(ctx context.Context, arg CreateLDAPUserParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createLDAPUser, arg.Username, arg.LdapDn, arg.CreatedAt)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createLocalUser = `-- name: CreateLocalUser :one
 
 INSERT INTO users (username, source, password_hash, created_at)
@@ -133,6 +152,20 @@ type SetUserDisabledParams struct {
 
 func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error {
 	_, err := q.db.ExecContext(ctx, setUserDisabled, arg.Disabled, arg.ID)
+	return err
+}
+
+const setUserLDAPDN = `-- name: SetUserLDAPDN :exec
+UPDATE users SET ldap_dn = ? WHERE id = ?
+`
+
+type SetUserLDAPDNParams struct {
+	LdapDn sql.NullString
+	ID     int64
+}
+
+func (q *Queries) SetUserLDAPDN(ctx context.Context, arg SetUserLDAPDNParams) error {
+	_, err := q.db.ExecContext(ctx, setUserLDAPDN, arg.LdapDn, arg.ID)
 	return err
 }
 

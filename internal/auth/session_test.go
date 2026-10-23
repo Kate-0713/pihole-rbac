@@ -162,7 +162,7 @@ func TestInvalidCookies(t *testing.T) {
 		{"no signature", idPart},
 		{"bad signature", idPart + ".AAAA"},
 		{"another session's signature", idPart + "." + otherSig},
-		{"tampered ID", "A" + idPart[1:] + "." + sig},
+		{"tampered ID", flipFirst(idPart) + "." + sig},
 		{"short ID", "AAAA." + sig},
 		{"not base64", "!!!." + sig},
 		{"unknown but well-signed ID", b64.EncodeToString(bytes.Repeat([]byte{9}, sessionIDSize)) + "." + e.s.sign("session", bytes.Repeat([]byte{9}, sessionIDSize))},
@@ -412,4 +412,13 @@ func TestStoreUsers(t *testing.T) {
 	if _, err := (StoreUsers{e.st}).LocalUserByName(ctx, "nobody"); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("err = %v", err)
 	}
+}
+
+// flipFirst changes the first character of a base64url string to a different valid one, so the result is always a
+// different (but well-formed) value.
+func flipFirst(s string) string {
+	if s[0] == 'A' {
+		return "B" + s[1:]
+	}
+	return "A" + s[1:]
 }

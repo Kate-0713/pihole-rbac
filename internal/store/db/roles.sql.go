@@ -7,7 +7,29 @@ package db
 
 import (
 	"context"
+	"strings"
 )
+
+const addRoleLDAPGroup = `-- name: AddRoleLDAPGroup :exec
+INSERT INTO role_ldap_groups (role_id, group_dn, group_dn_norm, created_at) VALUES (?, ?, ?, ?)
+`
+
+type AddRoleLDAPGroupParams struct {
+	RoleID      int64
+	GroupDn     string
+	GroupDnNorm string
+	CreatedAt   int64
+}
+
+func (q *Queries) AddRoleLDAPGroup(ctx context.Context, arg AddRoleLDAPGroupParams) error {
+	_, err := q.db.ExecContext(ctx, addRoleLDAPGroup,
+		arg.RoleID,
+		arg.GroupDn,
+		arg.GroupDnNorm,
+		arg.CreatedAt,
+	)
+	return err
+}
 
 const getRoleByName = `-- name: GetRoleByName :one
 
@@ -55,6 +77,45 @@ func (q *Queries) ListGrantsForRole(ctx context.Context, roleID int64) ([]RoleGr
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoleIDsForLDAPGroups = `-- name: ListRoleIDsForLDAPGroups :many
+SELECT DISTINCT role_id FROM role_ldap_groups
+WHERE group_dn_norm IN (/*SLICE:group_dns*/?)
+ORDER BY role_id
+`
+
+func (q *Queries) ListRoleIDsForLDAPGroups(ctx context.Context, groupDns []string) ([]int64, error) {
+	query := listRoleIDsForLDAPGroups
+	var queryParams []interface{}
+	if len(groupDns) > 0 {
+		for _, v := range groupDns {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:group_dns*/?", strings.Repeat(",?", len(groupDns))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:group_dns*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var role_id int64
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

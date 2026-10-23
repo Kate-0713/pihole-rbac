@@ -23,3 +23,11 @@ UPDATE users SET disabled = ? WHERE id = ?;
 
 -- name: AddUserRole :exec
 INSERT INTO user_roles (user_id, role_id) VALUES (?, ?);
+
+-- name: CreateLDAPUser :one
+INSERT INTO users (username, source, ldap_dn, created_at)
+VALUES (?, 'ldap', ?, ?)
+RETURNING id;
+
+-- name: SetUserLDAPDN :exec
+UPDATE users SET ldap_dn = ? WHERE id = ?;
