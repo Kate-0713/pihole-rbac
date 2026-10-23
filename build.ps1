@@ -97,10 +97,17 @@ try {
             Invoke-Native 'go' $Oapi
         }
         'generate-check' {
-            # Regenerates internal/api/gen in place, then fails if that changed anything.
+            # Fails if the generated code doesn't match the queries and the API spec. It compares with the files as
+            # they are now, committed or not, and leaves them unchanged either way.
             Invoke-Native 'go' ($Sqlc + 'diff')
+            $gen = 'internal\api\gen\api.gen.go'
+            $before = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $gen))
             Invoke-Native 'go' $Oapi
-            Invoke-Native 'git' @('diff', '--exit-code', '--', 'internal/api/gen')
+            $after = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $gen))
+            if ([Convert]::ToBase64String($before) -ne [Convert]::ToBase64String($after)) {
+                [IO.File]::WriteAllBytes((Join-Path $PSScriptRoot $gen), $before)
+                throw "$gen is out of date with api/openapi.yaml; run .\build.ps1 generate"
+            }
         }
         'dev-api' {
             New-Item -ItemType Directory -Force -Path $env:PIHOLE_RBAC_DATA_DIR | Out-Null

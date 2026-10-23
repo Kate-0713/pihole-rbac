@@ -9,6 +9,7 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/pressly/goose/v3 v3.29.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.61.0
 )
 

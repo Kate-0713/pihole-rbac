@@ -120,7 +120,7 @@ func TestReaderIsReadOnly(t *testing.T) {
 }
 
 func TestBuiltinAdminSeeded(t *testing.T) {
-	// Milestone 5's catalogue test replaces this list with internal/rbac's.
+	// Once internal/rbac holds the permission catalogue, this list should come from there instead.
 	want := []string{
 		"app.update", "audit.view", "blocking.toggle", "clientreset.run", "clients.edit", "clients.view",
 		"config.reload", "dns.restart", "domains.edit", "domains.view", "drift.reconcile", "drift.view",

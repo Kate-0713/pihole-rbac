@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
@@ -53,7 +54,8 @@ func DefaultLoginLimits() (byIP, byUser *ratelimit.Limiter) {
 // Server implements gen.StrictServerInterface.
 type Server struct {
 	Options
-	mux *http.ServeMux
+	mux       *http.ServeMux
+	setupDone atomic.Bool // once true, never false again; until then, the database is asked on each request
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -130,6 +132,19 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		if unsafe && r.ContentLength != 0 && !isJSON(r.Header.Get("Content-Type")) {
 			writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "The request body must be application/json.")
 			return
+		}
+
+		if !setupRoutes[r.Pattern] {
+			needed, err := s.setupRequired(r.Context())
+			if err != nil {
+				s.Logger.Error("reading setup state", "err", err)
+				writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+				return
+			}
+			if needed {
+				writeError(w, http.StatusServiceUnavailable, "setup_required", "First-run setup hasn't been completed yet.")
+				return
+			}
 		}
 
 		sess, err := s.Sessions.Get(r.Context(), r)

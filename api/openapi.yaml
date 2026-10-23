@@ -10,7 +10,8 @@ info:
   description: >-
     Every /api/v1 endpoint needs a session unless it says otherwise. Every state-changing request (POST, PUT, PATCH,
     DELETE) also needs the X-CSRF-Token header and an Origin (or Referer) matching the app's own origin, and a
-    request body must be application/json. Failures use the Error envelope.
+    request body must be application/json. Failures use the Error envelope. Until first-run setup is complete, every
+    /api/v1 endpoint except about, auth/csrf, setup/status and setup answers 503 with code setup_required.
   license:
     name: GNU Affero General Public License v3.0 or later
     identifier: AGPL-3.0-or-later
@@ -68,6 +69,65 @@ paths:
               schema:
                 $ref: "#/components/schemas/CSRFToken"
 
+  /api/v1/setup/status:
+    get:
+      summary: Whether first-run setup is still needed
+      description: Unauthenticated and available before setup. The SPA calls it to decide whether to show the setup page.
+      operationId: getSetupStatus
+      security: []
+      responses:
+        "200":
+          description: The setup state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatus"
+
+  /api/v1/setup:
+    post:
+      summary: Complete first-run setup
+      description: >-
+        Unauthenticated, but needs the anonymous CSRF token from GET /auth/csrf. Checks the one-time setup token
+        printed to the log at startup (or by `pihole-rbac setup --print-token`), creates the first local admin with
+        the builtin admin role and the starter roles staff and reader, closes setup for good, and logs the new admin
+        in. The response is the new session, as for POST /auth/login. Wrong tokens count against the client
+        address's failed-login limit.
+      operationId: completeSetup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupRequest"
+      responses:
+        "200":
+          description: Setup complete; logged in as the new admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          description: The setup token is wrong or has expired (code invalid_setup_token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Setup is already complete (code setup_complete).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /api/v1/auth/login:
     post:
       summary: Log in
@@ -111,6 +171,8 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
 
   /api/v1/auth/logout:
     post:
@@ -124,6 +186,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
 
   /api/v1/auth/session:
     get:
@@ -141,6 +205,8 @@ paths:
                 $ref: "#/components/schemas/CurrentSession"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
 
 components:
   securitySchemes:
@@ -176,6 +242,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    SetupRequired:
+      description: First-run setup hasn't been completed yet (code setup_required).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     RateLimited:
       description: Too many failed attempts (code rate_limited). Retry after the given number of seconds.
       headers:
@@ -203,6 +275,38 @@ components:
           type: string
           description: SPDX licence identifier.
           examples: ["AGPL-3.0-or-later"]
+
+    SetupStatus:
+      type: object
+      additionalProperties: false
+      required: [setup_required]
+      properties:
+        setup_required:
+          type: boolean
+          description: True until the first admin has been created.
+
+    SetupRequest:
+      type: object
+      additionalProperties: false
+      required: [token, username, password]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The one-time setup token. Surrounding spaces are ignored.
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >-
+            The first admin's username: 1-64 lowercase letters, digits, '.', '_' or '-', starting with a letter or
+            digit. Uppercase is folded to lowercase.
+        password:
+          type: string
+          minLength: 12
+          maxLength: 72
+          description: At least 12 characters and at most 72 bytes.
 
     CSRFToken:
       type: object
@@ -279,7 +383,7 @@ components:
           description: >-
             Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed,
             unsupported_media_type, not_found, conflict, invariant_violated, rate_limited, setup_required,
-            invalid_credentials, no_access, internal, pihole_unreachable, pihole_auth_rejected,
+            invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected,
             pihole_status_error.
         message:
           type: string

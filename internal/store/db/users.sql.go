@@ -182,3 +182,17 @@ func (q *Queries) SetUserLastLogin(ctx context.Context, arg SetUserLastLoginPara
 	_, err := q.db.ExecContext(ctx, setUserLastLogin, arg.LastLoginAt, arg.ID)
 	return err
 }
+
+const setUserPassword = `-- name: SetUserPassword :exec
+UPDATE users SET password_hash = ? WHERE id = ?
+`
+
+type SetUserPasswordParams struct {
+	PasswordHash sql.NullString
+	ID           int64
+}
+
+func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}

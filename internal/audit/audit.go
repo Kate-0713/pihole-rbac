@@ -34,8 +34,11 @@ const (
 
 // Actions. They are constants from our own code, which is why the AUDIT line can write them unquoted.
 const (
-	ActionLogin  = "login"
-	ActionLogout = "logout"
+	ActionLogin      = "login"
+	ActionLogout     = "logout"
+	ActionSetup      = "setup"       // first-run setup completed (or a wrong setup token)
+	ActionSetupToken = "setup_token" // a new setup token was made with `pihole-rbac setup --print-token`
+	ActionResetAdmin = "reset_admin" // `pihole-rbac user reset-admin` was run
 )
 
 // Entry is one audit event.

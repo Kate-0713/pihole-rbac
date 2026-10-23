@@ -52,10 +52,13 @@ generate: ## Regenerate internal/store/db (sqlc) and internal/api/gen (oapi-code
 	$(SQLC) generate
 	$(OAPI)
 
-generate-check: ## Fail if the generated code is out of date (regenerates internal/api/gen in place)
+generate-check: ## Fail if the generated code is out of date (compares with the files as they are now; changes nothing)
 	$(SQLC) diff
-	$(OAPI)
-	git diff --exit-code -- internal/api/gen
+	@gen=internal/api/gen/api.gen.go; tmp=$$(mktemp); cp $$gen $$tmp; \
+	$(OAPI) || { cp $$tmp $$gen; rm -f $$tmp; exit 1; }; \
+	if ! cmp -s $$tmp $$gen; then cp $$tmp $$gen; rm -f $$tmp; \
+		echo "error: $$gen is out of date with api/openapi.yaml; run make generate" >&2; exit 1; fi; \
+	rm -f $$tmp
 
 dev-api: ## Run the API on :8080 with the dev data dir (no frontend build needed)
 	@mkdir -p "$(PIHOLE_RBAC_DATA_DIR)"

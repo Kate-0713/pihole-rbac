@@ -31,3 +31,6 @@ RETURNING id;
 
 -- name: SetUserLDAPDN :exec
 UPDATE users SET ldap_dn = ? WHERE id = ?;
+
+-- name: SetUserPassword :exec
+UPDATE users SET password_hash = ? WHERE id = ?;

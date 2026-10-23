@@ -315,7 +315,7 @@ INSERT INTO setup_state (id) VALUES (1);
 
 -- The builtin admin role exists from the first migration, so invariant 1 holds
 -- before setup has run. Each new permission arrives in a migration that grants
--- it here. Milestone 5 adds a test in internal/rbac that this list matches the catalogue.
+-- it here. The rbac package's tests check that this list matches the permission catalogue.
 INSERT INTO roles (id, name, description, builtin, created_at)
 VALUES (1, 'admin', 'Built-in administrator: every permission on every instance. Cannot be changed.', 1,
         CAST(strftime('%s', 'now') AS INTEGER) * 1000);

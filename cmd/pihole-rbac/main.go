@@ -44,13 +44,27 @@ func run(args []string) error {
 	case "version", "--version", "-v":
 		fmt.Println(versionText())
 		return nil
+	case "setup":
+		return cmdSetup(args[1:])
+	case "user":
+		return cmdUser(args[1:])
 	case "help", "--help", "-h":
-		fmt.Println("usage: pihole-rbac [serve|version]")
+		fmt.Fprint(stdout, usage)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (try: serve, version)", cmd)
+		return fmt.Errorf("unknown command %q (try: pihole-rbac help)", cmd)
 	}
 }
+
+const usage = `usage: pihole-rbac [command]
+
+commands:
+  serve                        run the server (the default)
+  setup [--print-token]        show whether first-run setup is open; --print-token makes a new setup token
+  user reset-admin <username>  break-glass recovery: set a local admin's password (read from the terminal or stdin),
+                               enable the account and give it the admin role, creating it if needed
+  version                      print the version, build details and source location
+`
 
 // versionText is checked by CI and the release build: a release must report "frontend: embedded".
 func versionText() string {
@@ -86,6 +100,10 @@ func serve() error {
 		return err
 	}
 	defer st.Close()
+
+	if err := announceSetup(ctx, st, logger); err != nil {
+		return err
+	}
 
 	authn, err := newAuthenticator(ctx, st, sec, cfg.LDAPCAFile, logger)
 	if err != nil {

@@ -13,10 +13,22 @@ import (
 // publicRoutes are the operations that work without a session: those with `security: []` in api/openapi.yaml.
 // State-changing requests among them still need the CSRF and Origin checks.
 var publicRoutes = map[string]bool{
-	"GET /healthz":            true,
-	"GET /api/v1/about":       true,
-	"GET /api/v1/auth/csrf":   true,
-	"POST /api/v1/auth/login": true,
+	"GET /healthz":             true,
+	"GET /api/v1/about":        true,
+	"GET /api/v1/auth/csrf":    true,
+	"POST /api/v1/auth/login":  true,
+	"GET /api/v1/setup/status": true,
+	"POST /api/v1/setup":       true,
+}
+
+// setupRoutes are the operations that work before first-run setup is complete. Every other API route answers 503
+// setup_required until then. The CSRF endpoint is among them because completing setup is a POST.
+var setupRoutes = map[string]bool{
+	"GET /healthz":             true,
+	"GET /api/v1/about":        true,
+	"GET /api/v1/auth/csrf":    true,
+	"GET /api/v1/setup/status": true,
+	"POST /api/v1/setup":       true,
 }
 
 // apiNotFound answers /api/ paths no route matched, in the error envelope: 405 if the path exists with another

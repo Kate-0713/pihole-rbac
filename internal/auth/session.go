@@ -111,7 +111,9 @@ func (s *Sessions) Create(ctx context.Context, q *db.Queries, n NewSession) (coo
 		return "", nil, err
 	}
 	hash := sha256.Sum256(id)
-	now := s.now()
+	// Stored as Unix milliseconds, so round here too: the login response then shows the same times as a later
+	// GET /auth/session.
+	now := s.now().Truncate(time.Millisecond)
 	sess = &Session{
 		PublicID:       b64.EncodeToString(pub),
 		UserID:         n.UserID,

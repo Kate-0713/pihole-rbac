@@ -51,7 +51,22 @@ type testEnv struct {
 	audit *bytes.Buffer
 }
 
+// newTestEnv is a server whose first-run setup is already complete.
 func newTestEnv(t *testing.T, modify ...func(*Options)) *testEnv {
+	t.Helper()
+	e := newSetupEnv(t, modify...)
+	ctx := context.Background()
+	if err := e.st.WithTx(ctx, func(q *db.Queries) error {
+		_, err := q.CompleteSetup(ctx, sql.NullInt64{Int64: 1, Valid: true})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+// newSetupEnv is a server on a fresh database, with first-run setup still open.
+func newSetupEnv(t *testing.T, modify ...func(*Options)) *testEnv {
 	t.Helper()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(context.Background(), store.Options{DataDir: t.TempDir(), Logger: quiet})

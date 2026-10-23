@@ -16,3 +16,13 @@ ORDER BY role_id;
 
 -- name: AddRoleLDAPGroup :exec
 INSERT INTO role_ldap_groups (role_id, group_dn, group_dn_norm, created_at) VALUES (?, ?, ?, ?);
+
+-- name: GetBuiltinRole :one
+SELECT * FROM roles WHERE builtin = 1;
+
+-- name: CreateRole :one
+INSERT INTO roles (name, description, created_at) VALUES (?, ?, ?)
+RETURNING id;
+
+-- name: AddRoleGrantAll :exec
+INSERT INTO role_grants (role_id, permission, scope_type) VALUES (?, ?, 'all');

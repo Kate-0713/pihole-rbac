@@ -10,6 +10,20 @@ import (
 	"strings"
 )
 
+const addRoleGrantAll = `-- name: AddRoleGrantAll :exec
+INSERT INTO role_grants (role_id, permission, scope_type) VALUES (?, ?, 'all')
+`
+
+type AddRoleGrantAllParams struct {
+	RoleID     int64
+	Permission string
+}
+
+func (q *Queries) AddRoleGrantAll(ctx context.Context, arg AddRoleGrantAllParams) error {
+	_, err := q.db.ExecContext(ctx, addRoleGrantAll, arg.RoleID, arg.Permission)
+	return err
+}
+
 const addRoleLDAPGroup = `-- name: AddRoleLDAPGroup :exec
 INSERT INTO role_ldap_groups (role_id, group_dn, group_dn_norm, created_at) VALUES (?, ?, ?, ?)
 `
@@ -29,6 +43,41 @@ func (q *Queries) AddRoleLDAPGroup(ctx context.Context, arg AddRoleLDAPGroupPara
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const createRole = `-- name: CreateRole :one
+INSERT INTO roles (name, description, created_at) VALUES (?, ?, ?)
+RETURNING id
+`
+
+type CreateRoleParams struct {
+	Name        string
+	Description string
+	CreatedAt   int64
+}
+
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createRole, arg.Name, arg.Description, arg.CreatedAt)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getBuiltinRole = `-- name: GetBuiltinRole :one
+SELECT id, name, description, builtin, created_at FROM roles WHERE builtin = 1
+`
+
+func (q *Queries) GetBuiltinRole(ctx context.Context) (Role, error) {
+	row := q.db.QueryRowContext(ctx, getBuiltinRole)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Builtin,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getRoleByName = `-- name: GetRoleByName :one
