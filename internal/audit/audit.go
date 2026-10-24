@@ -61,12 +61,13 @@ const (
 
 	// Pi-hole instances. An enable or edit refused because the connection test failed is recorded as a failure.
 	// ActionInstanceTest only appears as the attempted action of a permission_denied row: a test changes nothing.
-	ActionInstanceCreate  = "instance_create"
-	ActionInstanceUpdate  = "instance_update"
-	ActionInstanceEnable  = "instance_enable"
-	ActionInstanceDisable = "instance_disable"
-	ActionInstanceDelete  = "instance_delete"
-	ActionInstanceTest    = "instance_test"
+	ActionInstanceCreate   = "instance_create"
+	ActionInstanceUpdate   = "instance_update"
+	ActionInstanceEnable   = "instance_enable"
+	ActionInstanceDisable  = "instance_disable"
+	ActionInstanceDelete   = "instance_delete"
+	ActionInstancePassword = "instance_password" // a new app password stored; never the value
+	ActionInstanceTest     = "instance_test"
 
 	// Pi-hole writes, recorded after the call with the instance and its result. Target is the API target (i-<id>);
 	// the detail names the item. A write Pi-hole refused is a failure with its message.

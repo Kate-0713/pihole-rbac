@@ -121,6 +121,8 @@ func run() error {
 		passwords[secrets.InstanceVar(inst.EnvName)] = e2e.PiholePassword
 	}
 	passwords[secrets.InstanceVar(fixture.SpareEnvName)] = e2e.PiholePassword
+	// A master key, so the seeded server can store instance passwords.
+	passwords[secrets.VarSecretKey] = secrets.NewKey()
 	freshEnv := appEnv(*freshAddr, freshDir, nil)
 	seededEnv := appEnv(*seededAddr, seededDir, passwords)
 

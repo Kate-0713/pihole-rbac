@@ -40,7 +40,7 @@ func newTargetEnv(t *testing.T) *targetEnv {
 	e := newTestEnv(t, withInstances(t, map[string]string{secrets.InstanceVar("PIHOLE1"): piholePassword}))
 	e.addUser("admin", "admin-password-1", true)
 	admin := e.loggedIn("admin", "admin-password-1")
-	res := admin.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL, EnvName: "PIHOLE1"})
+	res := admin.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL, EnvName: ptr("PIHOLE1"), Password: ptr(piholePassword)})
 	mustStatus(t, res, http.StatusCreated)
 	id := decode[gen.Instance](t, res).Id
 	mustStatus(t, admin.do(http.MethodPost, instancePath(id, "/enable"), nil), http.StatusOK)

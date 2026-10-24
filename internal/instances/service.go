@@ -40,9 +40,12 @@ type Service struct {
 type Input struct {
 	Name    string
 	BaseURL string
-	EnvName string
+	EnvName string            // optional
 	TLSMode piholeapi.TLSMode // TLSVerify if empty
 	CAFile  string
+	// Password is the app password, if the request gives one: stored (unless the instance's variable is set, in which
+	// case it must match the variable), and needed to confirm a new address (see Update).
+	Password *secrets.Value
 }
 
 // TestError is a refused enable or edit: the connection test with the new settings failed. Err is the pool or
@@ -60,10 +63,11 @@ func (e *TestError) Error() string {
 func (e *TestError) Unwrap() error { return e.Err }
 
 const (
-	maxName    = 64
-	maxEnvName = 64
-	maxBaseURL = 2048
-	maxCAFile  = 4096
+	maxName     = 64
+	maxEnvName  = 64
+	maxBaseURL  = 2048
+	maxCAFile   = 4096
+	maxPassword = 1024 // bytes
 )
 
 func (s *Service) now() time.Time {
@@ -74,12 +78,22 @@ func (s *Service) now() time.Time {
 }
 
 func fromRow(r db.Instance) Instance {
-	return Instance{
-		ID: r.ID, Name: r.Name, BaseURL: r.BaseUrl, EnvName: r.EnvName,
+	inst := Instance{
+		ID: r.ID, Name: r.Name, BaseURL: r.BaseUrl, EnvName: r.EnvName.String,
 		TLSMode: piholeapi.TLSMode(r.TlsMode), CAFile: r.CaFile.String, Enabled: r.Enabled,
 		CreatedAt: store.FromMillis(r.CreatedAt),
 	}
+	if len(r.PasswordCiphertext) > 0 {
+		inst.Password = StoredPassword{
+			Sealed:    secrets.Sealed{KeyID: r.PasswordKeyID.String, Nonce: r.PasswordNonce, Ciphertext: r.PasswordCiphertext},
+			UpdatedAt: store.FromMillis(r.PasswordUpdatedAt.Int64),
+			UpdatedBy: r.PasswordUpdatedBy.String,
+		}
+	}
+	return inst
 }
+
+func nullString(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
 
 func instanceTarget(name string) string { return "instance:" + name }
 
@@ -108,10 +122,16 @@ func (in Input) normalize() (Input, error) {
 	}
 	in.BaseURL = base
 	in.EnvName = strings.TrimSpace(in.EnvName)
-	if !secrets.ValidEnvName(in.EnvName) || len(in.EnvName) > maxEnvName {
+	if in.EnvName != "" && (!secrets.ValidEnvName(in.EnvName) || len(in.EnvName) > maxEnvName) {
 		return in, validation("env_name",
-			"The env name is 1-%d characters of A-Z, 0-9 and _: the password is read from %s.", maxEnvName,
-			secrets.InstanceVar("<env name>"))
+			"The env name is empty, or 1-%d characters of A-Z, 0-9 and _: a password in %s then overrides the stored one.",
+			maxEnvName, secrets.InstanceVar("<env name>"))
+	}
+	if in.Password != nil {
+		// The password is used exactly as given: Pi-hole compares it byte for byte.
+		if n := in.Password.Len(); n == 0 || n > maxPassword {
+			return in, validation("password", "The password is 1-%d bytes.", maxPassword)
+		}
 	}
 	switch in.TLSMode {
 	case "":
@@ -279,8 +299,8 @@ func (t *txn) checkUnique(in Input, self int64) error {
 		case strings.EqualFold(r.Name, in.Name):
 			return &rbac.Error{Code: rbac.CodeConflict, Message: fmt.Sprintf("There is already an instance called %q.", r.Name),
 				Details: map[string]any{"field": "name"}}
-		case r.EnvName == in.EnvName:
-			return &rbac.Error{Code: rbac.CodeConflict, Message: fmt.Sprintf("Instance %q already uses the env name %s.", r.Name, r.EnvName),
+		case in.EnvName != "" && r.EnvName.String == in.EnvName:
+			return &rbac.Error{Code: rbac.CodeConflict, Message: fmt.Sprintf("Instance %q already uses the env name %s.", r.Name, in.EnvName),
 				Details: map[string]any{"field": "env_name"}}
 		}
 	}
@@ -310,10 +330,21 @@ func (s *Service) precheck(ctx context.Context, a rbac.Actor, action string, id 
 	})
 }
 
-// test runs the connection test and, if it fails, records the refusal of action and returns a *TestError. The audit
-// detail has the error code only: the full error can name internal addresses.
+// test runs the connection test with inst's current password and, if it fails, records the refusal of action and
+// returns a *TestError.
 func (s *Service) test(ctx context.Context, a rbac.Actor, action string, inst Instance) error {
-	err := s.Pool.Test(ctx, inst)
+	pw, err := s.Pool.password(inst)
+	return s.testWith(ctx, a, action, inst, pw, err)
+}
+
+// testWith runs the connection test with the password pw (or fails at once with pwErr, when there is no usable
+// password) and, if it fails, records the refusal of action and returns a *TestError. The audit detail has the error
+// code only: the full error can name internal addresses.
+func (s *Service) testWith(ctx context.Context, a rbac.Actor, action string, inst Instance, pw secrets.Value, pwErr error) error {
+	err := pwErr
+	if err == nil {
+		err = s.Pool.TestWith(ctx, inst, pw)
+	}
 	if err == nil {
 		return nil
 	}
@@ -350,45 +381,133 @@ func changed(before, after Instance) []string {
 	return out
 }
 
-// Create adds an instance. New instances are disabled: enabling one needs its password variable and a successful
-// connection test (SetEnabled).
-func (s *Service) Create(ctx context.Context, a rbac.Actor, in Input) (Instance, error) {
-	var inst Instance
-	err := s.do(ctx, a, audit.ActionInstanceCreate, func(t *txn) error {
-		in, err := in.normalize()
-		if err != nil {
-			return err
+// sameAddress reports whether two instances send their password to the same place, trusting the same certificates.
+func (i Instance) sameAddress(o Instance) bool {
+	return i.BaseURL == o.BaseURL && i.TLSMode == o.TLSMode && i.CAFile == o.CAFile
+}
+
+// passwordPlan is what a create or edit does with the instance's password, worked out before its transaction.
+type passwordPlan struct {
+	store    bool          // seal and store the password from the request
+	value    secrets.Value // the password the instance will use, when there is one
+	valueErr error         // why there is none
+	detail   string        // for the audit row: "stored" or "confirmed", or "" when the request gave none
+}
+
+// planPassword applies the rule that a password is only sent to an address it was confirmed for. The request must
+// give the instance's password when
+//
+//   - the address changes (base URL, TLS mode or CA file) of an instance that has a password, or
+//   - the instance starts using a variable that is set: created with an env name whose variable is set, or changed to
+//     one.
+//
+// A password given for an instance whose variable is set must match it (the variable overrides a stored password, so
+// the request can only confirm it); otherwise it is stored, which needs the master key. before is the zero Instance
+// for a create.
+func (s *Service) planPassword(before, after Instance, given *secrets.Value) (passwordPlan, error) {
+	envPW, envSet := s.Pool.envPassword(after.EnvName)
+	newAddress := before.ID != 0 && !before.sameAddress(after) && s.Pool.PasswordSource(after) != SourceNone
+	newVariable := envSet && (before.ID == 0 || before.EnvName != after.EnvName)
+
+	if given == nil {
+		switch {
+		case newVariable:
+			return passwordPlan{}, validation("password",
+				"%s is set, so enter the password it holds to confirm that %s may use it.", secrets.InstanceVar(after.EnvName), after.Name)
+		case newAddress:
+			return passwordPlan{}, validation("password",
+				"Enter the password again to use the new address: a saved password is only sent to the address it was entered for.")
 		}
-		t.entry.Target = instanceTarget(in.Name)
+		pw, err := s.Pool.password(after)
+		return passwordPlan{value: pw, valueErr: err}, nil
+	}
+	if envSet {
+		if !given.Equal(envPW) {
+			return passwordPlan{}, validation("password",
+				"That isn't the password in %s, which this instance uses. Enter that one, or change it there.", secrets.InstanceVar(after.EnvName))
+		}
+		return passwordPlan{value: envPW, detail: "confirmed"}, nil
+	}
+	if s.Pool.cipher() == nil {
+		return passwordPlan{}, validation("password",
+			"Passwords can't be stored until the master key (PIHOLE_RBAC_SECRET_KEY) is set. Set the instance's env name and its variable instead.")
+	}
+	return passwordPlan{store: true, value: *given, detail: "stored"}, nil
+}
+
+// storePassword seals pw for the instance's row and saves it, with who set it and when.
+func (t *txn) storePassword(c *secrets.Cipher, inst *Instance, pw secrets.Value, by string) error {
+	sealed, err := c.Seal(pw, passwordAAD(inst.ID))
+	if err != nil {
+		return err
+	}
+	inst.Password = StoredPassword{Sealed: sealed, UpdatedAt: store.FromMillis(store.Millis(t.now)), UpdatedBy: by}
+	return t.q.SetInstancePassword(t.ctx, db.SetInstancePasswordParams{
+		PasswordCiphertext: sealed.Ciphertext, PasswordNonce: sealed.Nonce,
+		PasswordKeyID:     sql.NullString{String: sealed.KeyID, Valid: true},
+		PasswordUpdatedAt: sql.NullInt64{Int64: store.Millis(t.now), Valid: true},
+		PasswordUpdatedBy: sql.NullString{String: by, Valid: true},
+		ID:                inst.ID,
+	})
+}
+
+// Create adds an instance. New instances are disabled: enabling one needs a password and a successful connection
+// test (SetEnabled). With a password in the request, it is stored, or checked against the instance's variable if
+// that is set (see planPassword).
+func (s *Service) Create(ctx context.Context, a rbac.Actor, in Input) (Instance, error) {
+	norm, err := in.normalize()
+	if err != nil {
+		return Instance{}, err
+	}
+	plan, err := s.planPassword(Instance{}, norm.apply(Instance{}), norm.Password)
+	if err != nil {
+		return Instance{}, err
+	}
+	c := s.Pool.cipher()
+	var inst Instance
+	err = s.do(ctx, a, audit.ActionInstanceCreate, func(t *txn) error {
+		t.entry.Target = instanceTarget(norm.Name)
 		if err := t.require(); err != nil {
 			return err
 		}
-		if err := t.checkUnique(in, 0); err != nil {
+		if err := t.checkUnique(norm, 0); err != nil {
 			return err
 		}
 		id, err := t.q.CreateInstance(t.ctx, db.CreateInstanceParams{
-			Name: in.Name, BaseUrl: in.BaseURL, EnvName: in.EnvName, TlsMode: string(in.TLSMode),
-			CaFile: caFile(in.CAFile), CreatedAt: store.Millis(t.now),
+			Name: norm.Name, BaseUrl: norm.BaseURL, EnvName: nullString(norm.EnvName), TlsMode: string(norm.TLSMode),
+			CaFile: caFile(norm.CAFile), CreatedAt: store.Millis(t.now),
 		})
 		if err != nil {
 			return uniqueBackstop(err)
 		}
-		inst = in.apply(Instance{ID: id, CreatedAt: store.FromMillis(store.Millis(t.now))})
-		t.entry.InstanceID, t.entry.InstanceName = id, in.Name
+		inst = norm.apply(Instance{ID: id, CreatedAt: store.FromMillis(store.Millis(t.now))})
+		if plan.store {
+			if err := t.storePassword(c, &inst, plan.value, a.Username); err != nil {
+				return err
+			}
+		}
+		t.entry.InstanceID, t.entry.InstanceName = id, norm.Name
 		t.entry.Detail["instance_id"] = id
-		t.entry.Detail["base_url"] = in.BaseURL
-		t.entry.Detail["env_name"] = in.EnvName
-		t.entry.Detail["tls_mode"] = in.TLSMode
-		if in.CAFile != "" {
-			t.entry.Detail["ca_file"] = in.CAFile
+		t.entry.Detail["base_url"] = norm.BaseURL
+		if norm.EnvName != "" {
+			t.entry.Detail["env_name"] = norm.EnvName
+		}
+		t.entry.Detail["tls_mode"] = norm.TLSMode
+		if norm.CAFile != "" {
+			t.entry.Detail["ca_file"] = norm.CAFile
+		}
+		if plan.detail != "" {
+			t.entry.Detail["password"] = plan.detail
 		}
 		return nil
 	})
 	return inst, err
 }
 
-// Update changes an instance's settings. If the instance is enabled and the change affects how it connects, the new
-// settings must pass a connection test first; to save settings that don't work yet, disable the instance first.
+// Update changes an instance's settings, and stores a new password if the request gives one. A new address or a
+// newly used variable needs the password in the request (see planPassword). If the instance is enabled and the change
+// affects how it connects, the new settings must pass a connection test first; to save settings that don't work yet,
+// disable the instance first.
 func (s *Service) Update(ctx context.Context, a rbac.Actor, id int64, in Input) (Instance, error) {
 	if err := s.precheck(ctx, a, audit.ActionInstanceUpdate, id); err != nil {
 		return Instance{}, err
@@ -402,11 +521,16 @@ func (s *Service) Update(ctx context.Context, a rbac.Actor, id int64, in Input) 
 		return Instance{}, err
 	}
 	after := norm.apply(before)
-	if before.Enabled && !before.sameConnection(after) {
-		if err := s.test(ctx, a, audit.ActionInstanceUpdate, after); err != nil {
+	plan, err := s.planPassword(before, after, norm.Password)
+	if err != nil {
+		return Instance{}, err
+	}
+	if before.Enabled && (!before.sameConnection(after) || plan.store) {
+		if err := s.testWith(ctx, a, audit.ActionInstanceUpdate, after, plan.value, plan.valueErr); err != nil {
 			return Instance{}, err
 		}
 	}
+	c := s.Pool.cipher()
 
 	err = s.do(ctx, a, audit.ActionInstanceUpdate, func(t *txn) error {
 		cur, err := t.load(id)
@@ -417,21 +541,26 @@ func (s *Service) Update(ctx context.Context, a rbac.Actor, id int64, in Input) 
 			return err
 		}
 		// The tested settings only count if nothing changed while the test ran.
-		if cur != before {
+		if !cur.equal(before) {
 			return &rbac.Error{Code: rbac.CodeConflict, Message: fmt.Sprintf("%s was changed while it was being tested. Try again.", cur.Name)}
 		}
-		if after == cur {
+		if after.equal(cur) && !plan.store {
 			return errNoChange
 		}
 		if err := t.checkUnique(norm, id); err != nil {
 			return err
 		}
 		err = t.q.UpdateInstance(t.ctx, db.UpdateInstanceParams{
-			Name: after.Name, BaseUrl: after.BaseURL, EnvName: after.EnvName, TlsMode: string(after.TLSMode),
+			Name: after.Name, BaseUrl: after.BaseURL, EnvName: nullString(after.EnvName), TlsMode: string(after.TLSMode),
 			CaFile: caFile(after.CAFile), ID: id,
 		})
 		if err != nil {
 			return uniqueBackstop(err)
+		}
+		if plan.store {
+			if err := t.storePassword(c, &after, plan.value, a.Username); err != nil {
+				return err
+			}
 		}
 		t.entry.Target, t.entry.InstanceName = instanceTarget(after.Name), after.Name
 		t.entry.Detail["instance_id"] = id
@@ -441,7 +570,63 @@ func (s *Service) Update(ctx context.Context, a rbac.Actor, id int64, in Input) 
 		if c := changed(cur, after); len(c) > 0 {
 			t.entry.Detail["changed"] = c
 		}
+		if plan.detail != "" {
+			t.entry.Detail["password"] = plan.detail
+		}
 		return nil
+	})
+	if err != nil {
+		return Instance{}, err
+	}
+	if after.Enabled {
+		s.Pool.Put(after)
+	}
+	return after, nil
+}
+
+// SetPassword stores a new app password for an instance, as when the Pi-hole's password is rotated. It is tested at
+// the instance's current address first if the instance is enabled, so a wrong one can't cut it off. It is refused
+// when the instance's variable is set, since that overrides a stored password, and without a master key.
+func (s *Service) SetPassword(ctx context.Context, a rbac.Actor, id int64, pw secrets.Value) (Instance, error) {
+	if err := s.precheck(ctx, a, audit.ActionInstancePassword, id); err != nil {
+		return Instance{}, err
+	}
+	before, err := s.Get(ctx, id)
+	if err != nil {
+		return Instance{}, err
+	}
+	if n := pw.Len(); n == 0 || n > maxPassword {
+		return Instance{}, validation("password", "The password is 1-%d bytes.", maxPassword)
+	}
+	if _, ok := s.Pool.envPassword(before.EnvName); ok {
+		return Instance{}, &rbac.Error{Code: rbac.CodeConflict, Details: map[string]any{"field": "password"},
+			Message: fmt.Sprintf("The password of %s comes from %s, which overrides a stored one. Change it there, or clear the instance's env name.",
+				before.Name, secrets.InstanceVar(before.EnvName))}
+	}
+	c := s.Pool.cipher()
+	if c == nil {
+		return Instance{}, &rbac.Error{Code: rbac.CodeConflict, Details: map[string]any{"field": "password"},
+			Message: "Passwords can't be stored until the master key (PIHOLE_RBAC_SECRET_KEY) is set."}
+	}
+	if before.Enabled {
+		if err := s.testWith(ctx, a, audit.ActionInstancePassword, before, pw, nil); err != nil {
+			return Instance{}, err
+		}
+	}
+	after := before
+	err = s.do(ctx, a, audit.ActionInstancePassword, func(t *txn) error {
+		cur, err := t.load(id)
+		if err != nil {
+			return err
+		}
+		if err := t.require(); err != nil {
+			return err
+		}
+		if !cur.equal(before) {
+			return &rbac.Error{Code: rbac.CodeConflict, Message: fmt.Sprintf("%s was changed while it was being tested. Try again.", cur.Name)}
+		}
+		t.entry.Detail["instance_id"] = id
+		return t.storePassword(c, &after, pw, a.Username)
 	})
 	if err != nil {
 		return Instance{}, err
@@ -488,7 +673,7 @@ func (s *Service) SetEnabled(ctx context.Context, a rbac.Actor, id int64, enable
 		if cur.Enabled == enabled {
 			return errNoChange
 		}
-		if enabled && !cur.sameConnection(before) {
+		if enabled && !cur.equal(before) {
 			return &rbac.Error{Code: rbac.CodeConflict, Message: fmt.Sprintf("%s was changed while it was being tested. Try again.", cur.Name)}
 		}
 		if err := t.q.SetInstanceEnabled(t.ctx, db.SetInstanceEnabledParams{Enabled: enabled, ID: id}); err != nil {

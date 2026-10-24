@@ -7,6 +7,7 @@
 package instances
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,23 +24,60 @@ type Instance struct {
 	ID        int64
 	Name      string
 	BaseURL   string
-	EnvName   string
+	EnvName   string // optional: names the variable whose password overrides the stored one
 	TLSMode   piholeapi.TLSMode
 	CAFile    string
 	Enabled   bool
 	CreatedAt time.Time
+	Password  StoredPassword
 }
 
-// Passwords supplies instance passwords. *secrets.Manager implements it.
+// StoredPassword is an instance's app password as kept in the database: sealed under the master key and bound to the
+// instance's row, with when and by whom it was last set. The zero value means none is stored.
+type StoredPassword struct {
+	Sealed    secrets.Sealed
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
+// IsZero reports whether no password is stored.
+func (s StoredPassword) IsZero() bool { return len(s.Sealed.Ciphertext) == 0 }
+
+func (s StoredPassword) equal(o StoredPassword) bool {
+	return s.Sealed.KeyID == o.Sealed.KeyID && bytes.Equal(s.Sealed.Nonce, o.Sealed.Nonce) &&
+		bytes.Equal(s.Sealed.Ciphertext, o.Sealed.Ciphertext) && s.UpdatedAt.Equal(o.UpdatedAt) && s.UpdatedBy == o.UpdatedBy
+}
+
+// equal reports whether two instances are the same in every field.
+func (i Instance) equal(o Instance) bool {
+	return i.ID == o.ID && i.Name == o.Name && i.Enabled == o.Enabled && i.CreatedAt.Equal(o.CreatedAt) &&
+		i.sameConnection(o) && i.Password.equal(o.Password)
+}
+
+// passwordAAD binds a stored password to its instance's row, so a ciphertext copied to another row won't decrypt.
+func passwordAAD(id int64) []byte { return secrets.AAD("instances", id) }
+
+// Passwords supplies passwords from the environment, and the cipher that opens stored ones. *secrets.Manager
+// implements it.
 type Passwords interface {
 	InstancePassword(envName string) (secrets.Value, bool)
+	Cipher() *secrets.Cipher // nil without a master key
 }
+
+// Source says where an instance's password comes from.
+type Source string
+
+const (
+	SourceEnvironment Source = "environment" // the instance's variable, which overrides a stored password
+	SourceStored      Source = "stored"      // the database, encrypted under the master key
+	SourceNone        Source = "none"
+)
 
 var (
 	// ErrNotFound means there is no enabled instance with that ID in the pool.
 	ErrNotFound = errors.New("instances: no enabled instance with that ID")
-	// ErrNoPassword means the instance's password variable isn't set. The error names the variable.
-	ErrNoPassword = errors.New("instance password is not set")
+	// ErrNoPassword means the instance has no password: none is stored and its variable, if it has one, isn't set.
+	ErrNoPassword = errors.New("instance has no password")
 	// ErrMisconfigured means a client couldn't be built from the instance's settings (an unreadable CA file, say).
 	ErrMisconfigured = errors.New("instance is misconfigured")
 )
@@ -186,7 +224,7 @@ func (p *Pool) Put(inst Instance) bool {
 		p.Remove(inst.ID)
 		return false
 	}
-	pw, _ := p.passwords.InstancePassword(inst.EnvName)
+	pw, pwErr := p.password(inst)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -202,7 +240,7 @@ func (p *Pool) Put(inst Instance) bool {
 		old.mu.Unlock()
 		return false
 	}
-	p.members[inst.ID] = p.newMember(inst, pw)
+	p.members[inst.ID] = p.newMember(inst, pw, pwErr)
 	p.retire(old)
 	return true
 }
@@ -220,10 +258,10 @@ func (m *member) sameConnection(inst Instance, pw secrets.Value) bool {
 	return m.inst.sameConnection(inst) && m.password.Equal(pw)
 }
 
-func (p *Pool) newMember(inst Instance, pw secrets.Value) *member {
+func (p *Pool) newMember(inst Instance, pw secrets.Value, pwErr error) *member {
 	m := &member{inst: inst, password: pw, name: inst.Name, health: Health{State: StateUnknown}}
-	if pw.IsZero() {
-		m.setupErr = fmt.Errorf("%w: set %s", ErrNoPassword, secrets.InstanceVar(inst.EnvName))
+	if pwErr != nil {
+		m.setupErr = pwErr
 	} else {
 		c, err := piholeapi.New(piholeapi.Options{
 			BaseURL: inst.BaseURL, Password: pw, TLSMode: inst.TLSMode, CAFile: inst.CAFile, Timeout: p.timeout,
@@ -417,14 +455,65 @@ func (p *Pool) ReloadPasswords() []string {
 	return rebuilt
 }
 
-// Test connects to an instance with the given settings and the current password, using a throwaway client: it logs
+// PasswordSource reports where inst's password comes from: its variable when it has an env name and the variable is
+// set, otherwise the stored password, otherwise nowhere.
+func (p *Pool) PasswordSource(inst Instance) Source {
+	if _, ok := p.envPassword(inst.EnvName); ok {
+		return SourceEnvironment
+	}
+	if !inst.Password.IsZero() {
+		return SourceStored
+	}
+	return SourceNone
+}
+
+// envPassword returns the password in the variable named by envName, if envName isn't empty and the variable is set.
+func (p *Pool) envPassword(envName string) (secrets.Value, bool) {
+	if envName == "" {
+		return secrets.Value{}, false
+	}
+	return p.passwords.InstancePassword(envName)
+}
+
+// cipher returns the cipher for stored passwords, or nil without a master key. It is asked each time, because a
+// secrets reload can change the key.
+func (p *Pool) cipher() *secrets.Cipher { return p.passwords.Cipher() }
+
+// password returns inst's password: from its variable if that is set, otherwise the stored one, decrypted.
+func (p *Pool) password(inst Instance) (secrets.Value, error) {
+	if v, ok := p.envPassword(inst.EnvName); ok {
+		return v, nil
+	}
+	if inst.Password.IsZero() {
+		if inst.EnvName != "" {
+			return secrets.Value{}, fmt.Errorf("%w: store one, or set %s", ErrNoPassword, secrets.InstanceVar(inst.EnvName))
+		}
+		return secrets.Value{}, fmt.Errorf("%w: store one", ErrNoPassword)
+	}
+	c := p.cipher()
+	if c == nil {
+		return secrets.Value{}, fmt.Errorf("%w: the stored password can't be read without PIHOLE_RBAC_SECRET_KEY", ErrMisconfigured)
+	}
+	v, err := c.Open(inst.Password.Sealed, passwordAAD(inst.ID))
+	if err != nil {
+		return secrets.Value{}, fmt.Errorf("%w: the stored password can't be read: %v", ErrMisconfigured, err)
+	}
+	return v, nil
+}
+
+// Test connects to an instance with the given settings and its current password, using a throwaway client: it logs
 // in, reads the blocking status and logs out. The pool and its health aren't touched, so settings can be tested
 // before they are saved or enabled.
 func (p *Pool) Test(ctx context.Context, inst Instance) error {
-	pw, ok := p.passwords.InstancePassword(inst.EnvName)
-	if !ok {
-		return fmt.Errorf("%w: set %s", ErrNoPassword, secrets.InstanceVar(inst.EnvName))
+	pw, err := p.password(inst)
+	if err != nil {
+		return err
 	}
+	return p.TestWith(ctx, inst, pw)
+}
+
+// TestWith is Test with a given password, such as one about to be stored.
+func (p *Pool) TestWith(ctx context.Context, inst Instance, pw secrets.Value) error {
 	c, err := piholeapi.New(piholeapi.Options{
 		BaseURL: inst.BaseURL, Password: pw, TLSMode: inst.TLSMode, CAFile: inst.CAFile, Timeout: p.timeout,
 	})

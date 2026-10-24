@@ -32,7 +32,7 @@ func (s *Server) ListSecrets(ctx context.Context, _ gen.ListSecretsRequestObject
 		known[st.Name] = true
 	}
 	for _, env := range envNames {
-		if name := secrets.InstanceVar(env); !known[name] {
+		if name := secrets.InstanceVar(env.String); !known[name] {
 			status = append(status, secrets.Status{Name: name})
 		}
 	}

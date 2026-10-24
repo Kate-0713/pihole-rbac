@@ -23,15 +23,25 @@
 -- Instances ------------------------------------------------------------------
 
 CREATE TABLE instances (
-    id          INTEGER PRIMARY KEY,
-    name        TEXT    NOT NULL UNIQUE CHECK (name <> ''),
-    base_url    TEXT    NOT NULL CHECK (base_url <> ''),
-    env_name    TEXT    NOT NULL UNIQUE CHECK (env_name <> '' AND env_name NOT GLOB '*[^A-Z0-9_]*'),
-    tls_mode    TEXT    NOT NULL DEFAULT 'verify' CHECK (tls_mode IN ('verify', 'insecure')),
-    ca_file     TEXT,
-    enabled     BOOLEAN NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
-    created_at  INTEGER NOT NULL,
-    CHECK (ca_file IS NULL OR tls_mode = 'verify')
+    id                  INTEGER PRIMARY KEY,
+    name                TEXT    NOT NULL UNIQUE CHECK (name <> ''),
+    base_url            TEXT    NOT NULL CHECK (base_url <> ''),
+    -- Optional. When PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD (or _FILE) is set, it overrides the stored password.
+    env_name            TEXT    UNIQUE CHECK (env_name IS NULL OR (env_name <> '' AND env_name NOT GLOB '*[^A-Z0-9_]*')),
+    tls_mode            TEXT    NOT NULL DEFAULT 'verify' CHECK (tls_mode IN ('verify', 'insecure')),
+    ca_file             TEXT,
+    enabled             BOOLEAN NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    created_at          INTEGER NOT NULL,
+    -- The Pi-hole app password, AES-256-GCM under the master key, bound to this row (see secrets.AAD).
+    password_ciphertext BLOB,
+    password_nonce      BLOB    CHECK (password_nonce IS NULL OR length(password_nonce) = 12),
+    password_key_id     TEXT,
+    password_updated_at INTEGER,
+    password_updated_by TEXT,
+    CHECK (ca_file IS NULL OR tls_mode = 'verify'),
+    CHECK ((password_ciphertext IS NULL) = (password_nonce IS NULL)
+       AND (password_ciphertext IS NULL) = (password_key_id IS NULL)
+       AND (password_ciphertext IS NULL) = (password_updated_at IS NULL))
 );
 
 -- UNIQUE (id, mode) is the parent key for instance_group_members, so a member

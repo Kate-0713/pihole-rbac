@@ -26,6 +26,9 @@ func NewValue(b []byte) Value {
 // IsZero reports whether the value is empty (not set).
 func (v Value) IsZero() bool { return len(v.b) == 0 }
 
+// Len returns the secret's length in bytes.
+func (v Value) Len() int { return len(v.b) }
+
 // Reveal returns the secret as a string.
 func (v Value) Reveal() string { return string(v.b) }
 

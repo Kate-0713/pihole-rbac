@@ -249,8 +249,8 @@ func TestResolve(t *testing.T) {
 			}
 			return id
 		}
-		inst1 = must(q.CreateInstance(ctx, db.CreateInstanceParams{Name: "one", BaseUrl: "https://one", EnvName: "ONE", TlsMode: "verify", CreatedAt: 1}))
-		inst2 = must(q.CreateInstance(ctx, db.CreateInstanceParams{Name: "two", BaseUrl: "https://two", EnvName: "TWO", TlsMode: "verify", CreatedAt: 1}))
+		inst1 = must(q.CreateInstance(ctx, db.CreateInstanceParams{Name: "one", BaseUrl: "https://one", EnvName: sql.NullString{String: "ONE", Valid: true}, TlsMode: "verify", CreatedAt: 1}))
+		inst2 = must(q.CreateInstance(ctx, db.CreateInstanceParams{Name: "two", BaseUrl: "https://two", EnvName: sql.NullString{String: "TWO", Valid: true}, TlsMode: "verify", CreatedAt: 1}))
 		grp = must(q.CreateInstanceGroup(ctx, db.CreateInstanceGroupParams{
 			Name: "pair", Mode: string(Mirrored), PrimaryInstanceID: sql.NullInt64{Int64: inst1, Valid: true}, CreatedAt: 1,
 		}))

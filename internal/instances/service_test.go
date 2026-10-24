@@ -21,6 +21,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi/piholetest"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
+	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
 )
@@ -89,11 +90,20 @@ func (e *svcEnv) tx(fn func(q *db.Queries) error) {
 
 func (e *svcEnv) create(name, env, url string) Instance {
 	e.t.Helper()
-	inst, err := e.svc.Create(e.ctx, e.admin, Input{Name: name, BaseURL: url, EnvName: env})
+	inst, err := e.svc.Create(e.ctx, e.admin, Input{Name: name, BaseURL: url, EnvName: env, Password: e.envConfirmation(env)})
 	if err != nil {
 		e.t.Fatalf("Create %s: %v", name, err)
 	}
 	return inst
+}
+
+// envConfirmation is the password of env's variable, which a create or edit must give to start using it, or nil when
+// the variable isn't set.
+func (e *svcEnv) envConfirmation(env string) *secrets.Value {
+	if v, ok := e.pw.InstancePassword(env); ok {
+		return &v
+	}
+	return nil
 }
 
 // lastAudit returns the newest audit row.
@@ -142,7 +152,7 @@ func TestCreate(t *testing.T) {
 		t.Fatalf("created %+v", inst)
 	}
 	got, err := e.svc.Get(e.ctx, inst.ID)
-	if err != nil || got != inst {
+	if err != nil || !got.equal(inst) {
 		t.Fatalf("Get = %+v, %v; want %+v", got, err, inst)
 	}
 	row := e.lastAudit()
@@ -157,7 +167,7 @@ func TestCreate(t *testing.T) {
 	t.Run("conflicts", func(t *testing.T) {
 		_, err := e.svc.Create(e.ctx, e.admin, Input{Name: "PiHole1", BaseURL: "http://x", EnvName: "OTHER"})
 		wantCode(t, err, rbac.CodeConflict, "name")
-		_, err = e.svc.Create(e.ctx, e.admin, Input{Name: "other", BaseURL: "http://x", EnvName: "PIHOLE1"})
+		_, err = e.svc.Create(e.ctx, e.admin, Input{Name: "other", BaseURL: "http://x", EnvName: "PIHOLE1", Password: e.envConfirmation("PIHOLE1")})
 		wantCode(t, err, rbac.CodeConflict, "env_name")
 	})
 }
@@ -248,7 +258,7 @@ func TestForbidden(t *testing.T) {
 	if ph.Logins() != 0 {
 		t.Errorf("a refused request reached Pi-hole (%d logins)", ph.Logins())
 	}
-	if got, _ := e.svc.Get(e.ctx, inst.ID); got != inst {
+	if got, _ := e.svc.Get(e.ctx, inst.ID); !got.equal(inst) {
 		t.Errorf("instance changed: %+v", got)
 	}
 }
@@ -355,13 +365,16 @@ func TestUpdate(t *testing.T) {
 	t.Run("disabled instances are saved without a test", func(t *testing.T) {
 		bad := in
 		bad.BaseURL = down.URL
+		bad.Password = e.envConfirmation("PIHOLE1") // a new address needs the password again
 		if _, err := e.svc.Update(e.ctx, e.admin, inst.ID, bad); err != nil {
 			t.Fatal(err)
 		}
 		if hits.Load() != 0 {
 			t.Error("a disabled instance was tested")
 		}
-		if _, err := e.svc.Update(e.ctx, e.admin, inst.ID, in); err != nil {
+		back := in
+		back.Password = e.envConfirmation("PIHOLE1")
+		if _, err := e.svc.Update(e.ctx, e.admin, inst.ID, back); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -394,6 +407,7 @@ func TestUpdate(t *testing.T) {
 	t.Run("a connection change that fails its test is refused", func(t *testing.T) {
 		bad := in
 		bad.BaseURL = down.URL
+		bad.Password = e.envConfirmation("PIHOLE1")
 		_, err := e.svc.Update(e.ctx, e.admin, inst.ID, bad)
 		var te *TestError
 		if !errors.As(err, &te) {
@@ -410,6 +424,7 @@ func TestUpdate(t *testing.T) {
 	t.Run("a connection change that passes is applied to the pool", func(t *testing.T) {
 		moved := in
 		moved.BaseURL = b.URL
+		moved.Password = e.envConfirmation("PIHOLE1")
 		got, err := e.svc.Update(e.ctx, e.admin, inst.ID, moved)
 		if err != nil || got.BaseURL != b.URL {
 			t.Fatalf("Update = %+v, %v", got, err)

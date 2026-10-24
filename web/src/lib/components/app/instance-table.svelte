@@ -9,13 +9,14 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { formatDateTime } from '#lib/format.js';
-	import { errorLabel, instanceStatus, type Instance } from '#lib/instances.js';
+	import { errorLabel, instanceStatus, passwordSummary, type Instance } from '#lib/instances.js';
 
 	// A plain table rather than TanStack: an install has a handful of instances, so sorting by name is enough.
 	let {
 		instances,
 		busy,
 		onedit,
+		onpassword,
 		ontest,
 		onenable,
 		ondisable,
@@ -25,6 +26,7 @@
 		// The ID of the instance an action is running on, so its menu can't start another one.
 		busy: number | null;
 		onedit: (inst: Instance) => void;
+		onpassword: (inst: Instance) => void;
 		ontest: (inst: Instance) => void;
 		onenable: (inst: Instance) => void;
 		ondisable: (inst: Instance) => void;
@@ -56,6 +58,7 @@
 			{#each sorted as inst (inst.id)}
 				{@const status = instanceStatus(inst)}
 				{@const lastError = inst.enabled ? errorLabel(inst.health?.last_error) : null}
+				{@const pw = passwordSummary(inst)}
 				<Table.Row>
 					<Table.Cell class="font-medium">{inst.name}</Table.Cell>
 					<Table.Cell>
@@ -78,12 +81,15 @@
 						{/if}
 					</Table.Cell>
 					<Table.Cell>
-						{#if inst.password_set}
-							<Badge variant="secondary">Set</Badge>
-						{:else}
-							<Badge variant="destructive">Missing</Badge>
+						<Badge variant={pw.tone === 'ok' ? 'secondary' : 'destructive'}>{pw.label}</Badge>
+						{#if pw.detail}
+							<p
+								class="text-muted-foreground text-xs break-all"
+								class:font-mono={inst.password_source === 'environment'}
+							>
+								{pw.detail}
+							</p>
 						{/if}
-						<p class="text-muted-foreground font-mono text-xs break-all">{inst.password_variable}</p>
 					</Table.Cell>
 					<Table.Cell>
 						<DropdownMenu.Root>
@@ -103,6 +109,10 @@
 							<DropdownMenu.Content align="end">
 								<DropdownMenu.Item onSelect={() => ontest(inst)}>Test connection</DropdownMenu.Item>
 								<DropdownMenu.Item onSelect={() => onedit(inst)}>Edit</DropdownMenu.Item>
+								<!-- A password from the environment overrides a stored one, so it is changed there. -->
+								{#if inst.password_source !== 'environment'}
+									<DropdownMenu.Item onSelect={() => onpassword(inst)}>Change password</DropdownMenu.Item>
+								{/if}
 								{#if inst.enabled}
 									<DropdownMenu.Item onSelect={() => ondisable(inst)}>Disable</DropdownMenu.Item>
 								{:else}

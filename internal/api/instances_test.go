@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -80,18 +81,18 @@ func TestInstanceLifecycle(t *testing.T) {
 	e.addUser("admin", "admin-password-1", true)
 	c := e.loggedIn("admin", "admin-password-1")
 
-	res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL + "/", EnvName: "PIHOLE1"})
+	res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL + "/", EnvName: ptr("PIHOLE1"), Password: ptr(piholePassword)})
 	mustStatus(t, res, http.StatusCreated)
 	inst := decode[gen.Instance](t, res)
 	if inst.Enabled || inst.BaseUrl != ph.URL || inst.TlsMode != gen.InstanceTlsModeVerify || inst.Health != nil ||
-		inst.PasswordVariable != "PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD" || !inst.PasswordSet {
+		inst.PasswordVariable == nil || *inst.PasswordVariable != "PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD" || !inst.PasswordSet {
 		t.Fatalf("created %+v", inst)
 	}
 
-	if list := decode[gen.InstanceList](t, c.do(http.MethodGet, "/api/v1/instances", nil)); len(list.Instances) != 1 || list.Instances[0] != inst {
+	if list := decode[gen.InstanceList](t, c.do(http.MethodGet, "/api/v1/instances", nil)); len(list.Instances) != 1 || !reflect.DeepEqual(list.Instances[0], inst) || list.CanStorePasswords {
 		t.Errorf("list %+v", list)
 	}
-	if got := decode[gen.Instance](t, c.do(http.MethodGet, instancePath(inst.Id, ""), nil)); got != inst {
+	if got := decode[gen.Instance](t, c.do(http.MethodGet, instancePath(inst.Id, ""), nil)); !reflect.DeepEqual(got, inst) {
 		t.Errorf("get %+v", got)
 	}
 	if tl := decode[gen.TargetList](t, c.do(http.MethodGet, "/api/v1/targets", nil)); len(tl.Targets) != 0 {
@@ -125,7 +126,7 @@ func TestInstanceLifecycle(t *testing.T) {
 		t.Fatalf("targets %s", mustJSON(t, tl))
 	}
 
-	res = c.do(http.MethodPut, instancePath(inst.Id, ""), gen.InstanceInput{Name: "kitchen", BaseUrl: ph.URL, EnvName: "PIHOLE1"})
+	res = c.do(http.MethodPut, instancePath(inst.Id, ""), gen.InstanceInput{Name: "kitchen", BaseUrl: ph.URL, EnvName: ptr("PIHOLE1")})
 	mustStatus(t, res, http.StatusOK)
 	if got := decode[gen.Instance](t, res); got.Name != "kitchen" || !got.Enabled {
 		t.Errorf("updated %+v", got)
@@ -169,7 +170,11 @@ func TestInstanceErrors(t *testing.T) {
 	c := e.loggedIn("admin", "admin-password-1")
 	create := func(name, env, url string) int64 {
 		t.Helper()
-		res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: name, BaseUrl: url, EnvName: env})
+		in := gen.InstanceInput{Name: name, BaseUrl: url, EnvName: ptr(env)}
+		if env != "UNSET" {
+			in.Password = ptr(piholePassword) // confirms the variable that is set
+		}
+		res := c.do(http.MethodPost, "/api/v1/instances", in)
 		mustStatus(t, res, http.StatusCreated)
 		return decode[gen.Instance](t, res).Id
 	}
@@ -179,14 +184,14 @@ func TestInstanceErrors(t *testing.T) {
 	unsetID := create("unset", "UNSET", good.URL)
 
 	t.Run("validation", func(t *testing.T) {
-		res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "x", BaseUrl: "pi.hole", EnvName: "X"})
+		res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "x", BaseUrl: "pi.hole", EnvName: ptr("X")})
 		mustStatus(t, res, http.StatusBadRequest)
 		if res.errorCode() != "validation_failed" || errorDetails(t, res)["field"] != "base_url" {
 			t.Errorf("%s", res.Body)
 		}
 	})
 	t.Run("duplicate name", func(t *testing.T) {
-		res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "GOOD", BaseUrl: good.URL, EnvName: "OTHER"})
+		res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "GOOD", BaseUrl: good.URL, EnvName: ptr("OTHER")})
 		mustStatus(t, res, http.StatusConflict)
 		if res.errorCode() != "conflict" {
 			t.Errorf("%s", res.Body)
@@ -234,7 +239,7 @@ func TestInstanceErrors(t *testing.T) {
 
 	t.Run("edit of an enabled instance refused", func(t *testing.T) {
 		mustStatus(t, c.do(http.MethodPost, instancePath(goodID, "/enable"), nil), http.StatusOK)
-		res := c.do(http.MethodPut, instancePath(goodID, ""), gen.InstanceInput{Name: "good", BaseUrl: goneURL, EnvName: "GOOD"})
+		res := c.do(http.MethodPut, instancePath(goodID, ""), gen.InstanceInput{Name: "good", BaseUrl: goneURL, EnvName: ptr("GOOD"), Password: ptr(piholePassword)})
 		if res.Code != http.StatusBadGateway || res.errorCode() != "pihole_unreachable" {
 			t.Errorf("%d %s", res.Code, res.Body)
 		}
@@ -292,12 +297,12 @@ func TestInstanceRoutesNeedInstancesManage(t *testing.T) {
 	e.addUser("admin", "admin-password-1", true)
 	e.addRoleUser("reader", "reader-password-1", rbac.DomainsView)
 	admin := e.loggedIn("admin", "admin-password-1")
-	res := admin.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL, EnvName: "PIHOLE1"})
+	res := admin.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL, EnvName: ptr("PIHOLE1"), Password: ptr(piholePassword)})
 	mustStatus(t, res, http.StatusCreated)
 	id := decode[gen.Instance](t, res).Id
 	reader := e.loggedIn("reader", "reader-password-1")
 
-	input := gen.InstanceInput{Name: "x", BaseUrl: ph.URL, EnvName: "PIHOLE1"}
+	input := gen.InstanceInput{Name: "x", BaseUrl: ph.URL, EnvName: ptr("PIHOLE1")}
 	tests := []struct {
 		method, path string
 		body         any
@@ -342,7 +347,7 @@ func TestTargetsFollowPermissions(t *testing.T) {
 	admin := e.loggedIn("admin", "admin-password-1")
 	ids := map[string]int64{}
 	for _, n := range []string{"one", "two", "off"} {
-		res := admin.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: n, BaseUrl: ph.URL, EnvName: strings.ToUpper(n)})
+		res := admin.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: n, BaseUrl: ph.URL, EnvName: ptr(strings.ToUpper(n)), Password: ptr(piholePassword)})
 		mustStatus(t, res, http.StatusCreated)
 		ids[n] = decode[gen.Instance](t, res).Id
 		if n != "off" {
@@ -415,7 +420,7 @@ func TestReloadRebuildsInstanceClients(t *testing.T) {
 	e := newTestEnv(t, withInstances(t, map[string]string{secrets.InstanceVar("PIHOLE1") + "_FILE": pwFile}))
 	e.addUser("admin", "admin-password-1", true)
 	c := e.loggedIn("admin", "admin-password-1")
-	res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL, EnvName: "PIHOLE1"})
+	res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL, EnvName: ptr("PIHOLE1"), Password: ptr("old password")})
 	mustStatus(t, res, http.StatusCreated)
 	id := decode[gen.Instance](t, res).Id
 	if res := c.do(http.MethodPost, instancePath(id, "/enable"), nil); res.errorCode() != "pihole_auth_rejected" {
@@ -441,5 +446,62 @@ func TestReloadRebuildsInstanceClients(t *testing.T) {
 	}
 	if rebuilt, _ := d["instances_rebuilt"].([]any); last.Action != audit.ActionConfigReload || len(rebuilt) != 1 || rebuilt[0] != "pihole1" {
 		t.Errorf("audit row %s %s", last.Action, last.Detail)
+	}
+}
+
+func TestInstanceStoredPassword(t *testing.T) {
+	ph := piholetest.New(t, piholePassword)
+	e := newTestEnv(t, withInstances(t, map[string]string{
+		secrets.VarSecretKey:           secrets.NewKey(),
+		secrets.InstanceVar("PIHOLE1"): piholePassword,
+	}))
+	e.addUser("admin", "admin-password-1", true)
+	c := e.loggedIn("admin", "admin-password-1")
+
+	if list := decode[gen.InstanceList](t, c.do(http.MethodGet, "/api/v1/instances", nil)); !list.CanStorePasswords {
+		t.Error("can_store_passwords is false with a master key")
+	}
+
+	res := c.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "kitchen", BaseUrl: ph.URL, Password: ptr("first password")})
+	mustStatus(t, res, http.StatusCreated)
+	if strings.Contains(res.Body.String(), "first password") {
+		t.Fatalf("the password is in the response: %s", res.Body)
+	}
+	inst := decode[gen.Instance](t, res)
+	if inst.PasswordSource != gen.InstancePasswordSource("stored") || !inst.PasswordSet || inst.EnvName != nil || inst.PasswordVariable != nil ||
+		inst.PasswordUpdatedBy == nil || *inst.PasswordUpdatedBy != "admin" || inst.PasswordUpdatedAt == nil {
+		t.Fatalf("created %s", res.Body)
+	}
+
+	// Rotating it: a wrong one is still saved while the instance is disabled; the right one lets it be enabled.
+	mustStatus(t, c.do(http.MethodPut, instancePath(inst.Id, "/password"), gen.InstancePassword{Password: ptr(piholePassword)}), http.StatusOK)
+	mustStatus(t, c.do(http.MethodPost, instancePath(inst.Id, "/enable"), nil), http.StatusOK)
+	res = c.do(http.MethodPut, instancePath(inst.Id, "/password"), gen.InstancePassword{Password: ptr("typo")})
+	if res.Code != http.StatusBadGateway || res.errorCode() != "pihole_auth_rejected" {
+		t.Errorf("a refused password on an enabled instance: %d %s", res.Code, res.Body)
+	}
+
+	res = c.do(http.MethodPut, instancePath(inst.Id, ""), gen.InstanceInput{Name: "kitchen", BaseUrl: "http://127.0.0.1:1"})
+	if res.Code != http.StatusBadRequest || errorDetails(t, res)["field"] != "password" {
+		t.Errorf("a new address without the password: %d %s", res.Code, res.Body)
+	}
+
+	envInst := decode[gen.Instance](t, c.do(http.MethodPost, "/api/v1/instances",
+		gen.InstanceInput{Name: "env", BaseUrl: ph.URL, EnvName: ptr("PIHOLE1"), Password: ptr(piholePassword)}))
+	if envInst.PasswordSource != gen.InstancePasswordSource("environment") || envInst.PasswordUpdatedAt != nil {
+		t.Errorf("env instance %+v", envInst)
+	}
+	res = c.do(http.MethodPut, instancePath(envInst.Id, "/password"), gen.InstancePassword{Password: ptr("x")})
+	if res.Code != http.StatusConflict || res.errorCode() != "conflict" {
+		t.Errorf("storing over a variable: %d %s", res.Code, res.Body)
+	}
+	if res := c.do(http.MethodPut, instancePath(envInst.Id, "/password"), map[string]any{}); res.Code != http.StatusBadRequest {
+		t.Errorf("no password: %d %s", res.Code, res.Body)
+	}
+
+	for _, line := range e.auditLines() {
+		if strings.Contains(line, piholePassword) || strings.Contains(line, "first password") || strings.Contains(line, "typo") {
+			t.Errorf("a password reached the audit log: %s", line)
+		}
 	}
 }

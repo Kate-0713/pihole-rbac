@@ -45,7 +45,7 @@ RETURNING id
 type CreateInstanceParams struct {
 	Name      string
 	BaseUrl   string
-	EnvName   string
+	EnvName   sql.NullString
 	TlsMode   string
 	CaFile    sql.NullString
 	CreatedAt int64
@@ -100,7 +100,7 @@ func (q *Queries) DeleteInstance(ctx context.Context, id int64) error {
 }
 
 const getInstance = `-- name: GetInstance :one
-SELECT id, name, base_url, env_name, tls_mode, ca_file, enabled, created_at FROM instances WHERE id = ?
+SELECT id, name, base_url, env_name, tls_mode, ca_file, enabled, created_at, password_ciphertext, password_nonce, password_key_id, password_updated_at, password_updated_by FROM instances WHERE id = ?
 `
 
 func (q *Queries) GetInstance(ctx context.Context, id int64) (Instance, error) {
@@ -115,6 +115,11 @@ func (q *Queries) GetInstance(ctx context.Context, id int64) (Instance, error) {
 		&i.CaFile,
 		&i.Enabled,
 		&i.CreatedAt,
+		&i.PasswordCiphertext,
+		&i.PasswordNonce,
+		&i.PasswordKeyID,
+		&i.PasswordUpdatedAt,
+		&i.PasswordUpdatedBy,
 	)
 	return i, err
 }
@@ -186,18 +191,18 @@ func (q *Queries) ListGroupsWithInstance(ctx context.Context, instanceID int64) 
 }
 
 const listInstanceEnvNames = `-- name: ListInstanceEnvNames :many
-SELECT env_name FROM instances ORDER BY env_name
+SELECT env_name FROM instances WHERE env_name IS NOT NULL ORDER BY env_name
 `
 
-func (q *Queries) ListInstanceEnvNames(ctx context.Context) ([]string, error) {
+func (q *Queries) ListInstanceEnvNames(ctx context.Context) ([]sql.NullString, error) {
 	rows, err := q.db.QueryContext(ctx, listInstanceEnvNames)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []sql.NullString{}
 	for rows.Next() {
-		var env_name string
+		var env_name sql.NullString
 		if err := rows.Scan(&env_name); err != nil {
 			return nil, err
 		}
@@ -276,7 +281,7 @@ func (q *Queries) ListInstanceIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listInstances = `-- name: ListInstances :many
-SELECT id, name, base_url, env_name, tls_mode, ca_file, enabled, created_at FROM instances ORDER BY name
+SELECT id, name, base_url, env_name, tls_mode, ca_file, enabled, created_at, password_ciphertext, password_nonce, password_key_id, password_updated_at, password_updated_by FROM instances ORDER BY name
 `
 
 func (q *Queries) ListInstances(ctx context.Context) ([]Instance, error) {
@@ -297,6 +302,11 @@ func (q *Queries) ListInstances(ctx context.Context) ([]Instance, error) {
 			&i.CaFile,
 			&i.Enabled,
 			&i.CreatedAt,
+			&i.PasswordCiphertext,
+			&i.PasswordNonce,
+			&i.PasswordKeyID,
+			&i.PasswordUpdatedAt,
+			&i.PasswordUpdatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -355,6 +365,33 @@ func (q *Queries) SetInstanceEnabled(ctx context.Context, arg SetInstanceEnabled
 	return err
 }
 
+const setInstancePassword = `-- name: SetInstancePassword :exec
+UPDATE instances
+SET password_ciphertext = ?, password_nonce = ?, password_key_id = ?, password_updated_at = ?, password_updated_by = ?
+WHERE id = ?
+`
+
+type SetInstancePasswordParams struct {
+	PasswordCiphertext []byte
+	PasswordNonce      []byte
+	PasswordKeyID      sql.NullString
+	PasswordUpdatedAt  sql.NullInt64
+	PasswordUpdatedBy  sql.NullString
+	ID                 int64
+}
+
+func (q *Queries) SetInstancePassword(ctx context.Context, arg SetInstancePasswordParams) error {
+	_, err := q.db.ExecContext(ctx, setInstancePassword,
+		arg.PasswordCiphertext,
+		arg.PasswordNonce,
+		arg.PasswordKeyID,
+		arg.PasswordUpdatedAt,
+		arg.PasswordUpdatedBy,
+		arg.ID,
+	)
+	return err
+}
+
 const updateInstance = `-- name: UpdateInstance :exec
 UPDATE instances SET name = ?, base_url = ?, env_name = ?, tls_mode = ?, ca_file = ? WHERE id = ?
 `
@@ -362,7 +399,7 @@ UPDATE instances SET name = ?, base_url = ?, env_name = ?, tls_mode = ?, ca_file
 type UpdateInstanceParams struct {
 	Name    string
 	BaseUrl string
-	EnvName string
+	EnvName sql.NullString
 	TlsMode string
 	CaFile  sql.NullString
 	ID      int64

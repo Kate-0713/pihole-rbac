@@ -25,8 +25,15 @@ import (
 const password = "pihole app password"
 
 type fakePasswords struct {
-	mu sync.Mutex
-	m  map[string]string
+	mu     sync.Mutex
+	m      map[string]string
+	cipher *secrets.Cipher // nil: no master key
+}
+
+func (f *fakePasswords) Cipher() *secrets.Cipher {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cipher
 }
 
 func (f *fakePasswords) InstancePassword(env string) (secrets.Value, bool) {

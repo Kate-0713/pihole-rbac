@@ -54,15 +54,18 @@ type Fixture struct {
 	// SpareEnvName has its password variable set on the seeded server but no instance, so a test can add an instance
 	// that can be enabled: the fake Pi-holes all take the same password.
 	SpareEnvName string `json:"spare_env_name"`
+	// PiholePassword is the fake Pi-holes' app password, for tests that store or confirm one.
+	PiholePassword string `json:"pihole_password"`
 }
 
 // NewFixture returns the standard fixture for instances at the given base URLs, named pihole1, pihole2 and so on.
 func NewFixture(baseURLs ...string) *Fixture {
 	f := &Fixture{
-		Admin:        User{Username: "admin", Password: "e2e-admin-password", About: "builtin admin role"},
-		OneInstance:  User{Username: "alice", Password: "e2e-alice-password", About: "domains, clients and query log on pihole1"},
-		NoInstances:  User{Username: "bob", Password: "e2e-bob-password", About: "audit.view only"},
-		SpareEnvName: "SPARE",
+		Admin:          User{Username: "admin", Password: "e2e-admin-password", About: "builtin admin role"},
+		OneInstance:    User{Username: "alice", Password: "e2e-alice-password", About: "domains, clients and query log on pihole1"},
+		NoInstances:    User{Username: "bob", Password: "e2e-bob-password", About: "audit.view only"},
+		SpareEnvName:   "SPARE",
+		PiholePassword: PiholePassword,
 	}
 	for i, u := range baseURLs {
 		f.Instances = append(f.Instances, Instance{
@@ -95,7 +98,7 @@ func Seed(ctx context.Context, dataDir string, f *Fixture) error {
 		for i := range f.Instances {
 			inst := &f.Instances[i]
 			id, err := q.CreateInstance(ctx, db.CreateInstanceParams{
-				Name: inst.Name, BaseUrl: inst.BaseURL, EnvName: inst.EnvName, TlsMode: "verify", CreatedAt: store.Millis(now),
+				Name: inst.Name, BaseUrl: inst.BaseURL, EnvName: sql.NullString{String: inst.EnvName, Valid: true}, TlsMode: "verify", CreatedAt: store.Millis(now),
 			})
 			if err != nil {
 				return fmt.Errorf("instance %s: %w", inst.Name, err)

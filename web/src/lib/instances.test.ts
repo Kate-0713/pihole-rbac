@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+	addressChanged,
 	baseURLProblem,
 	caFileProblem,
 	connectionChanged,
@@ -10,8 +11,10 @@ import {
 	errorLabel,
 	instanceStatus,
 	nameProblem,
+	needsPassword,
+	passwordProblem,
+	passwordSummary,
 	passwordVariable,
-	suggestEnvName,
 	type Instance
 } from './instances.js';
 
@@ -24,6 +27,7 @@ const inst: Instance = {
 	enabled: true,
 	created_at: '2026-10-24T12:00:00Z',
 	password_variable: 'PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD',
+	password_source: 'environment',
 	password_set: true,
 	health: { state: 'up' }
 };
@@ -32,18 +36,6 @@ describe('passwordVariable', () => {
 	it('names the variable the server reads', () => {
 		expect(passwordVariable('PIHOLE1')).toBe('PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD');
 		expect(passwordVariable('')).toBe('PIHOLE_RBAC_INSTANCE_<ENV_NAME>_PASSWORD');
-	});
-});
-
-describe('suggestEnvName', () => {
-	it.each([
-		['pihole1', 'PIHOLE1'],
-		['Pi-hole 1', 'PI_HOLE_1'],
-		['  site a / lab ', 'SITE_A_LAB'],
-		['ümlaut', 'MLAUT'],
-		['', '']
-	])('%j becomes %j', (name, want) => {
-		expect(suggestEnvName(name)).toBe(want);
 	});
 });
 
@@ -65,9 +57,9 @@ describe('envNameProblem', () => {
 	it.each([
 		['PIHOLE1', false],
 		['SITE_A_2', false],
+		['', false],
 		['pihole1', true],
 		['PI-HOLE', true],
-		['', true],
 		['A'.repeat(64), false],
 		['A'.repeat(65), true]
 	])('%j: problem %s', (env, bad) => {
@@ -115,7 +107,7 @@ describe('caFileProblem', () => {
 describe('instanceStatus', () => {
 	it('reads the enabled flag, the password and the health, in that order', () => {
 		expect(instanceStatus({ ...inst, enabled: false }).label).toBe('Disabled');
-		expect(instanceStatus({ ...inst, password_set: false }).label).toBe('Password missing');
+		expect(instanceStatus({ ...inst, password_set: false }).label).toBe('No password');
 		expect(instanceStatus(inst)).toEqual({ label: 'Up', tone: 'ok' });
 		expect(instanceStatus({ ...inst, health: { state: 'down' } }).tone).toBe('bad');
 		expect(instanceStatus({ ...inst, health: undefined }).label).toBe('Not checked yet');
@@ -130,17 +122,67 @@ describe('errorLabel', () => {
 	});
 });
 
-describe('connectionChanged', () => {
-	const same = { name: 'renamed', base_url: 'https://pihole1.lan/', env_name: 'PIHOLE1', tls_mode: 'verify' as const, ca_file: '' };
-	it('ignores a rename and a trailing slash', () => {
+describe('connectionChanged and addressChanged', () => {
+	const same = { base_url: 'https://pihole1.lan/', env_name: 'PIHOLE1', tls_mode: 'verify' as const, ca_file: '' };
+	it('ignore a trailing slash', () => {
 		expect(connectionChanged(inst, same)).toBe(false);
+		expect(addressChanged(inst, same)).toBe(false);
 	});
 	it.each([
-		['base_url', { base_url: 'https://pihole2.lan' }],
-		['env_name', { env_name: 'PIHOLE2' }],
-		['tls_mode', { tls_mode: 'insecure' as const }],
-		['ca_file', { ca_file: '/etc/ssl/ca.pem' }]
-	])('notices %s', (_, change) => {
+		['base_url', { base_url: 'https://pihole2.lan' }, true],
+		['tls_mode', { tls_mode: 'insecure' as const }, true],
+		['ca_file', { ca_file: '/etc/ssl/ca.pem' }, true],
+		['env_name', { env_name: 'PIHOLE2' }, false]
+	])('%s: connection changes, address %s', (_, change, address) => {
 		expect(connectionChanged(inst, { ...same, ...change })).toBe(true);
+		expect(addressChanged(inst, { ...same, ...change })).toBe(address);
+	});
+	it('an instance without an env name compares with an empty one', () => {
+		expect(connectionChanged({ ...inst, env_name: undefined }, { ...same, env_name: '' })).toBe(false);
+	});
+});
+
+describe('needsPassword', () => {
+	const moved = { base_url: 'https://elsewhere.lan', env_name: 'PIHOLE1', tls_mode: 'verify' as const, ca_file: '' };
+	it('asks again when an instance with a password moves', () => {
+		expect(needsPassword(inst, moved)).toBe(true);
+		expect(needsPassword({ ...inst, password_set: false, password_source: 'none' }, moved)).toBe(false);
+		expect(needsPassword(inst, { ...moved, base_url: inst.base_url })).toBe(false);
+	});
+});
+
+describe('passwordProblem', () => {
+	it.each([
+		['secret', 'secret', null],
+		['', '', 'Enter the password.'],
+		['secret', 'secreT', "don't match"],
+		['é'.repeat(513), 'é'.repeat(513), 'at most 1024 bytes'],
+		['é'.repeat(512), 'é'.repeat(512), null]
+	])('%j / %j', (pw, again, want) => {
+		const got = passwordProblem(pw, again);
+		if (want === null) expect(got).toBeNull();
+		else expect(got).toContain(want);
+	});
+});
+
+describe('passwordSummary', () => {
+	it('says where the password comes from', () => {
+		expect(passwordSummary(inst)).toEqual({ label: 'Environment', tone: 'ok', detail: 'PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD' });
+		const stored = passwordSummary({
+			...inst,
+			env_name: undefined,
+			password_variable: undefined,
+			password_source: 'stored',
+			password_updated_at: '2026-10-24T13:05:00Z',
+			password_updated_by: 'kate'
+		});
+		expect(stored.label).toBe('Stored');
+		expect(stored.detail).toMatch(/^Changed .* by kate$/);
+		expect(passwordSummary({ ...inst, password_source: 'none', password_set: false })).toEqual({
+			label: 'Missing',
+			tone: 'bad',
+			detail: 'Store one, or set PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD'
+		});
+		expect(passwordSummary({ ...inst, password_source: 'none', password_set: false, password_variable: undefined }).detail).toBeNull();
 	});
 });

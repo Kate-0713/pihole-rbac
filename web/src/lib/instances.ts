@@ -5,6 +5,7 @@
 // (Input.normalize in internal/instances/service.go and piholeapi.ParseBaseURL), so the form can say what's wrong
 // before it is sent. The server checks again, and it alone can check that a CA file exists and parses.
 import type { Schemas } from '#lib/api/client.js';
+import { formatDateTime } from '#lib/format.js';
 import { controlChars } from '#lib/pihole.js';
 
 export type Instance = Schemas['Instance'];
@@ -15,25 +16,17 @@ export const maxNameChars = 64;
 export const maxBaseURLChars = 2048;
 export const maxEnvNameChars = 64;
 export const maxCAFileChars = 4096;
+export const maxPasswordBytes = 1024;
 
 export const tlsModeLabel: Record<TLSMode, string> = {
 	verify: 'Verify the certificate',
 	insecure: "Don't verify (labs only)"
 };
 
-// passwordVariable is the variable an instance's password is read from, as secrets.InstanceVar builds it.
+// passwordVariable is the variable whose password overrides an instance's stored one, as secrets.InstanceVar builds
+// it.
 export function passwordVariable(envName: string): string {
 	return `PIHOLE_RBAC_INSTANCE_${envName || '<ENV_NAME>'}_PASSWORD`;
-}
-
-// suggestEnvName turns a name into an env name: "Pi-hole 1" becomes "PI_HOLE_1". Only a suggestion for a new
-// instance; the admin can change it.
-export function suggestEnvName(name: string): string {
-	return name
-		.toUpperCase()
-		.replace(/[^A-Z0-9]+/g, '_')
-		.replace(/^_+|_+$/g, '')
-		.slice(0, maxEnvNameChars);
 }
 
 export function nameProblem(name: string): string | null {
@@ -44,11 +37,22 @@ export function nameProblem(name: string): string | null {
 	return null;
 }
 
+// envNameProblem checks the optional env name: empty, or up to 64 characters of A-Z, 0-9 and _.
 export function envNameProblem(envName: string): string | null {
 	const e = envName.trim();
-	if (e.length === 0 || e.length > maxEnvNameChars || !/^[A-Z0-9_]+$/.test(e)) {
-		return `Use 1-${maxEnvNameChars} characters of A-Z, 0-9 and _.`;
+	if (e.length > maxEnvNameChars || !/^[A-Z0-9_]*$/.test(e)) {
+		return `Leave it empty, or use up to ${maxEnvNameChars} characters of A-Z, 0-9 and _.`;
 	}
+	return null;
+}
+
+// passwordProblem checks a password about to be sent: 1-1024 bytes, used exactly as typed, and typed the same twice.
+export function passwordProblem(password: string, repeated: string): string | null {
+	if (password === '') return 'Enter the password.';
+	if (new TextEncoder().encode(password).length > maxPasswordBytes) {
+		return `A password can be at most ${maxPasswordBytes} bytes.`;
+	}
+	if (password !== repeated) return "The two passwords don't match.";
 	return null;
 }
 
@@ -97,7 +101,7 @@ export type Status = { label: string; tone: 'ok' | 'bad' | 'muted' };
 
 export function instanceStatus(inst: Instance): Status {
 	if (!inst.enabled) return { label: 'Disabled', tone: 'muted' };
-	if (!inst.password_set) return { label: 'Password missing', tone: 'bad' };
+	if (!inst.password_set) return { label: 'No password', tone: 'bad' };
 	switch (inst.health?.state) {
 		case 'up':
 			return { label: 'Up', tone: 'ok' };
@@ -121,7 +125,7 @@ export function errorLabel(code: string | undefined): string | null {
 		case 'pihole_status_error':
 			return 'Pi-hole answered with an error';
 		case 'instance_password_missing':
-			return 'The password variable is not set';
+			return 'It has no password';
 		case 'instance_misconfigured':
 			return "The settings can't be used";
 		default:
@@ -129,24 +133,46 @@ export function errorLabel(code: string | undefined): string | null {
 	}
 }
 
-// toInput is the form's starting point for an existing instance.
-export function toInput(inst: Instance): Required<InstanceInput> {
-	return {
-		name: inst.name,
-		base_url: inst.base_url,
-		env_name: inst.env_name,
-		tls_mode: inst.tls_mode,
-		ca_file: inst.ca_file ?? ''
-	};
+// The fields of the instance form that decide where an instance connects and which password it uses.
+export type Connection = { base_url: string; env_name: string; tls_mode: TLSMode; ca_file: string };
+
+// addressChanged says whether saving would send the instance's password somewhere new: another base URL, TLS mode
+// or CA file. The server then wants the password again (see needsPassword).
+export function addressChanged(inst: Instance, c: Connection): boolean {
+	return (
+		inst.base_url !== c.base_url.trim().replace(/\/+$/, '') ||
+		inst.tls_mode !== c.tls_mode ||
+		(inst.ca_file ?? '') !== c.ca_file.trim()
+	);
 }
 
 // connectionChanged says whether saving would change how an enabled instance connects, which the server only allows
 // after a passing connection test.
-export function connectionChanged(inst: Instance, input: InstanceInput): boolean {
-	return (
-		inst.base_url !== input.base_url.trim().replace(/\/+$/, '') ||
-		inst.env_name !== input.env_name.trim() ||
-		inst.tls_mode !== (input.tls_mode ?? 'verify') ||
-		(inst.ca_file ?? '') !== (input.ca_file ?? '').trim()
-	);
+export function connectionChanged(inst: Instance, c: Connection): boolean {
+	return addressChanged(inst, c) || (inst.env_name ?? '') !== c.env_name.trim();
+}
+
+// needsPassword says whether an edit must give the password again: a password is only sent to an address it was
+// confirmed for. The server also wants it when the instance starts using an env variable that is set, which only it
+// can know; the form then asks for it after the first try.
+export function needsPassword(inst: Instance, c: Connection): boolean {
+	return inst.password_set && addressChanged(inst, c);
+}
+
+// passwordSummary says where an instance's password comes from, for the table.
+export function passwordSummary(inst: Instance): { label: string; tone: 'ok' | 'bad'; detail: string | null } {
+	switch (inst.password_source) {
+		case 'stored':
+			return {
+				label: 'Stored',
+				tone: 'ok',
+				detail: inst.password_updated_at
+					? `Changed ${formatDateTime(inst.password_updated_at)}${inst.password_updated_by ? ` by ${inst.password_updated_by}` : ''}`
+					: null
+			};
+		case 'environment':
+			return { label: 'Environment', tone: 'ok', detail: inst.password_variable ?? null };
+		default:
+			return { label: 'Missing', tone: 'bad', detail: inst.password_variable ? `Store one, or set ${inst.password_variable}` : null };
+	}
 }

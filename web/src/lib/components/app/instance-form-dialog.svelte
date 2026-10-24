@@ -17,23 +17,26 @@
 		envNameProblem,
 		isHTTPS,
 		nameProblem,
+		needsPassword,
+		passwordProblem,
 		passwordVariable,
-		suggestEnvName,
 		tlsModeLabel,
 		type Instance,
 		type TLSMode
 	} from '#lib/instances.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
 
-	// One dialog for adding an instance and for changing one. Passwords never go through it: the server reads each
-	// instance's password from its own environment variable.
+	// One dialog for adding an instance and for changing one. The password is write-only: it is sent when typed, never
+	// shown, and the server keeps it encrypted (or checks it against the instance's env variable, which wins).
 	let {
 		open = $bindable(false),
 		instance = null,
+		canStorePasswords,
 		onsaved
 	}: {
 		open: boolean;
 		instance?: Instance | null;
+		canStorePasswords: boolean;
 		onsaved: () => Promise<void> | void;
 	} = $props();
 
@@ -42,8 +45,11 @@
 	let envName = $state('');
 	let tlsMode = $state<TLSMode>('verify');
 	let caFile = $state('');
-	// While adding, the env name follows the name until the admin edits it.
-	let envEdited = $state(false);
+	let password = $state('');
+	let passwordAgain = $state('');
+	// Set when the server answered that it needs the password, for a reason only it can know (the new env variable is
+	// set). From then on the form asks for it.
+	let serverWantsPassword = $state(false);
 	let error = $state<{ message: string; detail?: string } | null>(null);
 	let busy = $state(false);
 	let touched = $state(false);
@@ -55,27 +61,34 @@
 		envName = instance?.env_name ?? '';
 		tlsMode = instance?.tls_mode ?? 'verify';
 		caFile = instance?.ca_file ?? '';
-		envEdited = instance !== null;
+		password = '';
+		passwordAgain = '';
+		serverWantsPassword = false;
 		error = null;
 		touched = false;
 	});
 
-	function onNameInput() {
-		if (!envEdited) envName = suggestEnvName(name);
-	}
-
 	let editing = $derived(instance !== null);
-	let input = $derived({ name, base_url: baseURL, env_name: envName, tls_mode: tlsMode, ca_file: caFile });
+	let conn = $derived({ base_url: baseURL, env_name: envName, tls_mode: tlsMode, ca_file: caFile });
+	// While adding, the password is optional (it can be stored later). While editing, it is only asked for when the
+	// password would go to a new address, or when the server said so.
+	let askPassword = $derived(!instance || serverWantsPassword || needsPassword(instance, conn));
+	let passwordRequired = $derived(instance !== null && (serverWantsPassword || needsPassword(instance, conn)));
 	let hints = $derived({
 		name: nameProblem(name),
 		base_url: baseURLProblem(baseURL),
 		env_name: envNameProblem(envName),
-		ca_file: caFileProblem(caFile, tlsMode, baseURL)
+		ca_file: caFileProblem(caFile, tlsMode, baseURL),
+		password:
+			askPassword && (passwordRequired || password !== '' || passwordAgain !== '')
+				? passwordProblem(password, passwordAgain)
+				: null
 	});
 	let ready = $derived(Object.values(hints).every((h) => h === null));
-	// The CA file only means something for a verified https connection; keep what was typed, but hide the field.
 	let showCAFile = $derived(tlsMode === 'verify' && isHTTPS(baseURL));
-	let willTest = $derived(instance?.enabled === true && connectionChanged(instance, input));
+	let willTest = $derived(
+		instance?.enabled === true && (connectionChanged(instance, conn) || (askPassword && password !== ''))
+	);
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
@@ -88,7 +101,8 @@
 			base_url: baseURL.trim(),
 			env_name: envName.trim(),
 			tls_mode: tlsMode,
-			...(showCAFile && caFile.trim() !== '' ? { ca_file: caFile.trim() } : {})
+			...(showCAFile && caFile.trim() !== '' ? { ca_file: caFile.trim() } : {}),
+			...(askPassword && password !== '' ? { password } : {})
 		};
 		try {
 			if (instance) {
@@ -101,7 +115,9 @@
 				notices.success(
 					saved.password_set
 						? `${saved.name} added. Enable it when you're ready.`
-						: `${saved.name} added. Set ${saved.password_variable} and restart the server, then enable it.`
+						: canStorePasswords
+							? `${saved.name} added. Store its password, then enable it.`
+							: `${saved.name} added. Set ${saved.password_variable ?? 'its password variable'} and restart the server, then enable it.`
 				);
 			}
 			open = false;
@@ -109,6 +125,7 @@
 		} catch (e) {
 			// Shown in the dialog, which stays open, so the settings can be fixed and saved again.
 			if (e instanceof ApiError) {
+				if (e.details.field === 'password') serverWantsPassword = true;
 				const detail = typeof e.details.detail === 'string' ? e.details.detail : undefined;
 				error = { message: e.message, detail };
 			} else {
@@ -121,14 +138,14 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="sm:max-w-lg">
+	<Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>{editing ? `Edit ${instance?.name}` : 'Add an instance'}</Dialog.Title>
 			<Dialog.Description>
 				{#if editing}
 					Change how pihole-rbac reaches this Pi-hole.
 				{:else}
-					A new instance starts disabled. Enable it once its password variable is set.
+					A new instance starts disabled. Enable it once it has a password.
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
@@ -148,7 +165,6 @@
 				<Input
 					id="instance-name"
 					bind:value={name}
-					oninput={onNameInput}
 					autocomplete="off"
 					placeholder="pihole1"
 					aria-invalid={touched && hints.name !== null}
@@ -177,29 +193,6 @@
 				{:else}
 					<p id="instance-url-hint" class="text-muted-foreground text-sm">
 						The Pi-hole's address, without /admin or /api.
-					</p>
-				{/if}
-			</div>
-
-			<div class="grid gap-2">
-				<Label for="instance-env">Env name</Label>
-				<Input
-					id="instance-env"
-					bind:value={envName}
-					oninput={() => (envEdited = true)}
-					class="font-mono"
-					autocomplete="off"
-					spellcheck={false}
-					placeholder="PIHOLE1"
-					aria-invalid={touched && hints.env_name !== null}
-					aria-describedby="instance-env-hint"
-				/>
-				{#if touched && hints.env_name}
-					<p id="instance-env-hint" class="text-destructive text-sm">{hints.env_name}</p>
-				{:else}
-					<p id="instance-env-hint" class="text-muted-foreground text-sm">
-						The app password is read from <code class="break-all">{passwordVariable(envName.trim())}</code> (or its
-						<code>_FILE</code> form). A new variable needs a server restart.
 					</p>
 				{/if}
 			</div>
@@ -237,6 +230,78 @@
 					{/if}
 				</div>
 			{/if}
+
+			{#if askPassword}
+				<fieldset class="grid gap-2" disabled={!canStorePasswords && envName.trim() === ''}>
+					<legend class="mb-2 text-sm font-medium">
+						App password{passwordRequired ? '' : ' (optional)'}
+					</legend>
+					{#if passwordRequired && !serverWantsPassword}
+						<p class="text-muted-foreground text-sm">
+							Enter the password again to use the new address: a saved password is only sent to the address it was
+							entered for.
+						</p>
+					{/if}
+					<Label for="instance-password" class="sr-only">App password</Label>
+					<Input
+						id="instance-password"
+						type="password"
+						bind:value={password}
+						autocomplete="new-password"
+						placeholder="App password"
+						aria-invalid={touched && hints.password !== null}
+						aria-describedby="instance-password-hint"
+					/>
+					<Label for="instance-password-again" class="sr-only">App password again</Label>
+					<Input
+						id="instance-password-again"
+						type="password"
+						bind:value={passwordAgain}
+						autocomplete="new-password"
+						placeholder="App password again"
+						aria-invalid={touched && hints.password !== null}
+					/>
+					{#if touched && hints.password}
+						<p id="instance-password-hint" class="text-destructive text-sm">{hints.password}</p>
+					{:else if !canStorePasswords}
+						<p id="instance-password-hint" class="text-muted-foreground text-sm">
+							Passwords can't be stored until the master key (PIHOLE_RBAC_SECRET_KEY) is set. Until then, give an env
+							name below and set its variable; a password entered here only confirms that variable.
+						</p>
+					{:else}
+						<p id="instance-password-hint" class="text-muted-foreground text-sm">
+							The Pi-hole's app password, from Settings → Web interface / API. It is stored encrypted and never shown
+							again.
+						</p>
+					{/if}
+				</fieldset>
+			{/if}
+
+			<div class="grid gap-2">
+				<Label for="instance-env">Env name (optional)</Label>
+				<Input
+					id="instance-env"
+					bind:value={envName}
+					class="font-mono"
+					autocomplete="off"
+					spellcheck={false}
+					placeholder="PIHOLE1"
+					aria-invalid={touched && hints.env_name !== null}
+					aria-describedby="instance-env-hint"
+				/>
+				{#if touched && hints.env_name}
+					<p id="instance-env-hint" class="text-destructive text-sm">{hints.env_name}</p>
+				{:else}
+					<p id="instance-env-hint" class="text-muted-foreground text-sm">
+						{#if envName.trim() !== ''}
+							When <code class="break-all">{passwordVariable(envName.trim())}</code> (or its <code>_FILE</code> form)
+							is set, it overrides the stored password. A new variable needs a server restart.
+						{:else}
+							To manage the password outside the app, name a variable here.
+						{/if}
+					</p>
+				{/if}
+			</div>
 
 			{#if willTest}
 				<p class="text-muted-foreground text-sm">

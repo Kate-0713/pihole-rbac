@@ -272,3 +272,5 @@ func (e *testEnv) auditRows() []db.AuditLog {
 		rows = append(rows, row)
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

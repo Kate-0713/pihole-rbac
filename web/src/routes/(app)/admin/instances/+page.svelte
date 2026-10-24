@@ -8,6 +8,7 @@
 	import { ApiError, api, unwrap } from '#lib/api/client.js';
 	import InstanceConfirmDialog from '#lib/components/app/instance-confirm-dialog.svelte';
 	import InstanceFormDialog from '#lib/components/app/instance-form-dialog.svelte';
+	import InstancePasswordDialog from '#lib/components/app/instance-password-dialog.svelte';
 	import InstanceTable from '#lib/components/app/instance-table.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -21,6 +22,8 @@
 
 	let formOpen = $state(false);
 	let editing = $state<Instance | null>(null);
+	let passwordOpen = $state(false);
+	let passwordFor = $state<Instance | null>(null);
 	let confirmOpen = $state(false);
 	let confirmAction = $state<'disable' | 'delete'>('disable');
 	let confirming = $state<Instance | null>(null);
@@ -45,6 +48,10 @@
 	function edit(inst: Instance) {
 		editing = inst;
 		formOpen = true;
+	}
+	function changePassword(inst: Instance) {
+		passwordFor = inst;
+		passwordOpen = true;
 	}
 	function ask(inst: Instance, action: 'disable' | 'delete') {
 		confirming = inst;
@@ -110,13 +117,14 @@
 {:else}
 	{#if data.instances.length === 0}
 		<p class="text-muted-foreground text-sm">
-			No Pi-hole instances yet. Add one, set its password variable, and enable it.
+			No Pi-hole instances yet. Add one with its app password, then enable it.
 		</p>
 	{:else}
 		<InstanceTable
 			instances={data.instances}
 			{busy}
 			onedit={edit}
+			onpassword={changePassword}
 			ontest={test}
 			onenable={enable}
 			ondisable={(i) => ask(i, 'disable')}
@@ -124,6 +132,19 @@
 		/>
 	{/if}
 
-	<InstanceFormDialog bind:open={formOpen} instance={editing} onsaved={reload} />
+	{#if !data.canStorePasswords}
+		<p class="text-muted-foreground text-sm">
+			Passwords can't be stored until the master key (PIHOLE_RBAC_SECRET_KEY) is set. Until then, each instance's
+			password comes from its env variable.
+		</p>
+	{/if}
+
+	<InstanceFormDialog
+		bind:open={formOpen}
+		instance={editing}
+		canStorePasswords={data.canStorePasswords}
+		onsaved={reload}
+	/>
+	<InstancePasswordDialog bind:open={passwordOpen} instance={passwordFor} onsaved={reload} />
 	<InstanceConfirmDialog bind:open={confirmOpen} action={confirmAction} instance={confirming} ondone={reload} />
 {/if}

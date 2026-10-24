@@ -19,6 +19,7 @@ export type State = {
 			no_instances: User;
 			instances: Instance[];
 			spare_env_name: string;
+			pihole_password: string;
 		};
 	};
 };

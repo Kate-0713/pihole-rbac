@@ -239,7 +239,7 @@ export interface paths {
         put?: never;
         /**
          * Add a Pi-hole instance
-         * @description Creates the instance disabled. Its app password is read from the variable named in `password_variable` (PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD, or _FILE), never from the API. Enable it once the variable is set.
+         * @description Creates the instance disabled. Its app password is either stored, encrypted under the master key, from `password`, or read from PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD (or _FILE), which overrides a stored one. A password is only sent to an address it was confirmed for: if the instance's variable is already set, `password` is required and must match it. Enable the instance once it has a password.
          */
         post: operations["createInstance"];
         delete?: never;
@@ -262,7 +262,7 @@ export interface paths {
         get: operations["getInstance"];
         /**
          * Change a Pi-hole instance's settings
-         * @description Replaces the settings. If the instance is enabled and the change affects how it connects (base URL, TLS settings or env name), the new settings must pass a connection test first, or the change is refused; disable the instance to save settings that don't work yet. A rename keeps the instance's Pi-hole session.
+         * @description Replaces the settings, and stores `password` when given. A password is only sent to an address it was confirmed for, so `password` is required (code validation_failed, `details.field` password) when the base URL, TLS mode or CA file of an instance that has a password changes, or when the instance starts using a variable that is set; it must match the variable when one is set. If the instance is enabled and the change affects how it connects (base URL, TLS settings, env name or password), the new settings must pass a connection test first, or the change is refused; disable the instance to save settings that don't work yet. A rename keeps the instance's Pi-hole session.
          */
         put: operations["updateInstance"];
         post?: never;
@@ -271,6 +271,29 @@ export interface paths {
          * @description Refused with 409 while a role grant, an instance group or a client-reset target refers to the instance; the message lists them, and `details` has `roles`, `groups` and `client_reset_targets`.
          */
         delete: operations["deleteInstance"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{id}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance's ID. */
+                id: components["parameters"]["InstanceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Store a new app password for a Pi-hole instance
+         * @description Stores the password encrypted under the master key, as when the Pi-hole's password is rotated. If the instance is enabled, the password must pass a connection test at its current address first, or nothing is changed. Refused with 409 conflict when the instance's variable is set (it overrides a stored password) or when no master key is set. The password is never returned.
+         */
+        put: operations["setInstancePassword"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -749,10 +772,12 @@ export interface components {
              */
             base_url: string;
             /**
-             * @description Names the password variable, PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD. Unique.
+             * @description Optional. Names a variable, PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD, whose password overrides the stored one when it is set. Unique. Empty or absent means none.
              * @example PIHOLE1
              */
-            env_name: string;
+            env_name?: string;
+            /** @description The Pi-hole app password, used exactly as given. Stored encrypted (it needs the master key), or, when the instance's variable is set, checked against it. Required to confirm a new address or a newly used variable. Never returned. */
+            password?: string;
             /**
              * @description How the Pi-hole's certificate is checked. verify if absent; insecure is for labs only.
              * @enum {string}
@@ -766,7 +791,8 @@ export interface components {
             id: number;
             name: string;
             base_url: string;
-            env_name: string;
+            /** @description Absent when the instance has none. */
+            env_name?: string;
             /** @enum {string} */
             tls_mode: "verify" | "insecure";
             /** @description Absent when no CA file is set. */
@@ -775,16 +801,34 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             /**
-             * @description The variable the password is read from (or its _FILE form).
+             * @description The variable whose password overrides the stored one (or its _FILE form). Absent when the instance has no env name.
              * @example PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD
              */
-            password_variable: string;
-            /** @description Whether that variable was set when the server started or last reloaded its secrets. */
+            password_variable?: string;
+            /**
+             * @description Where the password comes from: the variable (set when the server started or last reloaded its secrets), the database, or nowhere yet.
+             * @enum {string}
+             */
+            password_source: "environment" | "stored" | "none";
+            /** @description Whether the instance has a password, from either source. */
             password_set: boolean;
+            /**
+             * Format: date-time
+             * @description When the stored password was last set. Absent when none is stored.
+             */
+            password_updated_at?: string;
+            /** @description Who last set the stored password. Absent when none is stored. */
+            password_updated_by?: string;
             health?: components["schemas"]["InstanceHealth"];
         };
         InstanceList: {
+            /** @description Whether a master key is set, without which passwords can't be stored. */
+            can_store_passwords: boolean;
             instances: components["schemas"]["Instance"][];
+        };
+        InstancePassword: {
+            /** @description The new Pi-hole app password, used exactly as given. */
+            password: string;
         };
         /** @description Present only for enabled instances. */
         InstanceHealth: {
@@ -1714,6 +1758,41 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setInstancePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance's ID. */
+                id: components["parameters"]["InstanceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstancePassword"];
+            };
+        };
+        responses: {
+            /** @description The instance, with its new password. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Instance"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["InstanceConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["PiholeFailed"];
             503: components["responses"]["SetupRequired"];
         };
     };

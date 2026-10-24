@@ -63,7 +63,10 @@ func (s *Server) ListInstances(ctx context.Context, _ gen.ListInstancesRequestOb
 	if err != nil {
 		return nil, err
 	}
-	out := gen.InstanceList{Instances: make([]gen.Instance, len(insts))}
+	out := gen.InstanceList{
+		Instances:         make([]gen.Instance, len(insts)),
+		CanStorePasswords: s.Secrets != nil && s.Secrets.Cipher() != nil,
+	}
 	for i, inst := range insts {
 		out.Instances[i] = s.instanceJSON(inst)
 	}
@@ -111,6 +114,23 @@ func (s *Server) DeleteInstance(ctx context.Context, req gen.DeleteInstanceReque
 		return nil, err
 	}
 	return gen.DeleteInstance204Response{}, nil
+}
+
+// SetInstancePassword stores a new app password for an instance. The password never appears in a response or the
+// audit log.
+func (s *Server) SetInstancePassword(ctx context.Context, req gen.SetInstancePasswordRequestObject) (gen.SetInstancePasswordResponseObject, error) {
+	if s.Instances == nil {
+		return nil, errNoInstances
+	}
+	// writeOnly makes the generated field a pointer even though the spec requires it.
+	if req.Body.Password == nil {
+		return nil, invalid("password", "Enter the new password.")
+	}
+	inst, err := s.Instances.SetPassword(ctx, actor(ctx), req.Id, secrets.NewValue([]byte(*req.Body.Password)))
+	if err != nil {
+		return nil, err
+	}
+	return gen.SetInstancePassword200JSONResponse(s.instanceJSON(inst)), nil
 }
 
 func (s *Server) EnableInstance(ctx context.Context, req gen.EnableInstanceRequestObject) (gen.EnableInstanceResponseObject, error) {
@@ -180,12 +200,15 @@ func instanceFailure(name, envName string, err error) (code, message string) {
 	case piholeapi.CodeUnreachable:
 		message = fmt.Sprintf("Pi-hole %q didn't respond.", name)
 	case piholeapi.CodeAuthRejected:
-		message = fmt.Sprintf("Pi-hole %q refused the app password in %s.", name, secrets.InstanceVar(envName))
+		message = fmt.Sprintf("Pi-hole %q refused the app password.", name)
 	case piholeapi.CodeStatusError:
 		message = fmt.Sprintf("Pi-hole %q answered, but not as expected.", name)
 	case instances.CodePasswordMissing:
-		message = fmt.Sprintf("%s isn't set, so %q can't log in to its Pi-hole. A variable added since the app started needs a restart.",
-			secrets.InstanceVar(envName), name)
+		message = fmt.Sprintf("%q has no password yet, so it can't log in to its Pi-hole. Store one on the instances page.", name)
+		if envName != "" {
+			message = fmt.Sprintf("%q has no password yet, so it can't log in to its Pi-hole. Store one on the instances page, or set %s (a variable added since the app started needs a restart).",
+				name, secrets.InstanceVar(envName))
+		}
 	case instances.CodeMisconfigured:
 		message = fmt.Sprintf("The settings of %q can't be used.", name)
 	default:
@@ -198,7 +221,14 @@ func instanceInput(b *gen.InstanceInput) instances.Input {
 	if b == nil {
 		return instances.Input{}
 	}
-	in := instances.Input{Name: b.Name, BaseURL: b.BaseUrl, EnvName: b.EnvName}
+	in := instances.Input{Name: b.Name, BaseURL: b.BaseUrl}
+	if b.EnvName != nil {
+		in.EnvName = *b.EnvName
+	}
+	if b.Password != nil {
+		pw := secrets.NewValue([]byte(*b.Password))
+		in.Password = &pw
+	}
 	if b.TlsMode != nil {
 		in.TLSMode = piholeapi.TLSMode(*b.TlsMode)
 	}
@@ -209,17 +239,23 @@ func instanceInput(b *gen.InstanceInput) instances.Input {
 }
 
 func (s *Server) instanceJSON(inst instances.Instance) gen.Instance {
+	source := s.Instances.Pool.PasswordSource(inst)
 	out := gen.Instance{
-		Id: inst.ID, Name: inst.Name, BaseUrl: inst.BaseURL, EnvName: inst.EnvName,
+		Id: inst.ID, Name: inst.Name, BaseUrl: inst.BaseURL,
 		TlsMode: gen.InstanceTlsMode(inst.TLSMode), Enabled: inst.Enabled, CreatedAt: inst.CreatedAt.UTC(),
-		PasswordVariable: secrets.InstanceVar(inst.EnvName),
+		PasswordSource: gen.InstancePasswordSource(source), PasswordSet: source != instances.SourceNone,
+	}
+	if inst.EnvName != "" {
+		env, variable := inst.EnvName, secrets.InstanceVar(inst.EnvName)
+		out.EnvName, out.PasswordVariable = &env, &variable
 	}
 	if inst.CAFile != "" {
 		ca := inst.CAFile
 		out.CaFile = &ca
 	}
-	if s.Secrets != nil {
-		_, out.PasswordSet = s.Secrets.InstancePassword(inst.EnvName)
+	if !inst.Password.IsZero() {
+		at, by := inst.Password.UpdatedAt.UTC(), inst.Password.UpdatedBy
+		out.PasswordUpdatedAt, out.PasswordUpdatedBy = &at, &by
 	}
 	if inst.Enabled {
 		out.Health = s.health(inst.ID)

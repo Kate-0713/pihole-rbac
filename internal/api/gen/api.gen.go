@@ -224,6 +224,27 @@ func (e GroupScopeNameMode) Valid() bool {
 	}
 }
 
+// Defines values for InstancePasswordSource.
+const (
+	Environment InstancePasswordSource = "environment"
+	None        InstancePasswordSource = "none"
+	Stored      InstancePasswordSource = "stored"
+)
+
+// Valid indicates whether the value is a known member of the InstancePasswordSource enum.
+func (e InstancePasswordSource) Valid() bool {
+	switch e {
+	case Environment:
+		return true
+	case None:
+		return true
+	case Stored:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InstanceTlsMode.
 const (
 	InstanceTlsModeInsecure InstanceTlsMode = "insecure"
@@ -331,25 +352,25 @@ func (e PermissionInfoClass) Valid() bool {
 
 // Defines values for SecretStatusKind.
 const (
-	ChannelSecret    SecretStatusKind = "channel_secret"
-	InstancePassword SecretStatusKind = "instance_password"
-	LdapBindPassword SecretStatusKind = "ldap_bind_password"
-	MasterKey        SecretStatusKind = "master_key"
-	SessionKey       SecretStatusKind = "session_key"
+	SecretStatusKindChannelSecret    SecretStatusKind = "channel_secret"
+	SecretStatusKindInstancePassword SecretStatusKind = "instance_password"
+	SecretStatusKindLdapBindPassword SecretStatusKind = "ldap_bind_password"
+	SecretStatusKindMasterKey        SecretStatusKind = "master_key"
+	SecretStatusKindSessionKey       SecretStatusKind = "session_key"
 )
 
 // Valid indicates whether the value is a known member of the SecretStatusKind enum.
 func (e SecretStatusKind) Valid() bool {
 	switch e {
-	case ChannelSecret:
+	case SecretStatusKindChannelSecret:
 		return true
-	case InstancePassword:
+	case SecretStatusKindInstancePassword:
 		return true
-	case LdapBindPassword:
+	case SecretStatusKindLdapBindPassword:
 		return true
-	case MasterKey:
+	case SecretStatusKindMasterKey:
 		return true
-	case SessionKey:
+	case SecretStatusKindSessionKey:
 		return true
 	default:
 		return false
@@ -745,22 +766,36 @@ type Instance struct {
 	CaFile    *string   `json:"ca_file,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	Enabled   bool      `json:"enabled"`
-	EnvName   string    `json:"env_name"`
+
+	// EnvName Absent when the instance has none.
+	EnvName *string `json:"env_name,omitempty"`
 
 	// Health Present only for enabled instances.
 	Health *InstanceHealth `json:"health,omitempty"`
 	Id     int64           `json:"id"`
 	Name   string          `json:"name"`
 
-	// PasswordSet Whether that variable was set when the server started or last reloaded its secrets.
+	// PasswordSet Whether the instance has a password, from either source.
 	PasswordSet bool `json:"password_set"`
 
-	// PasswordVariable The variable the password is read from (or its _FILE form).
+	// PasswordSource Where the password comes from: the variable (set when the server started or last reloaded its secrets), the database, or nowhere yet.
+	PasswordSource InstancePasswordSource `json:"password_source"`
+
+	// PasswordUpdatedAt When the stored password was last set. Absent when none is stored.
+	PasswordUpdatedAt *time.Time `json:"password_updated_at,omitempty"`
+
+	// PasswordUpdatedBy Who last set the stored password. Absent when none is stored.
+	PasswordUpdatedBy *string `json:"password_updated_by,omitempty"`
+
+	// PasswordVariable The variable whose password overrides the stored one (or its _FILE form). Absent when the instance has no env name.
 	//
 	// Examples: PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD
-	PasswordVariable string          `json:"password_variable"`
+	PasswordVariable *string         `json:"password_variable,omitempty"`
 	TlsMode          InstanceTlsMode `json:"tls_mode"`
 }
+
+// InstancePasswordSource Where the password comes from: the variable (set when the server started or last reloaded its secrets), the database, or nowhere yet.
+type InstancePasswordSource string
 
 // InstanceTlsMode defines model for Instance.TlsMode.
 type InstanceTlsMode string
@@ -789,13 +824,16 @@ type InstanceInput struct {
 	// CaFile Absolute path, on the server, of an extra CA bundle (PEM) to trust. Only with tls_mode verify and an https:// base URL. Checked when saved.
 	CaFile *string `json:"ca_file,omitempty"`
 
-	// EnvName Names the password variable, PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD. Unique.
+	// EnvName Optional. Names a variable, PIHOLE_RBAC_INSTANCE_<env_name>_PASSWORD, whose password overrides the stored one when it is set. Unique. Empty or absent means none.
 	//
 	// Examples: PIHOLE1
-	EnvName string `json:"env_name"`
+	EnvName *string `json:"env_name,omitempty"`
 
 	// Name Unique, ignoring case. Surrounding spaces are ignored.
 	Name string `json:"name"`
+
+	// Password The Pi-hole app password, used exactly as given. Stored encrypted (it needs the master key), or, when the instance's variable is set, checked against it. Required to confirm a new address or a newly used variable. Never returned.
+	Password *string `json:"password,omitempty"`
 
 	// TlsMode How the Pi-hole's certificate is checked. verify if absent; insecure is for labs only.
 	TlsMode *InstanceInputTlsMode `json:"tls_mode,omitempty"`
@@ -806,7 +844,15 @@ type InstanceInputTlsMode string
 
 // InstanceList defines model for InstanceList.
 type InstanceList struct {
-	Instances []Instance `json:"instances"`
+	// CanStorePasswords Whether a master key is set, without which passwords can't be stored.
+	CanStorePasswords bool       `json:"can_store_passwords"`
+	Instances         []Instance `json:"instances"`
+}
+
+// InstancePassword defines model for InstancePassword.
+type InstancePassword struct {
+	// Password The new Pi-hole app password, used exactly as given.
+	Password *string `json:"password,omitempty"`
 }
 
 // InstanceTestError defines model for InstanceTestError.
@@ -1198,6 +1244,9 @@ type CreateInstanceJSONRequestBody = InstanceInput
 // UpdateInstanceJSONRequestBody defines body for UpdateInstance for application/json ContentType.
 type UpdateInstanceJSONRequestBody = InstanceInput
 
+// SetInstancePasswordJSONRequestBody defines body for SetInstancePassword for application/json ContentType.
+type SetInstancePasswordJSONRequestBody = InstancePassword
+
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = RoleCreate
 
@@ -1263,6 +1312,9 @@ type ServerInterface interface {
 	// EnableInstance Enable a Pi-hole instance
 	// (POST /api/v1/instances/{id}/enable)
 	EnableInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
+	// SetInstancePassword Store a new app password for a Pi-hole instance
+	// (PUT /api/v1/instances/{id}/password)
+	SetInstancePassword(w http.ResponseWriter, r *http.Request, id InstanceID)
 	// TestInstance Test the connection to a Pi-hole instance
 	// (POST /api/v1/instances/{id}/test)
 	TestInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
@@ -1571,6 +1623,32 @@ func (siw *ServerInterfaceWrapper) EnableInstance(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.EnableInstance(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetInstancePassword operation middleware
+func (siw *ServerInterfaceWrapper) SetInstancePassword(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InstanceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetInstancePassword(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2342,6 +2420,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/instances/{id}", wrapper.DeleteInstance)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instances/{id}", wrapper.GetInstance)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/instances/{id}", wrapper.UpdateInstance)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/instances/{id}/password", wrapper.SetInstancePassword)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/test", wrapper.TestInstance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/enable", wrapper.EnableInstance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/disable", wrapper.DisableInstance)
@@ -3307,6 +3386,143 @@ func (response EnableInstance502JSONResponse) VisitEnableInstanceResponse(w http
 type EnableInstance503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response EnableInstance503JSONResponse) VisitEnableInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePasswordRequestObject struct {
+	Id   InstanceID `json:"id"`
+	Body *SetInstancePasswordJSONRequestBody
+}
+
+type SetInstancePasswordResponseObject interface {
+	VisitSetInstancePasswordResponse(w http.ResponseWriter) error
+}
+
+type SetInstancePassword200JSONResponse Instance
+
+func (response SetInstancePassword200JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetInstancePassword400JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetInstancePassword401JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetInstancePassword403JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SetInstancePassword404JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword409JSONResponse struct{ InstanceConflictJSONResponse }
+
+func (response SetInstancePassword409JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetInstancePassword415JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword502JSONResponse struct{ PiholeFailedJSONResponse }
+
+func (response SetInstancePassword502JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetInstancePassword503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetInstancePassword503JSONResponse) VisitSetInstancePasswordResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -6014,6 +6230,9 @@ type StrictServerInterface interface {
 	// EnableInstance Enable a Pi-hole instance
 	// (POST /api/v1/instances/{id}/enable)
 	EnableInstance(ctx context.Context, request EnableInstanceRequestObject) (EnableInstanceResponseObject, error)
+	// SetInstancePassword Store a new app password for a Pi-hole instance
+	// (PUT /api/v1/instances/{id}/password)
+	SetInstancePassword(ctx context.Context, request SetInstancePasswordRequestObject) (SetInstancePasswordResponseObject, error)
 	// TestInstance Test the connection to a Pi-hole instance
 	// (POST /api/v1/instances/{id}/test)
 	TestInstance(ctx context.Context, request TestInstanceRequestObject) (TestInstanceResponseObject, error)
@@ -6445,6 +6664,39 @@ func (sh *strictHandler) EnableInstance(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(EnableInstanceResponseObject); ok {
 		if err := validResponse.VisitEnableInstanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetInstancePassword operation middleware
+func (sh *strictHandler) SetInstancePassword(w http.ResponseWriter, r *http.Request, id InstanceID) {
+	var request SetInstancePasswordRequestObject
+
+	request.Id = id
+
+	var body SetInstancePasswordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetInstancePassword(ctx, request.(SetInstancePasswordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetInstancePassword")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetInstancePasswordResponseObject); ok {
+		if err := validResponse.VisitSetInstancePasswordResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

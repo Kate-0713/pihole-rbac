@@ -42,14 +42,19 @@ type ClientResetTarget struct {
 }
 
 type Instance struct {
-	ID        int64
-	Name      string
-	BaseUrl   string
-	EnvName   string
-	TlsMode   string
-	CaFile    sql.NullString
-	Enabled   bool
-	CreatedAt int64
+	ID                 int64
+	Name               string
+	BaseUrl            string
+	EnvName            sql.NullString
+	TlsMode            string
+	CaFile             sql.NullString
+	Enabled            bool
+	CreatedAt          int64
+	PasswordCiphertext []byte
+	PasswordNonce      []byte
+	PasswordKeyID      sql.NullString
+	PasswordUpdatedAt  sql.NullInt64
+	PasswordUpdatedBy  sql.NullString
 }
 
 type InstanceGroup struct {

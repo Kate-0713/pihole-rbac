@@ -25,6 +25,11 @@ RETURNING id;
 -- name: UpdateInstance :exec
 UPDATE instances SET name = ?, base_url = ?, env_name = ?, tls_mode = ?, ca_file = ? WHERE id = ?;
 
+-- name: SetInstancePassword :exec
+UPDATE instances
+SET password_ciphertext = ?, password_nonce = ?, password_key_id = ?, password_updated_at = ?, password_updated_by = ?
+WHERE id = ?;
+
 -- name: SetInstanceEnabled :exec
 UPDATE instances SET enabled = ? WHERE id = ?;
 
@@ -55,7 +60,7 @@ INSERT INTO instance_group_members (group_id, group_mode, instance_id)
 SELECT g.id, g.mode, sqlc.arg(instance_id) FROM instance_groups g WHERE g.id = sqlc.arg(group_id);
 
 -- name: ListInstanceEnvNames :many
-SELECT env_name FROM instances ORDER BY env_name;
+SELECT env_name FROM instances WHERE env_name IS NOT NULL ORDER BY env_name;
 
 -- name: ListInstanceGroups :many
 SELECT * FROM instance_groups ORDER BY name COLLATE NOCASE, id;
