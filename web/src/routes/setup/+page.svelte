@@ -35,11 +35,11 @@
 		try {
 			// The API takes the password once; asking twice is only to catch typos here.
 			await session.completeSetup(token.trim(), username.trim(), password);
-			await goto('/', { replaceState: true });
+			await goto('/', { replace: true });
 		} catch (e) {
 			if (e instanceof ApiError && e.code === 'setup_complete') {
 				// Someone else (or reset-admin) finished setup meanwhile.
-				await goto('/login', { replaceState: true });
+				await goto('/login', { replace: true });
 				return;
 			}
 			error = e instanceof ApiError ? e.message : 'Something went wrong. Try again.';

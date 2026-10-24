@@ -8,6 +8,7 @@
 	import '../app.css';
 	import favicon from '#lib/assets/favicon.svg';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Toaster } from '#lib/components/ui/sonner/index.js';
 	import type { LayoutProps } from './$types';
 
 	// Svelte 5 runes: $props() is how a component receives its props. `data` is whatever +layout.ts's load returned (typed via the generated LayoutProps); `children` is the page being rendered inside this layout.
@@ -17,6 +18,9 @@
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
+
+<!-- Success toasts, from notices.success(). Failures go to the error banner in the app layout instead. -->
+<Toaster position="bottom-right" richColors closeButton />
 
 <div class="flex min-h-svh flex-col">
 	<div class="flex flex-1 flex-col">

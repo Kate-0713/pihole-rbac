@@ -30,7 +30,7 @@
 			await session.login(username, password);
 			password = '';
 			// `page` (from $app/state) is the current URL and route, readable like any other $state.
-			await goto(safeNext(page.url.searchParams.get('next')), { replaceState: true });
+			await goto(safeNext(page.url.searchParams.get('next')), { replace: true });
 		} catch (e) {
 			password = '';
 			// The server's messages are written to be shown: a wrong password and an unknown user get the same one.
