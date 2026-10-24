@@ -56,3 +56,6 @@ SELECT g.id, g.mode, sqlc.arg(instance_id) FROM instance_groups g WHERE g.id = s
 
 -- name: ListInstanceEnvNames :many
 SELECT env_name FROM instances ORDER BY env_name;
+
+-- name: ListInstanceGroups :many
+SELECT * FROM instance_groups ORDER BY name COLLATE NOCASE, id;

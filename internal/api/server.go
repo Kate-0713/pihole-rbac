@@ -53,6 +53,7 @@ type Options struct {
 	Audit          *audit.Logger
 	Secrets        *secrets.Manager
 	Instances      *instances.Service // instance changes, and the client pool for health and secret reloads
+	Roles          *rbac.Manager      // changes to roles, grants, user roles, LDAP mappings and users
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
@@ -202,7 +203,7 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), reqInfoKey{}, ri))
 		ri.r = r
 		if kind, perm, _ := parseAccess(access); kind == "global" {
-			if err := s.requireGlobal(r.Context(), rbac.Permission(perm)); err != nil {
+			if err := s.requireGlobal(r.Context(), globalPermissions(perm)...); err != nil {
 				s.responseError(w, r, err)
 				return
 			}

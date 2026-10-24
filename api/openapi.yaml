@@ -488,6 +488,201 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/roles:
+    get:
+      summary: List the roles
+      description: >-
+        Every role with its grants, the local users that hold it and the LDAP groups mapped to it, sorted by name.
+        Readable with users.manage as well as roles.manage, so someone who manages users can see which roles they can
+        assign.
+      operationId: listRoles
+      x-permission: roles.manage|users.manage
+      responses:
+        "200":
+          description: The roles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Create a role
+      description: >-
+        Creates a role with the given grants. Every grant must be one the caller holds (no privilege escalation), and
+        its scope one its permission allows.
+      operationId: createRole
+      x-permission: roles.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleCreate"
+      responses:
+        "201":
+          description: The new role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/RoleConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/roles/catalogue:
+    get:
+      summary: What grants can name
+      description: >-
+        The permission catalogue, with the scopes each permission can be granted at, and the instances and instance
+        groups a grant's scope can name. For the grant editor.
+      operationId: getRoleCatalogue
+      x-permission: roles.manage
+      responses:
+        "200":
+          description: The catalogue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleCatalogue"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/roles/{id}:
+    parameters:
+      - $ref: "#/components/parameters/RoleID"
+    get:
+      summary: One role
+      operationId: getRole
+      x-permission: roles.manage|users.manage
+      responses:
+        "200":
+          description: The role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Rename a role or change its description
+      description: >-
+        Needs every grant the role has. The builtin admin role can't be changed (code invariant_violated).
+      operationId: updateRole
+      x-permission: roles.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleInput"
+      responses:
+        "200":
+          description: The role as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RoleConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a role
+      description: >-
+        Needs every grant the role has. Refused (code invariant_violated) for the builtin admin role and for a role
+        that local users or LDAP mappings still use; `details` then has `users` and `ldap_groups`.
+      operationId: deleteRole
+      x-permission: roles.manage
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RoleConflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/roles/{id}/grants:
+    parameters:
+      - $ref: "#/components/parameters/RoleID"
+    put:
+      summary: Replace a role's grants
+      description: >-
+        Replaces every grant of the role. The caller must hold every grant the role has before and after the change.
+        If the change would take away the caller's own last route to roles.manage or users.manage, it is refused with
+        code confirmation_required and `details.would_lose`, and goes ahead when repeated with `confirm=true`.
+        Sessions need nothing: permissions are worked out on every request.
+      operationId: setRoleGrants
+      x-permission: roles.manage
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantsInput"
+      responses:
+        "200":
+          description: The role with its new grants.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RoleConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/targets/{target}/summary:
     parameters:
       - $ref: "#/components/parameters/TargetID"
@@ -976,6 +1171,27 @@ components:
         format: int64
         minimum: 1
 
+    RoleID:
+      name: id
+      in: path
+      required: true
+      description: The role's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
+    Confirm:
+      name: confirm
+      in: query
+      required: false
+      description: >-
+        Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own
+        roles.manage or users.manage, or disable or delete their own account.
+      schema:
+        type: boolean
+        default: false
+
     TargetID:
       name: target
       in: path
@@ -1044,6 +1260,16 @@ components:
         The change conflicts with existing data or with a change made at the same time (code conflict), or the
         connection test couldn't run: the password variable isn't set (code instance_password_missing) or the settings
         can't be used (code instance_misconfigured). `details.instance` names the instance for the last two.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RoleConflict:
+      description: >-
+        The change conflicts with existing data, such as a name already taken (code conflict); it would break an
+        invariant, such as changing the builtin admin role or deleting a role in use (code invariant_violated); or it
+        would take away the caller's own roles.manage or users.manage and needs `confirm=true` (code
+        confirmation_required, with `details.would_lose`).
       content:
         application/json:
           schema:
@@ -1439,6 +1665,179 @@ components:
         detail:
           type: string
           description: The underlying error, such as a TLS or connection error. Never contains the password.
+
+    Grant:
+      type: object
+      additionalProperties: false
+      required: [permission, scope]
+      description: One permission within one scope.
+      properties:
+        permission:
+          type: string
+          description: A permission from the catalogue.
+          examples: ["domains.edit"]
+        scope:
+          type: string
+          enum: [all, group, instance]
+        id:
+          type: integer
+          format: int64
+          description: The instance or group, for scope instance or group. Absent for scope all.
+
+    RoleInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Unique, ignoring case. Surrounding spaces are ignored.
+        description:
+          type: string
+          maxLength: 500
+
+    RoleCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Unique, ignoring case. Surrounding spaces are ignored.
+        description:
+          type: string
+          maxLength: 500
+        grants:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/Grant"
+
+    GrantsInput:
+      type: object
+      additionalProperties: false
+      required: [grants]
+      properties:
+        grants:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/Grant"
+
+    Role:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, builtin, created_at, grants, users, ldap_groups, manageable]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        builtin:
+          type: boolean
+          description: The builtin admin role, which can't be changed or deleted.
+        created_at:
+          type: string
+          format: date-time
+        grants:
+          type: array
+          description: Sorted by permission, then scope.
+          items:
+            $ref: "#/components/schemas/Grant"
+        users:
+          type: array
+          description: The local users who hold the role, by username.
+          items:
+            type: string
+        ldap_groups:
+          type: array
+          description: The LDAP group DNs mapped to the role, as entered.
+          items:
+            type: string
+        manageable:
+          type: boolean
+          description: >-
+            Whether the caller holds every grant of the role, and so may give it to users, change it (unless it is
+            builtin) or delete it. The server checks again on each change.
+
+    RoleList:
+      type: object
+      additionalProperties: false
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+
+    RoleCatalogue:
+      type: object
+      additionalProperties: false
+      required: [permissions, instances, groups]
+      properties:
+        permissions:
+          type: array
+          description: In the catalogue's order.
+          items:
+            $ref: "#/components/schemas/PermissionInfo"
+        instances:
+          type: array
+          description: Every instance, enabled or not, sorted by name.
+          items:
+            $ref: "#/components/schemas/ScopeName"
+        groups:
+          type: array
+          description: Every instance group, sorted by name.
+          items:
+            $ref: "#/components/schemas/GroupScopeName"
+
+    PermissionInfo:
+      type: object
+      additionalProperties: false
+      required: [name, class, description]
+      properties:
+        name:
+          type: string
+        class:
+          type: string
+          enum: [instance, group, global]
+          description: >-
+            instance permissions can be granted at scope all, on any group or on one instance; group permissions at
+            scope all or on a mirrored group; global permissions at scope all only.
+        description:
+          type: string
+
+    ScopeName:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+
+    GroupScopeName:
+      type: object
+      additionalProperties: false
+      required: [id, name, mode]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        mode:
+          type: string
+          enum: [independent, mirrored]
 
     TargetSummary:
       type: object

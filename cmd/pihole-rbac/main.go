@@ -22,6 +22,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
@@ -153,6 +154,7 @@ func serve() error {
 		Audit:          auditLog,
 		Secrets:        sec,
 		Instances:      instanceService,
+		Roles:          &rbac.Manager{Store: st, Audit: auditLog},
 		TrustedProxies: cfg.TrustedProxies,
 		LoginByIP:      byIP,
 		LoginByUser:    byUser,

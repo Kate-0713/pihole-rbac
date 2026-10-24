@@ -70,3 +70,17 @@ DELETE FROM role_ldap_groups WHERE id = ?;
 SELECT DISTINCT r.name FROM role_grants g JOIN roles r ON r.id = g.role_id
 WHERE g.group_id = sqlc.arg(group_id) AND g.permission IN (sqlc.slice('permissions'))
 ORDER BY r.name;
+
+-- name: ListRoles :many
+SELECT * FROM roles ORDER BY name COLLATE NOCASE, id;
+
+-- name: ListAllGrants :many
+SELECT * FROM role_grants ORDER BY role_id, permission, scope_type, instance_id, group_id;
+
+-- The local users holding each role, for the roles list.
+-- name: ListRoleUsernames :many
+SELECT ur.role_id, u.username FROM user_roles ur JOIN users u ON u.id = ur.user_id
+ORDER BY ur.role_id, u.username;
+
+-- name: ListAllLDAPMappings :many
+SELECT * FROM role_ldap_groups ORDER BY role_id, group_dn;

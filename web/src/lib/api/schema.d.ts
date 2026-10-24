@@ -345,6 +345,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the roles
+         * @description Every role with its grants, the local users that hold it and the LDAP groups mapped to it, sorted by name. Readable with users.manage as well as roles.manage, so someone who manages users can see which roles they can assign.
+         */
+        get: operations["listRoles"];
+        put?: never;
+        /**
+         * Create a role
+         * @description Creates a role with the given grants. Every grant must be one the caller holds (no privilege escalation), and its scope one its permission allows.
+         */
+        post: operations["createRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/catalogue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What grants can name
+         * @description The permission catalogue, with the scopes each permission can be granted at, and the instances and instance groups a grant's scope can name. For the grant editor.
+         */
+        get: operations["getRoleCatalogue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        /** One role */
+        get: operations["getRole"];
+        /**
+         * Rename a role or change its description
+         * @description Needs every grant the role has. The builtin admin role can't be changed (code invariant_violated).
+         */
+        put: operations["updateRole"];
+        post?: never;
+        /**
+         * Delete a role
+         * @description Needs every grant the role has. Refused (code invariant_violated) for the builtin admin role and for a role that local users or LDAP mappings still use; `details` then has `users` and `ldap_groups`.
+         */
+        delete: operations["deleteRole"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/{id}/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace a role's grants
+         * @description Replaces every grant of the role. The caller must hold every grant the role has before and after the change. If the change would take away the caller's own last route to roles.manage or users.manage, it is refused with code confirmation_required and `details.would_lose`, and goes ahead when repeated with `confirm=true`. Sessions need nothing: permissions are worked out on every request.
+         */
+        put: operations["setRoleGrants"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/targets/{target}/summary": {
         parameters: {
             query?: never;
@@ -717,6 +812,85 @@ export interface components {
             /** @description The underlying error, such as a TLS or connection error. Never contains the password. */
             detail?: string;
         };
+        /** @description One permission within one scope. */
+        Grant: {
+            /**
+             * @description A permission from the catalogue.
+             * @example domains.edit
+             */
+            permission: string;
+            /** @enum {string} */
+            scope: "all" | "group" | "instance";
+            /**
+             * Format: int64
+             * @description The instance or group, for scope instance or group. Absent for scope all.
+             */
+            id?: number;
+        };
+        RoleInput: {
+            /** @description Unique, ignoring case. Surrounding spaces are ignored. */
+            name: string;
+            description?: string;
+        };
+        RoleCreate: {
+            /** @description Unique, ignoring case. Surrounding spaces are ignored. */
+            name: string;
+            description?: string;
+            grants?: components["schemas"]["Grant"][];
+        };
+        GrantsInput: {
+            grants: components["schemas"]["Grant"][];
+        };
+        Role: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description: string;
+            /** @description The builtin admin role, which can't be changed or deleted. */
+            builtin: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Sorted by permission, then scope. */
+            grants: components["schemas"]["Grant"][];
+            /** @description The local users who hold the role, by username. */
+            users: string[];
+            /** @description The LDAP group DNs mapped to the role, as entered. */
+            ldap_groups: string[];
+            /** @description Whether the caller holds every grant of the role, and so may give it to users, change it (unless it is builtin) or delete it. The server checks again on each change. */
+            manageable: boolean;
+        };
+        RoleList: {
+            roles: components["schemas"]["Role"][];
+        };
+        RoleCatalogue: {
+            /** @description In the catalogue's order. */
+            permissions: components["schemas"]["PermissionInfo"][];
+            /** @description Every instance, enabled or not, sorted by name. */
+            instances: components["schemas"]["ScopeName"][];
+            /** @description Every instance group, sorted by name. */
+            groups: components["schemas"]["GroupScopeName"][];
+        };
+        PermissionInfo: {
+            name: string;
+            /**
+             * @description instance permissions can be granted at scope all, on any group or on one instance; group permissions at scope all or on a mirrored group; global permissions at scope all only.
+             * @enum {string}
+             */
+            class: "instance" | "group" | "global";
+            description: string;
+        };
+        ScopeName: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        GroupScopeName: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @enum {string} */
+            mode: "independent" | "mirrored";
+        };
         TargetSummary: {
             blocking: components["schemas"]["BlockingStatus"];
             last_24h: components["schemas"]["DatabaseTotals"];
@@ -1046,6 +1220,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The change conflicts with existing data, such as a name already taken (code conflict); it would break an invariant, such as changing the builtin admin role or deleting a role in use (code invariant_violated); or it would take away the caller's own roles.manage or users.manage and needs `confirm=true` (code confirmation_required, with `details.would_lose`). */
+        RoleConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The connection test failed (code pihole_unreachable, pihole_auth_rejected or pihole_status_error), so nothing was changed. `details.instance` names the instance and `details.detail` has the underlying error. */
         PiholeFailed: {
             headers: {
@@ -1097,6 +1280,10 @@ export interface components {
     parameters: {
         /** @description The instance's ID. */
         InstanceID: number;
+        /** @description The role's ID. */
+        RoleID: number;
+        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+        Confirm: boolean;
         /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
         TargetID: string;
     };
@@ -1610,6 +1797,206 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The roles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    createRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleCreate"];
+            };
+        };
+        responses: {
+            /** @description The new role. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["RoleConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getRoleCatalogue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalogue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleCatalogue"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The role. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleInput"];
+            };
+        };
+        responses: {
+            /** @description The role as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["RoleConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["RoleConflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setRoleGrants: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantsInput"];
+            };
+        };
+        responses: {
+            /** @description The role with its new grants. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["RoleConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
             503: components["responses"]["SetupRequired"];
         };
     };

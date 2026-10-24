@@ -209,6 +209,73 @@ func (q *Queries) InsertGrant(ctx context.Context, arg InsertGrantParams) error 
 	return err
 }
 
+const listAllGrants = `-- name: ListAllGrants :many
+SELECT id, role_id, permission, scope_type, instance_id, group_id FROM role_grants ORDER BY role_id, permission, scope_type, instance_id, group_id
+`
+
+func (q *Queries) ListAllGrants(ctx context.Context) ([]RoleGrant, error) {
+	rows, err := q.db.QueryContext(ctx, listAllGrants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RoleGrant{}
+	for rows.Next() {
+		var i RoleGrant
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.Permission,
+			&i.ScopeType,
+			&i.InstanceID,
+			&i.GroupID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllLDAPMappings = `-- name: ListAllLDAPMappings :many
+SELECT id, role_id, group_dn, group_dn_norm, created_at FROM role_ldap_groups ORDER BY role_id, group_dn
+`
+
+func (q *Queries) ListAllLDAPMappings(ctx context.Context) ([]RoleLdapGroup, error) {
+	rows, err := q.db.QueryContext(ctx, listAllLDAPMappings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RoleLdapGroup{}
+	for rows.Next() {
+		var i RoleLdapGroup
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.GroupDn,
+			&i.GroupDnNorm,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGrantsForRole = `-- name: ListGrantsForRole :many
 SELECT id, role_id, permission, scope_type, instance_id, group_id FROM role_grants
 WHERE role_id = ?
@@ -353,6 +420,73 @@ func (q *Queries) ListRoleIDsForLDAPGroups(ctx context.Context, groupDns []strin
 			return nil, err
 		}
 		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoleUsernames = `-- name: ListRoleUsernames :many
+SELECT ur.role_id, u.username FROM user_roles ur JOIN users u ON u.id = ur.user_id
+ORDER BY ur.role_id, u.username
+`
+
+type ListRoleUsernamesRow struct {
+	RoleID   int64
+	Username string
+}
+
+// The local users holding each role, for the roles list.
+func (q *Queries) ListRoleUsernames(ctx context.Context) ([]ListRoleUsernamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoleUsernames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRoleUsernamesRow{}
+	for rows.Next() {
+		var i ListRoleUsernamesRow
+		if err := rows.Scan(&i.RoleID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoles = `-- name: ListRoles :many
+SELECT id, name, description, builtin, created_at FROM roles ORDER BY name COLLATE NOCASE, id
+`
+
+func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, listRoles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Role{}
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Builtin,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

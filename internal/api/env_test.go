@@ -22,6 +22,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
+	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
@@ -92,6 +93,7 @@ func newSetupEnv(t *testing.T, modify ...func(*Options)) *testEnv {
 		Secrets:  sec,
 		Logger:   quiet,
 	}
+	o.Roles = &rbac.Manager{Store: st, Audit: o.Audit}
 	for _, m := range modify {
 		m(&o)
 	}

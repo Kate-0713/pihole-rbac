@@ -53,6 +53,14 @@ var routePermission = map[string]string{
 	"POST /api/v1/instances/{id}/enable":  string(rbac.InstancesManage),
 	"POST /api/v1/instances/{id}/disable": string(rbac.InstancesManage),
 
+	"GET /api/v1/roles":             anyOf(rbac.RolesManage, rbac.UsersManage),
+	"POST /api/v1/roles":            string(rbac.RolesManage),
+	"GET /api/v1/roles/catalogue":   string(rbac.RolesManage),
+	"GET /api/v1/roles/{id}":        anyOf(rbac.RolesManage, rbac.UsersManage),
+	"PUT /api/v1/roles/{id}":        string(rbac.RolesManage),
+	"DELETE /api/v1/roles/{id}":     string(rbac.RolesManage),
+	"PUT /api/v1/roles/{id}/grants": string(rbac.RolesManage),
+
 	"GET /api/v1/targets/{target}/summary":      accessTargetAny,
 	"GET /api/v1/targets/{target}/blocking":     accessTargetAny,
 	"PUT /api/v1/targets/{target}/blocking":     targetPrefix + string(rbac.BlockingToggle),
@@ -67,8 +75,29 @@ var routePermission = map[string]string{
 	"GET /api/v1/targets/{target}/queries":      targetPrefix + string(rbac.QueryLogView),
 }
 
+// anyOf is the routePermission value for an operation that any one of several global permissions allows, written
+// as in the spec's x-permission: "roles.manage|users.manage".
+func anyOf(ps ...rbac.Permission) string {
+	names := make([]string, len(ps))
+	for i, p := range ps {
+		names[i] = string(p)
+	}
+	return strings.Join(names, "|")
+}
+
+// globalPermissions splits a "global" access value into its permissions: one, or several separated by "|".
+func globalPermissions(v string) []rbac.Permission {
+	parts := strings.Split(v, "|")
+	out := make([]rbac.Permission, len(parts))
+	for i, p := range parts {
+		out[i] = rbac.Permission(p)
+	}
+	return out
+}
+
 // parseAccess splits a routePermission value. ok is false for a value that isn't valid: unknown permission, a
-// target-scoped one where a global one is needed, or the other way round.
+// target-scoped one where a global one is needed, or the other way round. A global value can name several
+// permissions separated by "|", any one of which is enough; each must be a known global permission, named once.
 func parseAccess(v string) (kind, permission string, ok bool) {
 	switch {
 	case v == accessPublic || v == accessSession:
@@ -79,8 +108,15 @@ func parseAccess(v string) (kind, permission string, ok bool) {
 		p := rbac.Permission(strings.TrimPrefix(v, targetPrefix))
 		return "target", string(p), p.Known() && p.Class() != rbac.ClassGlobal
 	}
-	p := rbac.Permission(v)
-	return "global", v, p.Known() && p.Class() == rbac.ClassGlobal
+	ps := globalPermissions(v)
+	seen := map[rbac.Permission]bool{}
+	for _, p := range ps {
+		if !p.Known() || p.Class() != rbac.ClassGlobal || seen[p] {
+			return "global", v, false
+		}
+		seen[p] = true
+	}
+	return "global", v, true
 }
 
 // setupRoutes are the operations that work before first-run setup is complete. Every other API route answers 503

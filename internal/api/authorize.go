@@ -32,16 +32,21 @@ func (s *Server) permissions(ctx context.Context) (*rbac.Set, error) {
 	return set, nil
 }
 
-// requireGlobal returns a forbidden error unless the session holds the global permission p.
-func (s *Server) requireGlobal(ctx context.Context, p rbac.Permission) error {
+// requireGlobal returns a forbidden error unless the session holds at least one of the global permissions ps.
+func (s *Server) requireGlobal(ctx context.Context, ps ...rbac.Permission) error {
 	set, err := s.permissions(ctx)
 	if err != nil {
 		return err
 	}
-	if !set.CanGlobal(p) {
-		return rbac.Forbidden(p)
+	for _, p := range ps {
+		if set.CanGlobal(p) {
+			return nil
+		}
 	}
-	return nil
+	if len(ps) == 1 {
+		return rbac.Forbidden(ps[0])
+	}
+	return rbac.ForbiddenEither(ps...)
 }
 
 // authorize returns a forbidden error unless the session holds p on target t. Handlers call it as soon as they have

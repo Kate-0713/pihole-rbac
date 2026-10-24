@@ -118,6 +118,10 @@ func TestRoutePermissionValues(t *testing.T) {
 		{"target:any", "target", "", true},
 		{"domains.edit", "global", "domains.edit", false},          // target-scoped, so it needs the target: prefix
 		{"target:config.reload", "target", "config.reload", false}, // global, so the gate checks it
+		{"roles.manage|users.manage", "global", "roles.manage|users.manage", true},
+		{"roles.manage|roles.manage", "global", "roles.manage|roles.manage", false}, // named twice
+		{"roles.manage|domains.view", "global", "roles.manage|domains.view", false}, // not global
+		{"roles.manage|", "global", "roles.manage|", false},
 		{"nonsense.perm", "global", "nonsense.perm", false},
 		{"target:nonsense.perm", "target", "nonsense.perm", false},
 		{"", "global", "", false},
