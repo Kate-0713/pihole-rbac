@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { formatCount, formatCountdown, formatDuration, formatPercent } from './format.js';
+import { formatCount, formatCountdown, formatDateTime, formatDuration, formatPercent } from './format.js';
 
 describe('formatCount and formatPercent', () => {
 	it('use the locale given', () => {
@@ -41,5 +41,15 @@ describe('formatDuration', () => {
 		[7200, '2 hours']
 	])('%d seconds is %s', (seconds, want) => {
 		expect(formatDuration(seconds)).toBe(want);
+	});
+});
+
+describe('formatDateTime', () => {
+	it('shows the time in the given locale and zone', () => {
+		expect(formatDateTime('2026-10-24T13:05:00Z', 'en-GB', 'Europe/London')).toBe('24/10/2026, 14:05');
+		expect(formatDateTime('2026-10-24T13:05:00Z', 'en-US', 'UTC')).toBe('10/24/26, 1:05 PM');
+	});
+	it.each([undefined, null, '', 'not a time'])('shows %j as a dash', (v) => {
+		expect(formatDateTime(v)).toBe('—');
 	});
 });

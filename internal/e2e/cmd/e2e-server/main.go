@@ -120,6 +120,7 @@ func run() error {
 	for _, inst := range fixture.Instances {
 		passwords[secrets.InstanceVar(inst.EnvName)] = e2e.PiholePassword
 	}
+	passwords[secrets.InstanceVar(fixture.SpareEnvName)] = e2e.PiholePassword
 	freshEnv := appEnv(*freshAddr, freshDir, nil)
 	seededEnv := appEnv(*seededAddr, seededDir, passwords)
 

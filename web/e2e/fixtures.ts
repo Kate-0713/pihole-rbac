@@ -13,7 +13,13 @@ export type State = {
 	fresh: { url: string; setup_token: string };
 	seeded: {
 		url: string;
-		fixture: { admin: User; one_instance: User; no_instances: User; instances: Instance[] };
+		fixture: {
+			admin: User;
+			one_instance: User;
+			no_instances: User;
+			instances: Instance[];
+			spare_env_name: string;
+		};
 	};
 };
 

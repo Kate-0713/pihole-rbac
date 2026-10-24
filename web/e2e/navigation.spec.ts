@@ -77,9 +77,7 @@ test('the picker shows each instance health, and an instance that is down says s
 	await expect(page.getByRole('option')).toHaveText(['Up pihole1', 'Up pihole2', 'Down pihole3'].map((t) => new RegExp(t)));
 });
 
-// No admin page exists yet, and an unknown path is the not-found page, which runs no app layout to remove the target.
-// Turn this on with the first admin page.
-test.fixme('admin page URLs never carry a target, and the picker is hidden there', async ({ page, state }) => {
+test('admin page URLs never carry a target, and the picker is hidden there', async ({ page, state }) => {
 	await openAs(page, state.seeded.fixture.admin, '/admin/instances?target=i-2');
 	await expect(page).toHaveURL('/admin/instances');
 	await expect(picker(page)).toHaveCount(0);

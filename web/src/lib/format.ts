@@ -34,3 +34,12 @@ export function formatDuration(seconds: number): string {
 	if (seconds % 60 === 0) return unit(seconds / 60, 'minute');
 	return unit(seconds, 'second');
 }
+
+// formatDateTime shows an RFC 3339 time from the API as a short date and time in the browser's locale and time zone:
+// "24/10/2026, 14:05" in British English. An empty or unparsable value is shown as an em dash.
+export function formatDateTime(rfc3339: string | null | undefined, locale?: string, timeZone?: string): string {
+	if (!rfc3339) return '—';
+	const d = new Date(rfc3339);
+	if (Number.isNaN(d.getTime())) return '—';
+	return new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short', timeZone }).format(d);
+}

@@ -51,14 +51,18 @@ type Fixture struct {
 	// NoInstances holds a global permission (audit.view) and nothing on any instance.
 	NoInstances User       `json:"no_instances"`
 	Instances   []Instance `json:"instances"`
+	// SpareEnvName has its password variable set on the seeded server but no instance, so a test can add an instance
+	// that can be enabled: the fake Pi-holes all take the same password.
+	SpareEnvName string `json:"spare_env_name"`
 }
 
 // NewFixture returns the standard fixture for instances at the given base URLs, named pihole1, pihole2 and so on.
 func NewFixture(baseURLs ...string) *Fixture {
 	f := &Fixture{
-		Admin:       User{Username: "admin", Password: "e2e-admin-password", About: "builtin admin role"},
-		OneInstance: User{Username: "alice", Password: "e2e-alice-password", About: "domains, clients and query log on pihole1"},
-		NoInstances: User{Username: "bob", Password: "e2e-bob-password", About: "audit.view only"},
+		Admin:        User{Username: "admin", Password: "e2e-admin-password", About: "builtin admin role"},
+		OneInstance:  User{Username: "alice", Password: "e2e-alice-password", About: "domains, clients and query log on pihole1"},
+		NoInstances:  User{Username: "bob", Password: "e2e-bob-password", About: "audit.view only"},
+		SpareEnvName: "SPARE",
 	}
 	for i, u := range baseURLs {
 		f.Instances = append(f.Instances, Instance{
