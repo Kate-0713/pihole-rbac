@@ -66,6 +66,23 @@ test('setting LDAP up, turning it on, mapping a group, and turning it off', asyn
 	await expect(result).toContainText('pihole1: clients.view, domains.view, querylog.view');
 	expect(await loginWorks(browser, state, { username: 'mark', password: 'mark-ldap-password', about: '' })).toBe(true);
 
+	// On the users page, mark's DN is shortened so it stays in its column, with the full DN in the tooltip; clicking it
+	// shows the whole DN.
+	await page.goto('/admin/users');
+	const dn = page.getByRole('button', { name: /full DN of mark/ });
+	await expect(dn).toHaveAttribute('title', d.users.mark);
+	await expect(dn).toHaveAttribute('aria-expanded', 'false');
+	const roles = page.getByRole('row').filter({ has: dn }).getByRole('cell').nth(2);
+	const [dnBox, rolesBox] = [await dn.boundingBox(), await roles.boundingBox()];
+	expect(dnBox!.x + dnBox!.width).toBeLessThanOrEqual(rolesBox!.x);
+	// The box alone isn't enough: text that doesn't wrap spills out of its box. It must be clipped, with an ellipsis.
+	await expect(dn).toHaveCSS('overflow-x', 'hidden');
+	await expect(dn).toHaveCSS('text-overflow', 'ellipsis');
+	await dn.click();
+	await expect(dn).toHaveAttribute('aria-expanded', 'true');
+	expect((await dn.boundingBox())!.height).toBeGreaterThan(dnBox!.height);
+	await page.goto('/admin/ldap');
+
 	// While LDAP is on, settings that don't bind are refused and nothing changes.
 	await page.getByLabel('Bind DN').fill('cn=nobody,dc=example,dc=local');
 	await page.getByRole('button', { name: 'Save LDAP settings' }).click();

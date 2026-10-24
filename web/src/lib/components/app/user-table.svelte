@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -32,6 +33,16 @@
 		ondisable: (u: User) => void;
 		ondelete: (u: User) => void;
 	} = $props();
+
+	// The users whose full LDAP DN is shown. A DN is shortened to one line with an ellipsis, so it can't run into the
+	// next column; the full DN is in the tooltip, and clicking it (or Enter, or a tap on a phone, where there is no
+	// hover) shows it wrapped. SvelteSet is Svelte's reactive Set: adding or removing an ID updates the rows that read
+	// it, which a plain Set inside $state wouldn't do.
+	const expanded = new SvelteSet<number>();
+	function toggle(id: number) {
+		if (expanded.has(id)) expanded.delete(id);
+		else expanded.add(id);
+	}
 </script>
 
 <!-- On a phone the table scrolls sideways inside its own box rather than widening the page. -->
@@ -62,7 +73,19 @@
 					<Table.Cell>
 						{sourceLabel(u)}
 						{#if u.ldap_dn}
-							<p class="text-muted-foreground max-w-64 font-mono text-xs break-all">{u.ldap_dn}</p>
+							{@const open = expanded.has(u.id)}
+							<button
+								type="button"
+								class="text-muted-foreground hover:text-foreground block max-w-64 cursor-pointer text-left font-mono text-xs {open
+									? 'break-all whitespace-normal'
+									: 'truncate'}"
+								title={open ? undefined : u.ldap_dn}
+								aria-expanded={open}
+								aria-label="{open ? 'Hide' : 'Show'} the full DN of {u.username}: {u.ldap_dn}"
+								onclick={() => toggle(u.id)}
+							>
+								{u.ldap_dn}
+							</button>
 						{/if}
 					</Table.Cell>
 					<!-- class: directives only work on plain elements, so a component gets a class expression instead. -->
