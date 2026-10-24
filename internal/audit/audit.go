@@ -52,12 +52,13 @@ const (
 	ActionLDAPMappingRemove = "ldap_mapping_remove"
 
 	// Users.
-	ActionUserCreate   = "user_create"
-	ActionUserRoles    = "user_roles"
-	ActionUserDisable  = "user_disable"
-	ActionUserEnable   = "user_enable"
-	ActionUserDelete   = "user_delete"
-	ActionUserPassword = "user_password"
+	ActionUserCreate     = "user_create"
+	ActionUserRoles      = "user_roles"
+	ActionUserDisable    = "user_disable"
+	ActionUserEnable     = "user_enable"
+	ActionUserDelete     = "user_delete"
+	ActionUserPassword   = "user_password"   // an admin set a local user's password; never the value
+	ActionPasswordChange = "password_change" // a user changed their own password; never the value
 
 	// Pi-hole instances. An enable or edit refused because the connection test failed is recorded as a failure.
 	// ActionInstanceTest only appears as the attempted action of a permission_denied row: a test changes nothing.

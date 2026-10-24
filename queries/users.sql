@@ -47,3 +47,20 @@ SELECT COUNT(*) FROM users u
 JOIN user_roles ur ON ur.user_id = u.id
 JOIN roles r ON r.id = ur.role_id
 WHERE r.builtin = 1 AND u.source = 'local' AND u.disabled = 0;
+
+-- name: ListUsers :many
+SELECT * FROM users ORDER BY username;
+
+-- Every local user's roles, for the users list.
+-- name: ListAllUserRoles :many
+SELECT user_id, role_id FROM user_roles ORDER BY user_id, role_id;
+
+-- The roles held by each LDAP user's sessions, for the users list. LDAP users' roles come from the directory at login
+-- and recheck, so their sessions are the only record of them.
+-- name: ListLDAPSessionRoles :many
+SELECT DISTINCT s.user_id, sr.role_id
+FROM session_roles sr
+JOIN sessions s ON s.id_hash = sr.session_id_hash
+JOIN users u ON u.id = s.user_id
+WHERE u.source = 'ldap'
+ORDER BY s.user_id, sr.role_id;

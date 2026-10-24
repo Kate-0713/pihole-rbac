@@ -22,6 +22,9 @@ const (
 	msgInvalidCredentials = "Invalid username or password."
 	msgNoAccess           = "Your account is valid, but you don't have access to this app. Ask an administrator to give you a role."
 	msgRateLimited        = "Too many failed login attempts. Try again later."
+
+	msgWrongCurrentPassword = "Your current password is wrong."
+	msgPasswordRateLimited  = "Too many wrong passwords. Try again later."
 )
 
 // GetCSRFToken returns the session's CSRF token, or for a visitor without a session one bound to the anonymous
@@ -227,11 +230,15 @@ func (s *Server) ldapRoles(ctx context.Context, q *db.Queries, id *auth.Identity
 }
 
 func loginRateLimited(wait time.Duration) gen.Login429JSONResponse {
+	return gen.Login429JSONResponse{RateLimitedJSONResponse: rateLimited(wait, msgRateLimited)}
+}
+
+func rateLimited(wait time.Duration, message string) gen.RateLimitedJSONResponse {
 	secs := retryAfterSeconds(wait)
-	return gen.Login429JSONResponse{RateLimitedJSONResponse: gen.RateLimitedJSONResponse{
-		Body:    errorBody("rate_limited", msgRateLimited),
+	return gen.RateLimitedJSONResponse{
+		Body:    errorBody("rate_limited", message),
 		Headers: gen.RateLimitedResponseHeaders{RetryAfter: &secs},
-	}}
+	}
 }
 
 func lockedOut(byIP, byUser bool) string {
@@ -264,4 +271,49 @@ func (s *Server) Logout(ctx context.Context, _ gen.LogoutRequestObject) (gen.Log
 	s.Audit.Log(entry)
 	s.Sessions.ClearCookie(ri.w, ri.r)
 	return gen.Logout204Response{}, nil
+}
+
+// ChangePassword changes the caller's own password. A wrong current password counts against the same per-address
+// and per-username limits as a failed login, and while either is over its limit the request is refused without
+// checking the password, so this can't be used to guess passwords faster than the login page. Failures are audited
+// as login failures are; the passwords never are.
+func (s *Server) ChangePassword(ctx context.Context, req gen.ChangePasswordRequestObject) (gen.ChangePasswordResponseObject, error) {
+	if s.Roles == nil {
+		return nil, errNoRoles
+	}
+	ri := info(ctx)
+	current, next := req.Body.CurrentPassword, req.Body.NewPassword
+	if current == "" || next == "" || len(current) > 1024 || len(next) > 1024 {
+		return nil, invalid("new_password", "Enter your current password and a new one.")
+	}
+	username := ri.sess.Username
+	if ok, wait := s.LoginByIP.Allow(ri.ip); !ok {
+		return gen.ChangePassword429JSONResponse{RateLimitedJSONResponse: rateLimited(wait, msgPasswordRateLimited)}, nil
+	}
+	if ok, wait := s.LoginByUser.Allow(username); !ok {
+		return gen.ChangePassword429JSONResponse{RateLimitedJSONResponse: rateLimited(wait, msgPasswordRateLimited)}, nil
+	}
+
+	err := s.Roles.ChangeOwnPassword(ctx, actor(ctx), current, next)
+	if errors.Is(err, auth.ErrInvalidCredentials) {
+		trippedIP := s.LoginByIP.Fail(ri.ip)
+		trippedUser := s.LoginByUser.Fail(username)
+		entry := audit.Entry{
+			UserID: ri.sess.UserID, Username: username, Action: audit.ActionPasswordChange, Target: "user:" + username,
+			IP: ri.ip, Err: errors.New("wrong current password"),
+		}
+		if trippedIP || trippedUser {
+			entry.Detail = map[string]any{"locked_out": lockedOut(trippedIP, trippedUser)}
+		}
+		if err := s.Audit.Record(ctx, s.Store, entry); err != nil {
+			return nil, err
+		}
+		return gen.ChangePassword401JSONResponse(errorBody("invalid_credentials", msgWrongCurrentPassword)), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// The right password was given, as after a successful login.
+	s.LoginByUser.Reset(username)
+	return gen.ChangePassword204Response{}, nil
 }

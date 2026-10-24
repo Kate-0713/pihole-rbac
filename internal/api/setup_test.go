@@ -94,7 +94,7 @@ func TestSetupFlow(t *testing.T) {
 	}
 	var s gen.CurrentSession
 	_ = json.Unmarshal(res.Body.Bytes(), &s)
-	if s.User.Username != "kate" || s.User.Source != gen.Local || res.cookie(auth.SessionCookie) == nil {
+	if s.User.Username != "kate" || s.User.Source != "local" || res.cookie(auth.SessionCookie) == nil {
 		t.Fatalf("session = %+v", s)
 	}
 	if !slices.Contains(s.Permissions.Global, "users.manage") || len(s.Permissions.Targets) != 0 {

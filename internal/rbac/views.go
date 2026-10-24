@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
@@ -100,6 +101,91 @@ func GetRoleDetails(ctx context.Context, q *db.Queries, id int64) (RoleDetails, 
 		d.LDAPGroups[i] = m.GroupDn
 	}
 	return d, nil
+}
+
+// UserDetails is a user as the admin pages show them: their roles, and the grants those roles carry, so the caller
+// can tell whether they may manage the user (invariant 7).
+type UserDetails struct {
+	User   db.User
+	Roles  []RoleRef // sorted by name
+	Grants []Grant   // every grant of every role, for working out whether the caller holds them all
+}
+
+// RoleRef names a role.
+type RoleRef struct {
+	ID   int64
+	Name string
+}
+
+// ListUsers returns every user with their roles, sorted by username. A local user's roles are their assigned ones;
+// an LDAP user's are the roles their current sessions hold, which is the only record of them (they come from the
+// directory at login and at each recheck), so an LDAP user who isn't logged in has none listed.
+func ListUsers(ctx context.Context, q *db.Queries) ([]UserDetails, error) {
+	users, err := q.ListUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list users: %w", err)
+	}
+	roles, err := q.ListRoles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list roles: %w", err)
+	}
+	grants, err := q.ListAllGrants(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list grants: %w", err)
+	}
+	local, err := q.ListAllUserRoles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list user roles: %w", err)
+	}
+	ldap, err := q.ListLDAPSessionRoles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list LDAP session roles: %w", err)
+	}
+
+	// ListRoles is sorted by name, so each user's roles come out in that order.
+	order := make(map[int64]int, len(roles))
+	for i, r := range roles {
+		order[r.ID] = i
+	}
+	byRole := map[int64][]Grant{}
+	for _, g := range grants {
+		byRole[g.RoleID] = append(byRole[g.RoleID], grantFromRow(g))
+	}
+	held := map[int64][]int64{}
+	for _, r := range local {
+		held[r.UserID] = append(held[r.UserID], r.RoleID)
+	}
+	for _, r := range ldap {
+		held[r.UserID] = append(held[r.UserID], r.RoleID)
+	}
+
+	out := make([]UserDetails, len(users))
+	for i, u := range users {
+		ids := held[u.ID]
+		slices.SortFunc(ids, func(a, b int64) int { return order[a] - order[b] })
+		d := UserDetails{User: u, Roles: make([]RoleRef, 0, len(ids)), Grants: []Grant{}}
+		for _, id := range ids {
+			d.Roles = append(d.Roles, RoleRef{ID: id, Name: roles[order[id]].Name})
+			d.Grants = append(d.Grants, byRole[id]...)
+		}
+		out[i] = d
+	}
+	return out, nil
+}
+
+// GetUserDetails returns one user with their roles, or a not_found refusal. It reads the whole list, which is a
+// handful of rows in any install, so the two can't disagree about what a user's roles are.
+func GetUserDetails(ctx context.Context, q *db.Queries, id int64) (UserDetails, error) {
+	all, err := ListUsers(ctx, q)
+	if err != nil {
+		return UserDetails{}, err
+	}
+	for _, d := range all {
+		if d.User.ID == id {
+			return d, nil
+		}
+	}
+	return UserDetails{}, newError(CodeNotFound, map[string]any{"user_id": id}, "There is no user with ID %d.", id)
 }
 
 // ForbiddenEither is the refusal for an operation that any one of several global permissions allows.

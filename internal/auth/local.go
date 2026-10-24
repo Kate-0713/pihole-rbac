@@ -63,6 +63,11 @@ func HashPassword(password string) ([]byte, error) {
 	return bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
 }
 
+// CheckPassword reports whether password matches a bcrypt hash.
+func CheckPassword(hash, password string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
 // LocalUser is what the local authenticator needs from a users row.
 type LocalUser struct {
 	ID           int64

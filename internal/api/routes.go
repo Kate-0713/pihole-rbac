@@ -36,8 +36,9 @@ var routePermission = map[string]string{
 	"GET /api/v1/setup/status": accessPublic,
 	"POST /api/v1/setup":       accessPublic,
 
-	"POST /api/v1/auth/logout": accessSession,
-	"GET /api/v1/auth/session": accessSession,
+	"POST /api/v1/auth/logout":   accessSession,
+	"GET /api/v1/auth/session":   accessSession,
+	"POST /api/v1/auth/password": accessSession,
 
 	"GET /api/v1/targets": accessSession,
 
@@ -61,6 +62,15 @@ var routePermission = map[string]string{
 	"PUT /api/v1/roles/{id}":        string(rbac.RolesManage),
 	"DELETE /api/v1/roles/{id}":     string(rbac.RolesManage),
 	"PUT /api/v1/roles/{id}/grants": string(rbac.RolesManage),
+
+	"GET /api/v1/users":                string(rbac.UsersManage),
+	"POST /api/v1/users":               string(rbac.UsersManage),
+	"GET /api/v1/users/{id}":           string(rbac.UsersManage),
+	"DELETE /api/v1/users/{id}":        string(rbac.UsersManage),
+	"POST /api/v1/users/{id}/enable":   string(rbac.UsersManage),
+	"POST /api/v1/users/{id}/disable":  string(rbac.UsersManage),
+	"POST /api/v1/users/{id}/password": string(rbac.UsersManage),
+	"PUT /api/v1/users/{id}/roles":     string(rbac.UsersManage),
 
 	"GET /api/v1/targets/{target}/summary":      accessTargetAny,
 	"GET /api/v1/targets/{target}/blocking":     accessTargetAny,

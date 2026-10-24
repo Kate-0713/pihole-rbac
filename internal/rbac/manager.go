@@ -217,8 +217,12 @@ func (t *txn) confirmSelfDemotion(after *Set, confirm bool) error {
 	if len(lost) == 0 || confirm {
 		return nil
 	}
+	noun := "permission"
+	if len(lost) > 1 {
+		noun = "permissions"
+	}
 	return newError(CodeConfirmation, map[string]any{"would_lose": lost},
-		"This would remove your own %s permission. Confirm to go ahead.", joinPermissions(lost))
+		"This would remove your own %s %s. Confirm to go ahead.", joinPermissions(lost), noun)
 }
 
 // normalizeGrants validates grants (invariant 6), drops duplicates and sorts them.

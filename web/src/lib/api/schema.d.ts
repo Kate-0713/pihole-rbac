@@ -164,6 +164,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change your own password
+         * @description For local users; an LDAP user's password lives in the directory (400 validation_failed). Needs the current password: a wrong one is 401 invalid_credentials and counts against the same per-address and per-username limits as logging in, and while a limit applies the request is refused with 429 without checking it. On success the user's other sessions end and this one is kept. No permission is needed beyond a session.
+         */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/secrets": {
         parameters: {
             query?: never;
@@ -456,6 +476,146 @@ export interface paths {
          * @description Replaces every grant of the role. The caller must hold every grant the role has before and after the change. If the change would take away the caller's own last route to roles.manage or users.manage, it is refused with code confirmation_required and `details.would_lose`, and goes ahead when repeated with `confirm=true`. Sessions need nothing: permissions are worked out on every request.
          */
         put: operations["setRoleGrants"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the users
+         * @description Every user, local and LDAP, with their roles, sorted by username. An LDAP user's roles are those their current sessions hold, since they come from the directory at login and at each recheck.
+         */
+        get: operations["listUsers"];
+        put?: never;
+        /**
+         * Create a local user
+         * @description Creates a local user with a password and roles. Giving a role needs every grant it has. LDAP users aren't created here: they get a row when they first log in.
+         */
+        post: operations["createUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        /** One user */
+        get: operations["getUser"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a user
+         * @description Deletes the user, their role assignments and their sessions; the audit log keeps the username. Needs every grant of every role the user has. At least one enabled local admin must remain (code invariant_violated). Deleting your own account needs `confirm=true` (code confirmation_required). An LDAP user who can still log in gets a new row when they next do.
+         */
+        delete: operations["deleteUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable a user
+         * @description Needs every grant of every role the user has. Enabling an enabled user changes nothing.
+         */
+        post: operations["enableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable a user
+         * @description Ends the user's sessions and stops them logging in, by any method. Needs every grant of every role the user has. At least one enabled local admin must remain (code invariant_violated). Disabling your own account needs `confirm=true` (code confirmation_required). Disabling a disabled user changes nothing.
+         */
+        post: operations["disableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a local user's password
+         * @description Sets a new password for a local user without the current one, and ends their sessions (except the caller's own current session, when it is their own account). Needs every grant of every role the user has, so nobody can take over an account more privileged than their own. LDAP users are refused (code validation_failed).
+         */
+        post: operations["setUserPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace a local user's roles
+         * @description Needs every grant of every role the user has now, and of every role given or taken away. The user's sessions get the new roles at once, or end if none is left. At least one enabled local admin must remain (code invariant_violated). If the change would take away the caller's own last route to roles.manage or users.manage, it is refused with code confirmation_required and `details.would_lose`, and goes ahead when repeated with `confirm=true`. LDAP users are refused (code validation_failed): their roles come from group mappings.
+         */
+        put: operations["setUserRoles"];
         post?: never;
         delete?: never;
         options?: never;
@@ -935,6 +1095,56 @@ export interface components {
             /** @enum {string} */
             mode: "independent" | "mirrored";
         };
+        PasswordChange: {
+            current_password: string;
+            /** @description At least 12 characters and at most 72 bytes, and not the current password. */
+            new_password: string;
+        };
+        UserCreate: {
+            /** @description 1 to 64 lowercase letters, digits, '.', '_' or '-', starting with a letter or digit. Uppercase is folded and surrounding spaces are ignored. Unique across local and LDAP users. */
+            username: string;
+            /** @description At least 12 characters and at most 72 bytes. */
+            password: string;
+            /** @description The roles to give. A user with none can't log in. */
+            role_ids: number[];
+        };
+        UserPassword: {
+            /** @description At least 12 characters and at most 72 bytes. */
+            password: string;
+        };
+        UserRoles: {
+            /** @description Every role the user should have; an empty list takes them all away and ends the user's sessions. */
+            role_ids: number[];
+        };
+        RoleRef: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        User: {
+            /** Format: int64 */
+            id: number;
+            username: string;
+            /** @enum {string} */
+            source: "local" | "ldap";
+            /** @description The user's DN in the directory, for LDAP users. */
+            ldap_dn?: string;
+            disabled: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description Absent if the user has never logged in.
+             */
+            last_login_at?: string;
+            /** @description Sorted by name. A local user's assigned roles; an LDAP user's are the roles their current sessions hold, so empty when they aren't logged in. */
+            roles: components["schemas"]["RoleRef"][];
+            /** @description Whether the caller holds every grant of every role the user has, and so may change their roles or password, disable, enable or delete them. The server checks again on each change. */
+            manageable: boolean;
+        };
+        UserList: {
+            users: components["schemas"]["User"][];
+        };
         TargetSummary: {
             blocking: components["schemas"]["BlockingStatus"];
             last_24h: components["schemas"]["DatabaseTotals"];
@@ -1273,6 +1483,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The change conflicts with existing data, such as a username already taken (code conflict); it would leave no enabled local admin (code invariant_violated); or it would disable or delete the caller's own account, or take away their own roles.manage or users.manage, and needs `confirm=true` (code confirmation_required, with `details.would_lose`: "account", or the permissions). */
+        UserConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The connection test failed (code pihole_unreachable, pihole_auth_rejected or pihole_status_error), so nothing was changed. `details.instance` names the instance and `details.detail` has the underlying error. */
         PiholeFailed: {
             headers: {
@@ -1328,6 +1547,8 @@ export interface components {
         RoleID: number;
         /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
         Confirm: boolean;
+        /** @description The user's ID. */
+        UserID: number;
         /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
         TargetID: string;
     };
@@ -1549,6 +1770,43 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            /** @description The current password is wrong (code invalid_credentials), or there is no valid session (code unauthenticated). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["RateLimited"];
             503: components["responses"]["SetupRequired"];
         };
     };
@@ -2075,6 +2333,241 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["RoleConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The users. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    createUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreate"];
+            };
+        };
+        responses: {
+            /** @description The new user. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["UserConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["UserConflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    enableUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user, now enabled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    disableUser: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user, now disabled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["UserConflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setUserPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserPassword"];
+            };
+        };
+        responses: {
+            /** @description Set. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setUserRoles: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserRoles"];
+            };
+        };
+        responses: {
+            /** @description The user with their new roles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["UserConflict"];
             415: components["responses"]["UnsupportedMediaType"];
             503: components["responses"]["SetupRequired"];
         };

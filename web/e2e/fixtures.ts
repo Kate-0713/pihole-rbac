@@ -18,6 +18,7 @@ export type State = {
 			one_instance: User;
 			no_instances: User;
 			role_lead: User;
+			user_lead: User;
 			instances: Instance[];
 			spare_env_name: string;
 			pihole_password: string;

@@ -210,6 +210,46 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/auth/password:
+    post:
+      summary: Change your own password
+      description: >-
+        For local users; an LDAP user's password lives in the directory (400 validation_failed). Needs the current
+        password: a wrong one is 401 invalid_credentials and counts against the same per-address and per-username
+        limits as logging in, and while a limit applies the request is refused with 429 without checking it. On
+        success the user's other sessions end and this one is kept. No permission is needed beyond a session.
+      operationId: changePassword
+      x-permission: session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChange"
+      responses:
+        "204":
+          description: Changed.
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          description: >-
+            The current password is wrong (code invalid_credentials), or there is no valid session (code
+            unauthenticated).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/system/secrets:
     get:
       summary: List the secrets
@@ -731,6 +771,239 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/users:
+    get:
+      summary: List the users
+      description: >-
+        Every user, local and LDAP, with their roles, sorted by username. An LDAP user's roles are those their current
+        sessions hold, since they come from the directory at login and at each recheck.
+      operationId: listUsers
+      x-permission: users.manage
+      responses:
+        "200":
+          description: The users.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Create a local user
+      description: >-
+        Creates a local user with a password and roles. Giving a role needs every grant it has. LDAP users aren't
+        created here: they get a row when they first log in.
+      operationId: createUser
+      x-permission: users.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreate"
+      responses:
+        "201":
+          description: The new user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/UserConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    get:
+      summary: One user
+      operationId: getUser
+      x-permission: users.manage
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a user
+      description: >-
+        Deletes the user, their role assignments and their sessions; the audit log keeps the username. Needs every
+        grant of every role the user has. At least one enabled local admin must remain (code invariant_violated).
+        Deleting your own account needs `confirm=true` (code confirmation_required). An LDAP user who can still log in
+        gets a new row when they next do.
+      operationId: deleteUser
+      x-permission: users.manage
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/UserConflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/users/{id}/enable:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    post:
+      summary: Enable a user
+      description: Needs every grant of every role the user has. Enabling an enabled user changes nothing.
+      operationId: enableUser
+      x-permission: users.manage
+      responses:
+        "200":
+          description: The user, now enabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/users/{id}/disable:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    post:
+      summary: Disable a user
+      description: >-
+        Ends the user's sessions and stops them logging in, by any method. Needs every grant of every role the user
+        has. At least one enabled local admin must remain (code invariant_violated). Disabling your own account needs
+        `confirm=true` (code confirmation_required). Disabling a disabled user changes nothing.
+      operationId: disableUser
+      x-permission: users.manage
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      responses:
+        "200":
+          description: The user, now disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/UserConflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/users/{id}/password:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    post:
+      summary: Set a local user's password
+      description: >-
+        Sets a new password for a local user without the current one, and ends their sessions (except the caller's own
+        current session, when it is their own account). Needs every grant of every role the user has, so nobody can
+        take over an account more privileged than their own. LDAP users are refused (code validation_failed).
+      operationId: setUserPassword
+      x-permission: users.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserPassword"
+      responses:
+        "204":
+          description: Set.
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/users/{id}/roles:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    put:
+      summary: Replace a local user's roles
+      description: >-
+        Needs every grant of every role the user has now, and of every role given or taken away. The user's sessions
+        get the new roles at once, or end if none is left. At least one enabled local admin must remain (code
+        invariant_violated). If the change would take away the caller's own last route to roles.manage or
+        users.manage, it is refused with code confirmation_required and `details.would_lose`, and goes ahead when
+        repeated with `confirm=true`. LDAP users are refused (code validation_failed): their roles come from group
+        mappings.
+      operationId: setUserRoles
+      x-permission: users.manage
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRoles"
+      responses:
+        "200":
+          description: The user with their new roles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/UserConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/targets/{target}/summary:
     parameters:
       - $ref: "#/components/parameters/TargetID"
@@ -1240,6 +1513,16 @@ components:
         type: boolean
         default: false
 
+    UserID:
+      name: id
+      in: path
+      required: true
+      description: The user's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
     TargetID:
       name: target
       in: path
@@ -1318,6 +1601,16 @@ components:
         invariant, such as changing the builtin admin role or deleting a role in use (code invariant_violated); or it
         would take away the caller's own roles.manage or users.manage and needs `confirm=true` (code
         confirmation_required, with `details.would_lose`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UserConflict:
+      description: >-
+        The change conflicts with existing data, such as a username already taken (code conflict); it would leave no
+        enabled local admin (code invariant_violated); or it would disable or delete the caller's own account, or take
+        away their own roles.manage or users.manage, and needs `confirm=true` (code confirmation_required, with
+        `details.would_lose`: "account", or the permissions).
       content:
         application/json:
           schema:
@@ -1927,6 +2220,129 @@ components:
         mode:
           type: string
           enum: [independent, mirrored]
+
+    PasswordChange:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        new_password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: At least 12 characters and at most 72 bytes, and not the current password.
+
+    UserCreate:
+      type: object
+      additionalProperties: false
+      required: [username, password, role_ids]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >-
+            1 to 64 lowercase letters, digits, '.', '_' or '-', starting with a letter or digit. Uppercase is folded
+            and surrounding spaces are ignored. Unique across local and LDAP users.
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: At least 12 characters and at most 72 bytes.
+        role_ids:
+          type: array
+          maxItems: 1000
+          description: The roles to give. A user with none can't log in.
+          items:
+            type: integer
+            format: int64
+
+    UserPassword:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: At least 12 characters and at most 72 bytes.
+
+    UserRoles:
+      type: object
+      additionalProperties: false
+      required: [role_ids]
+      properties:
+        role_ids:
+          type: array
+          maxItems: 1000
+          description: Every role the user should have; an empty list takes them all away and ends the user's sessions.
+          items:
+            type: integer
+            format: int64
+
+    RoleRef:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, username, source, disabled, created_at, roles, manageable]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        source:
+          type: string
+          enum: [local, ldap]
+        ldap_dn:
+          type: string
+          description: The user's DN in the directory, for LDAP users.
+        disabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_login_at:
+          type: string
+          format: date-time
+          description: Absent if the user has never logged in.
+        roles:
+          type: array
+          description: >-
+            Sorted by name. A local user's assigned roles; an LDAP user's are the roles their current sessions hold,
+            so empty when they aren't logged in.
+          items:
+            $ref: "#/components/schemas/RoleRef"
+        manageable:
+          type: boolean
+          description: >-
+            Whether the caller holds every grant of every role the user has, and so may change their roles or
+            password, disable, enable or delete them. The server checks again on each change.
+
+    UserList:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
 
     TargetSummary:
       type: object

@@ -35,7 +35,7 @@ func TestLoginLogoutFlow(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &s); err != nil {
 		t.Fatal(err)
 	}
-	if s.User.Username != "alice" || s.User.Id != aliceID || s.User.Source != gen.Local || len(s.PublicId) != 22 ||
+	if s.User.Username != "alice" || s.User.Id != aliceID || s.User.Source != "local" || len(s.PublicId) != 22 ||
 		s.CsrfToken == "" || s.CsrfToken == anonToken || s.ExpiresAt.IsZero() {
 		t.Fatalf("session = %+v", s)
 	}

@@ -13,6 +13,7 @@
 	import { session } from '#lib/stores/session.svelte.js';
 	import { usesTarget, withTarget } from '#lib/stores/targets.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import ChangePasswordDialog from './change-password-dialog.svelte';
 	import TargetPicker from './target-picker.svelte';
 
 	let { target }: { target: string | null } = $props();
@@ -45,6 +46,7 @@
 	// `page` from $app/state is reactive, so the highlighted link follows navigation.
 	const isCurrent = (href: string) => page.url.pathname === href || page.url.pathname.startsWith(href + '/');
 
+	let passwordOpen = $state(false);
 	let loggingOut = $state(false);
 	async function logout() {
 		loggingOut = true;
@@ -125,9 +127,15 @@
 						{session.user?.source === 'ldap' ? 'Directory account' : 'Local account'}
 					</DropdownMenu.Label>
 					<DropdownMenu.Separator />
+					<!-- An LDAP user's password lives in the directory, so only local accounts can change it here. -->
+					{#if session.user?.source === 'local'}
+						<DropdownMenu.Item onSelect={() => (passwordOpen = true)}>Change password</DropdownMenu.Item>
+					{/if}
 					<DropdownMenu.Item disabled={loggingOut} onSelect={logout}>Log out</DropdownMenu.Item>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
 	</div>
 </header>
+
+<ChangePasswordDialog bind:open={passwordOpen} />

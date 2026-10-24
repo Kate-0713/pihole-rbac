@@ -18,10 +18,11 @@ import (
 func userTarget(username string) string { return "user:" + username }
 
 // hashPassword hashes outside the write transaction, since bcrypt is slow and the writer is a single connection.
-func hashPassword(password string) (string, error) {
+// field names the request field, for the refusal.
+func hashPassword(field, password string) (string, error) {
 	h, err := auth.HashPassword(password)
 	if err != nil {
-		return "", newError(CodeValidation, map[string]any{"field": "password"}, "The password %s.", trimPrefix(err.Error(), "password "))
+		return "", newError(CodeValidation, map[string]any{"field": field}, "The password %s.", trimPrefix(err.Error(), "password "))
 	}
 	return string(h), nil
 }
@@ -54,7 +55,7 @@ func (m *Manager) CreateLocalUser(ctx context.Context, a Actor, username, passwo
 	if err := auth.ValidateUsername(username); err != nil {
 		return 0, newError(CodeValidation, map[string]any{"field": "username"}, "The username must be %s.", trimPrefix(err.Error(), "username must be "))
 	}
-	hash, err := hashPassword(password)
+	hash, err := hashPassword("password", password)
 	if err != nil {
 		return 0, err
 	}
@@ -237,7 +238,7 @@ func (m *Manager) DeleteUser(ctx context.Context, a Actor, userID int64, confirm
 // (invariant 7), so nobody can take over an account more privileged than their own. The user's sessions end, except
 // the actor's current one when they set their own password.
 func (m *Manager) SetUserPassword(ctx context.Context, a Actor, userID int64, password string) error {
-	hash, err := hashPassword(password)
+	hash, err := hashPassword("password", password)
 	if err != nil {
 		return err
 	}
@@ -258,5 +259,50 @@ func (m *Manager) SetUserPassword(ctx context.Context, a Actor, userID int64, pa
 			keep = t.actor.PublicID
 		}
 		return t.endSessions(userID, keep)
+	})
+}
+
+// ChangeOwnPassword changes the actor's own password, given their current one. It needs no permission: every local
+// user may change their own password. A wrong current password is auth.ErrInvalidCredentials, which the API counts
+// against the login limits and audits, so this can't be used to guess passwords faster than the login page. The
+// actor's other sessions end; the one they changed it from is kept.
+func (m *Manager) ChangeOwnPassword(ctx context.Context, a Actor, current, password string) error {
+	if a.Source != auth.MethodLocal {
+		return newError(CodeValidation, map[string]any{"field": "current_password"},
+			"Your password is managed in the directory, so it can't be changed here.")
+	}
+	// The new password's rules first: they say nothing about the current one, and need no bcrypt.
+	if err := auth.ValidatePassword(password); err != nil {
+		return newError(CodeValidation, map[string]any{"field": "new_password"}, "The new password %s.", trimPrefix(err.Error(), "password "))
+	}
+	before, err := m.Store.Read().GetUser(ctx, a.UserID)
+	if err != nil {
+		return err
+	}
+	if !before.PasswordHash.Valid || !auth.CheckPassword(before.PasswordHash.String, current) {
+		return auth.ErrInvalidCredentials
+	}
+	if current == password {
+		return newError(CodeValidation, map[string]any{"field": "new_password"}, "The new password must be different from the current one.")
+	}
+	hash, err := hashPassword("new_password", password)
+	if err != nil {
+		return err
+	}
+	return m.do(ctx, a, audit.ActionPasswordChange, func(t *txn) error {
+		u, err := t.user(a.UserID)
+		if err != nil {
+			return err
+		}
+		t.entry.Target = userTarget(u.Username)
+		t.entry.Detail["user_id"] = u.ID
+		if u.PasswordHash != before.PasswordHash {
+			// Someone set it between the check above and now, so the current password checked may be out of date.
+			return newError(CodeConflict, nil, "Your password was changed at the same time by someone else. Try again.")
+		}
+		if err := t.q.SetUserPassword(t.ctx, db.SetUserPasswordParams{PasswordHash: sql.NullString{String: hash, Valid: true}, ID: u.ID}); err != nil {
+			return err
+		}
+		return t.endSessions(u.ID, a.PublicID)
 	})
 }

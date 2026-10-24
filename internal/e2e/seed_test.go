@@ -82,4 +82,9 @@ func TestSeed(t *testing.T) {
 	if !carol.CanGlobal(rbac.RolesManage) || !carol.Can(rbac.DomainsView, second) || carol.CanGlobal(rbac.UsersManage) || len(carol.Global()) != 1 {
 		t.Error("role lead doesn't hold exactly roles.manage and domains.view")
 	}
+
+	dave := perms(f.UserLead)
+	if !dave.CanGlobal(rbac.UsersManage) || !dave.Can(rbac.DomainsView, second) || dave.CanGlobal(rbac.RolesManage) || len(dave.Global()) != 1 {
+		t.Error("user lead doesn't hold exactly users.manage and domains.view")
+	}
 }

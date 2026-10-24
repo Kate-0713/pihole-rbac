@@ -147,6 +147,73 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	return i, err
 }
 
+const listAllUserRoles = `-- name: ListAllUserRoles :many
+SELECT user_id, role_id FROM user_roles ORDER BY user_id, role_id
+`
+
+// Every local user's roles, for the users list.
+func (q *Queries) ListAllUserRoles(ctx context.Context) ([]UserRole, error) {
+	rows, err := q.db.QueryContext(ctx, listAllUserRoles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserRole{}
+	for rows.Next() {
+		var i UserRole
+		if err := rows.Scan(&i.UserID, &i.RoleID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLDAPSessionRoles = `-- name: ListLDAPSessionRoles :many
+SELECT DISTINCT s.user_id, sr.role_id
+FROM session_roles sr
+JOIN sessions s ON s.id_hash = sr.session_id_hash
+JOIN users u ON u.id = s.user_id
+WHERE u.source = 'ldap'
+ORDER BY s.user_id, sr.role_id
+`
+
+type ListLDAPSessionRolesRow struct {
+	UserID int64
+	RoleID int64
+}
+
+// The roles held by each LDAP user's sessions, for the users list. LDAP users' roles come from the directory at login
+// and recheck, so their sessions are the only record of them.
+func (q *Queries) ListLDAPSessionRoles(ctx context.Context) ([]ListLDAPSessionRolesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLDAPSessionRoles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLDAPSessionRolesRow{}
+	for rows.Next() {
+		var i ListLDAPSessionRolesRow
+		if err := rows.Scan(&i.UserID, &i.RoleID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserRoleIDs = `-- name: ListUserRoleIDs :many
 SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY role_id
 `
@@ -164,6 +231,42 @@ func (q *Queries) ListUserRoleIDs(ctx context.Context, userID int64) ([]int64, e
 			return nil, err
 		}
 		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, username, source, ldap_dn, password_hash, disabled, created_at, last_login_at FROM users ORDER BY username
+`
+
+func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Source,
+			&i.LdapDn,
+			&i.PasswordHash,
+			&i.Disabled,
+			&i.CreatedAt,
+			&i.LastLoginAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
