@@ -77,4 +77,9 @@ func TestSeed(t *testing.T) {
 	if !bob.CanGlobal(rbac.AuditView) || bob.CanAny(first) || bob.CanAny(second) || len(bob.Global()) != 1 {
 		t.Error("no-instances user holds more than audit.view")
 	}
+
+	carol := perms(f.RoleLead)
+	if !carol.CanGlobal(rbac.RolesManage) || !carol.Can(rbac.DomainsView, second) || carol.CanGlobal(rbac.UsersManage) || len(carol.Global()) != 1 {
+		t.Error("role lead doesn't hold exactly roles.manage and domains.view")
+	}
 }

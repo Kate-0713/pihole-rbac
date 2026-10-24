@@ -48,6 +48,13 @@ class SessionStore {
 		}
 	}
 
+	// Asks the server again, after a change that may alter the user's own permissions (a grant on one of their roles,
+	// say), so the nav and buttons follow. A session that has ended sends the user to log in, as any 401 does.
+	async refresh(): Promise<void> {
+		this.#init = null;
+		await this.init(globalThis.fetch);
+	}
+
 	// Login and setup are state-changing requests made before there is a session, so they need the anonymous CSRF
 	// token first. Fetched fresh each time: an anonymous token stops working once there is a session.
 	async #anonymousCSRF(): Promise<void> {

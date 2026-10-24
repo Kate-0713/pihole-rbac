@@ -49,8 +49,11 @@ type Fixture struct {
 	// OneInstance can view domains, clients and the query log on the first instance only.
 	OneInstance User `json:"one_instance"`
 	// NoInstances holds a global permission (audit.view) and nothing on any instance.
-	NoInstances User       `json:"no_instances"`
-	Instances   []Instance `json:"instances"`
+	NoInstances User `json:"no_instances"`
+	// RoleLead holds roles.manage and domains.view on all instances through an editable role, e2e-role-lead, so tests
+	// can take roles.manage away from someone and see the confirmation it needs.
+	RoleLead  User       `json:"role_lead"`
+	Instances []Instance `json:"instances"`
 	// SpareEnvName has its password variable set on the seeded server but no instance, so a test can add an instance
 	// that can be enabled: the fake Pi-holes all take the same password.
 	SpareEnvName string `json:"spare_env_name"`
@@ -64,6 +67,7 @@ func NewFixture(baseURLs ...string) *Fixture {
 		Admin:          User{Username: "admin", Password: "e2e-admin-password", About: "builtin admin role"},
 		OneInstance:    User{Username: "alice", Password: "e2e-alice-password", About: "domains, clients and query log on pihole1"},
 		NoInstances:    User{Username: "bob", Password: "e2e-bob-password", About: "audit.view only"},
+		RoleLead:       User{Username: "carol", Password: "e2e-carol-password", About: "roles.manage and domains.view, through an editable role"},
 		SpareEnvName:   "SPARE",
 		PiholePassword: PiholePassword,
 	}
@@ -127,10 +131,20 @@ func Seed(ctx context.Context, dataDir string, f *Fixture) error {
 			return err
 		}
 
+		leadRole, err := q.CreateRole(ctx, db.CreateRoleParams{Name: "e2e-role-lead", Description: f.RoleLead.About, CreatedAt: store.Millis(now)})
+		if err != nil {
+			return err
+		}
+		for _, p := range []rbac.Permission{rbac.RolesManage, rbac.DomainsView} {
+			if err := q.AddRoleGrantAll(ctx, db.AddRoleGrantAllParams{RoleID: leadRole, Permission: string(p)}); err != nil {
+				return err
+			}
+		}
+
 		for _, u := range []struct {
 			user User
 			role int64
-		}{{f.OneInstance, oneRole}, {f.NoInstances, noneRole}} {
+		}{{f.OneInstance, oneRole}, {f.NoInstances, noneRole}, {f.RoleLead, leadRole}} {
 			hash, err := auth.HashPassword(u.user.Password)
 			if err != nil {
 				return err
