@@ -23,6 +23,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
+	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/web"
 )
@@ -76,6 +77,16 @@ func versionText() string {
 	return buildinfo.String() + "\nfrontend: " + frontend + "\nsource: " + buildinfo.Source + " (" + buildinfo.License + ")"
 }
 
+// loadFrontend returns the embedded SPA, or nil for a binary built without it, which then serves a placeholder page.
+func loadFrontend(logger *slog.Logger) (*spa.Handler, error) {
+	dist, built := web.Dist()
+	if !built {
+		logger.Warn("frontend not built: serving a placeholder page; build with make build or .\\build.ps1 build")
+		return nil, nil
+	}
+	return spa.New(dist)
+}
+
 func serve() error {
 	cfg, err := config.FromEnv()
 	if err != nil {
@@ -91,6 +102,11 @@ func serve() error {
 		return fmt.Errorf("secrets: %w", err)
 	}
 	logSecrets(logger, sec)
+
+	frontend, err := loadFrontend(logger)
+	if err != nil {
+		return err
+	}
 
 	// SIGTERM is what systemd and Docker send; os.Interrupt covers Ctrl+C on Windows and Linux.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -140,6 +156,7 @@ func serve() error {
 		TrustedProxies: cfg.TrustedProxies,
 		LoginByIP:      byIP,
 		LoginByUser:    byUser,
+		Frontend:       frontend,
 		Logger:         logger,
 	})
 	go pruneSessions(ctx, sessions, logger)

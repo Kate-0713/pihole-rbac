@@ -25,16 +25,25 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
+	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 )
 
 // MaxBodyBytes caps every request body, as in v1.
 const MaxBodyBytes = 1 << 20
 
-// ContentSecurityPolicy is sent on every response. script-src gets the hash of the SPA's inline bootstrap script
-// once the frontend is served; 'unsafe-inline' is never added to it.
+// ContentSecurityPolicy is the policy sent on every response when no frontend is served. With a frontend, script-src
+// also lists the hashes of its inline scripts (see contentSecurityPolicy); 'unsafe-inline' is never added to it.
 const ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+// contentSecurityPolicy adds the given script hashes ('sha256-…') to script-src.
+func contentSecurityPolicy(scriptHashes []string) string {
+	if len(scriptHashes) == 0 {
+		return ContentSecurityPolicy
+	}
+	return strings.Replace(ContentSecurityPolicy, "script-src 'self'", "script-src 'self' "+strings.Join(scriptHashes, " "), 1)
+}
 
 // Options holds the server's dependencies.
 type Options struct {
@@ -47,6 +56,7 @@ type Options struct {
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
+	Frontend       *spa.Handler       // the built SPA, served for every path outside /api/; nil serves a "not built" page
 	Logger         *slog.Logger
 }
 
@@ -60,6 +70,7 @@ func DefaultLoginLimits() (byIP, byUser *ratelimit.Limiter) {
 type Server struct {
 	Options
 	mux       *http.ServeMux
+	csp       string      // Content-Security-Policy for every response
 	setupDone atomic.Bool // once true, never false again; until then, the database is asked on each request
 }
 
@@ -70,7 +81,7 @@ func New(o Options) *Server {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
-	s := &Server{Options: o, mux: http.NewServeMux()}
+	s := &Server{Options: o, mux: http.NewServeMux(), csp: ContentSecurityPolicy}
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  s.requestError,
 		ResponseErrorHandlerFunc: s.responseError,
@@ -81,14 +92,21 @@ func New(o Options) *Server {
 		ErrorHandlerFunc: s.paramError,
 	})
 	s.mux.HandleFunc("/api/", s.apiNotFound)
+	if o.Frontend != nil {
+		s.csp = contentSecurityPolicy(o.Frontend.ScriptHashes())
+		s.mux.Handle("/", o.Frontend)
+	} else {
+		s.mux.Handle("/", spa.NotBuilt())
+	}
 	return s
 }
 
-// Handler returns the server's http.Handler: security headers and the body cap around every route.
+// Handler returns the server's http.Handler: security headers and the body cap around every route, the API and the
+// frontend alike.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", ContentSecurityPolicy)
+		h.Set("Content-Security-Policy", s.csp)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		if auth.IsHTTPS(r, s.TrustedProxies) {

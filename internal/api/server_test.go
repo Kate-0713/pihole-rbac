@@ -5,13 +5,18 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/spa"
+	"github.com/Kate-0713/pihole-rbac/web"
 )
 
 func TestSecurityHeaders(t *testing.T) {
@@ -212,5 +217,100 @@ func TestRetryAfterSeconds(t *testing.T) {
 		if got := retryAfterSeconds(tt.d); got != tt.want {
 			t.Errorf("retryAfterSeconds(%v) = %d, want %d", tt.d, got, tt.want)
 		}
+	}
+}
+
+func withFrontend(t *testing.T, files fstest.MapFS) func(*Options) {
+	t.Helper()
+	h, err := spa.New(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func(o *Options) { o.Frontend = h }
+}
+
+// firstInlineScriptHash finds the first <script> without attributes and hashes its text, independently of the spa
+// package, so the test checks the header against the page rather than the code against itself.
+func firstInlineScriptHash(t *testing.T, page string) string {
+	t.Helper()
+	_, after, ok := strings.Cut(page, "<script>")
+	if !ok {
+		t.Fatal("page has no inline <script>")
+	}
+	text, _, ok := strings.Cut(after, "</script>")
+	if !ok {
+		t.Fatal("unterminated <script>")
+	}
+	sum := sha256.Sum256([]byte(strings.ReplaceAll(text, "\r\n", "\n")))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}
+
+func scriptSrc(t *testing.T, csp string) string {
+	t.Helper()
+	for _, d := range strings.Split(csp, ";") {
+		if d = strings.TrimSpace(d); strings.HasPrefix(d, "script-src ") {
+			return d
+		}
+	}
+	t.Fatalf("no script-src in %q", csp)
+	return ""
+}
+
+func TestFrontendServed(t *testing.T) {
+	page := `<!doctype html><html><body><script>boot()</script></body></html>`
+	e := newTestEnv(t, withFrontend(t, fstest.MapFS{
+		"index.html":            {Data: []byte(page)},
+		"_app/immutable/app.js": {Data: []byte("x")},
+	}))
+	c := e.client("10.0.0.1:1")
+	want := "script-src 'self' " + firstInlineScriptHash(t, page)
+
+	for _, path := range []string{"/", "/login", "/domains?target=i-1", "/_app/immutable/app.js", "/api/v1/about", "/healthz"} {
+		res := c.do(http.MethodGet, path, nil)
+		if res.Code != http.StatusOK {
+			t.Errorf("%s: status %d", path, res.Code)
+		}
+		if got := scriptSrc(t, res.Header().Get("Content-Security-Policy")); got != want {
+			t.Errorf("%s: %s, want %s", path, got, want)
+		}
+	}
+	if res := c.do(http.MethodGet, "/login", nil); res.Body.String() != page {
+		t.Errorf("/login body = %q, want index.html", res.Body.String())
+	}
+	// /api/ stays the API's: no index.html fallback for unknown endpoints.
+	if res := c.do(http.MethodGet, "/api/v1/nope", nil); res.Code != http.StatusNotFound || res.errorCode() != "not_found" {
+		t.Errorf("/api/v1/nope: %d %q", res.Code, res.errorCode())
+	}
+	if res := c.do(http.MethodGet, "/_app/immutable/gone.js", nil); res.Code != http.StatusNotFound {
+		t.Errorf("missing chunk: %d", res.Code)
+	}
+}
+
+func TestFrontendNotBuilt(t *testing.T) {
+	c := newTestEnv(t).client("10.0.0.1:1")
+	res := c.do(http.MethodGet, "/login", nil)
+	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "Frontend not built") {
+		t.Fatalf("got %d %q", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Content-Security-Policy"); got != ContentSecurityPolicy {
+		t.Fatalf("CSP = %q", got)
+	}
+}
+
+// The header served with the real embedded build must allow exactly that page's bootstrap script.
+func TestCSPMatchesEmbeddedPage(t *testing.T) {
+	dist, built := web.Dist()
+	if !built {
+		t.Skip("frontend not built")
+	}
+	h, err := spa.New(dist)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newTestEnv(t, func(o *Options) { o.Frontend = h })
+	res := e.client("10.0.0.1:1").do(http.MethodGet, "/", nil)
+	want := "script-src 'self' " + firstInlineScriptHash(t, res.Body.String())
+	if got := scriptSrc(t, res.Header().Get("Content-Security-Policy")); got != want {
+		t.Fatalf("%s, want %s", got, want)
 	}
 }

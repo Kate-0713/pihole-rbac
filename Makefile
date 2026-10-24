@@ -17,6 +17,9 @@ LDFLAGS  := -s -w -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(P
 # sqlc is pinned in tools/go.mod, not the main go.mod (see the comment there).
 SQLC     := go tool -modfile=tools/go.mod sqlc
 OAPI     := go tool -modfile=tools/go.mod oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
+# openapi-typescript generates the frontend's API types from the same spec.
+WEBGEN   := npm --prefix web run --silent generate
+API_GEN  := internal/api/gen/api.gen.go web/src/lib/api/schema.d.ts
 
 export CGO_ENABLED := 0
 export PIHOLE_RBAC_DATA_DIR ?= $(CURDIR)/.devdata
@@ -48,17 +51,21 @@ test: ## go vet and go test
 	go vet ./...
 	go test ./...
 
-generate: ## Regenerate internal/store/db (sqlc) and internal/api/gen (oapi-codegen)
+generate: web/node_modules ## Regenerate internal/store/db (sqlc), internal/api/gen (oapi-codegen) and web/src/lib/api/schema.d.ts (openapi-typescript)
 	$(SQLC) generate
 	$(OAPI)
+	$(WEBGEN)
 
-generate-check: ## Fail if the generated code is out of date (compares with the files as they are now; changes nothing)
+generate-check: web/node_modules ## Fail if the generated code is out of date (compares with the files as they are now; changes nothing)
 	$(SQLC) diff
-	@gen=internal/api/gen/api.gen.go; tmp=$$(mktemp); cp $$gen $$tmp; \
-	$(OAPI) || { cp $$tmp $$gen; rm -f $$tmp; exit 1; }; \
-	if ! cmp -s $$tmp $$gen; then cp $$tmp $$gen; rm -f $$tmp; \
-		echo "error: $$gen is out of date with api/openapi.yaml; run make generate" >&2; exit 1; fi; \
-	rm -f $$tmp
+	@tmp=$$(mktemp -d); for f in $(API_GEN); do cp $$f $$tmp/$$(basename $$f); done; \
+	status=0; { $(OAPI) && $(WEBGEN) >/dev/null; } || status=1; \
+	for f in $(API_GEN); do \
+		if [ $$status -eq 0 ] && ! cmp -s $$tmp/$$(basename $$f) $$f; then \
+			echo "error: $$f is out of date with api/openapi.yaml; run make generate" >&2; status=1; fi; \
+		cp $$tmp/$$(basename $$f) $$f; \
+	done; \
+	rm -rf $$tmp; exit $$status
 
 dev-api: ## Run the API on :8080 with the dev data dir (no frontend build needed)
 	@mkdir -p "$(PIHOLE_RBAC_DATA_DIR)"

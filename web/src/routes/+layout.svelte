@@ -3,6 +3,9 @@
 	SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <script lang="ts">
+	// Importing a CSS file in the root layout is the SvelteKit way to load global styles: Vite bundles it into the
+	// build, and every page sits inside this layout.
+	import '../app.css';
 	import favicon from '#lib/assets/favicon.svg';
 	import type { LayoutProps } from './$types';
 

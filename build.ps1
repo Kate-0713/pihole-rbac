@@ -25,6 +25,9 @@ $Bin = 'bin\pihole-rbac.exe'
 # sqlc and oapi-codegen are pinned in tools/go.mod, not the main go.mod (see the comment there).
 $Sqlc = @('tool', '-modfile=tools/go.mod', 'sqlc')
 $Oapi = @('tool', '-modfile=tools/go.mod', 'oapi-codegen', '-config', 'api/oapi-codegen.yaml', 'api/openapi.yaml')
+# openapi-typescript generates the frontend's API types from the same spec.
+$WebGen = @('--prefix', 'web', 'run', '--silent', 'generate')
+$ApiGen = @('internal\api\gen\api.gen.go', 'web\src\lib\api\schema.d.ts')
 $Pkg = 'github.com/Kate-0713/pihole-rbac/internal/buildinfo'
 $env:CGO_ENABLED = '0'
 if (-not $env:PIHOLE_RBAC_DATA_DIR) {
@@ -93,20 +96,31 @@ try {
             Invoke-Native 'go' @('test', './...')
         }
         'generate' {
+            Install-WebDeps
             Invoke-Native 'go' ($Sqlc + 'generate')
             Invoke-Native 'go' $Oapi
+            Invoke-Native 'npm' $WebGen
         }
         'generate-check' {
             # Fails if the generated code doesn't match the queries and the API spec. It compares with the files as
             # they are now, committed or not, and leaves them unchanged either way.
+            Install-WebDeps
             Invoke-Native 'go' ($Sqlc + 'diff')
-            $gen = 'internal\api\gen\api.gen.go'
-            $before = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $gen))
-            Invoke-Native 'go' $Oapi
-            $after = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $gen))
-            if ([Convert]::ToBase64String($before) -ne [Convert]::ToBase64String($after)) {
-                [IO.File]::WriteAllBytes((Join-Path $PSScriptRoot $gen), $before)
-                throw "$gen is out of date with api/openapi.yaml; run .\build.ps1 generate"
+            $before = @{}
+            foreach ($gen in $ApiGen) { $before[$gen] = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $gen)) }
+            $stale = @()
+            try {
+                Invoke-Native 'go' $Oapi
+                Invoke-Native 'npm' $WebGen | Out-Null
+                foreach ($gen in $ApiGen) {
+                    $after = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $gen))
+                    if ([Convert]::ToBase64String($before[$gen]) -ne [Convert]::ToBase64String($after)) { $stale += $gen }
+                }
+            } finally {
+                foreach ($gen in $ApiGen) { [IO.File]::WriteAllBytes((Join-Path $PSScriptRoot $gen), $before[$gen]) }
+            }
+            if ($stale.Count -gt 0) {
+                throw "$($stale -join ', ') out of date with api/openapi.yaml; run .\build.ps1 generate"
             }
         }
         'dev-api' {

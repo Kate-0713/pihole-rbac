@@ -42,14 +42,15 @@ jobs:
       - name: Check generated sqlc code is up to date
         run: go tool "-modfile=tools/go.mod" sqlc diff
 
+      - name: Install web dependencies
+        run: npm --prefix web ci
+
       - name: Check generated API code is up to date
         shell: bash
         run: |
           go tool "-modfile=tools/go.mod" oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
-          git diff --exit-code -- internal/api/gen  
-
-      - name: Install web dependencies
-        run: npm --prefix web ci
+          npm --prefix web run --silent generate
+          git diff --exit-code -- internal/api/gen web/src/lib/api/schema.d.ts
 
       - name: Type-check web
         run: npm --prefix web run check
