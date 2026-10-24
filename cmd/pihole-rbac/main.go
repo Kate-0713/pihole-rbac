@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"slices"
-	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +20,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
@@ -122,9 +121,12 @@ func serve() error {
 	if err := announceSetup(ctx, st, logger); err != nil {
 		return err
 	}
+	auditLog := audit.NewLogger(os.Stdout)
 
-	authn, directory, err := newAuthenticator(ctx, st, sec, cfg.LDAPCAFile, logger)
-	if err != nil {
+	// The login methods, LDAP settings and bind password, and the login chain built from them. Saving them through the
+	// API rebuilds the chain and the recheck's directory without a restart.
+	login := &loginsettings.Service{Store: st, Audit: auditLog, Secrets: sec, CAFile: cfg.LDAPCAFile, Logger: logger}
+	if err := login.Load(ctx); err != nil {
 		return err
 	}
 	sessions := auth.NewSessions(st, sec.SessionKey, auth.SessionOptions{
@@ -132,7 +134,6 @@ func serve() error {
 		TrustedProxies: cfg.TrustedProxies,
 	})
 	byIP, byUser := api.DefaultLoginLimits()
-	auditLog := audit.NewLogger(os.Stdout)
 	// One Pi-hole client per enabled instance. Closing the pool logs every client out of its Pi-hole, so sessions
 	// don't hold Pi-hole's API seats after a restart.
 	pool := instances.New(instances.Options{Passwords: sec, Logger: logger})
@@ -150,7 +151,8 @@ func serve() error {
 	server := api.New(api.Options{
 		Store:          st,
 		Sessions:       sessions,
-		Auth:           authn,
+		Auth:           login.Authenticator(),
+		LoginSettings:  login,
 		Audit:          auditLog,
 		Secrets:        sec,
 		Instances:      instanceService,
@@ -165,7 +167,7 @@ func serve() error {
 	rechecker := &auth.Rechecker{
 		Store:     st,
 		Audit:     auditLog,
-		Directory: func() auth.Directory { return directory },
+		Directory: login.Directory,
 		Logger:    logger,
 	}
 	go rechecker.Run(ctx)
@@ -198,46 +200,6 @@ func serve() error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
-}
-
-// newAuthenticator builds the login chain from the saved login settings. It is swappable so saving new settings can
-// replace it without a restart. The directory is what the session recheck asks about logged-in LDAP users; it is nil
-// when LDAP login isn't enabled.
-func newAuthenticator(ctx context.Context, st *store.Store, sec *secrets.Manager, ldapCAFile string, logger *slog.Logger) (*auth.SwappableAuthenticator, auth.Directory, error) {
-	settings, err := auth.LoadSettings(ctx, st.Read())
-	if err != nil {
-		return nil, nil, err
-	}
-	var directory auth.Directory
-	available := map[auth.Method]auth.Authenticator{
-		auth.MethodLocal: auth.NewLocalAuthenticator(auth.StoreUsers{St: st}),
-	}
-	if slices.Contains(settings.Methods, auth.MethodLDAP) {
-		ls, found, err := auth.LoadLDAPSettings(ctx, st.Read())
-		if err != nil {
-			return nil, nil, err
-		}
-		if !found {
-			return nil, nil, errors.New("LDAP login is enabled but no LDAP settings have been saved")
-		}
-		ldapAuth, err := auth.NewLDAPAuthenticator(ls, sec.LDAPBindPassword, ldapCAFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("LDAP: %w", err)
-		}
-		if strings.HasPrefix(ls.URL, "ldap://") {
-			logger.Warn("LDAP uses ldap:// without TLS: passwords cross the network in the clear", "url", ls.URL)
-		}
-		if _, ok := sec.LDAPBindPassword(); !ok {
-			logger.Warn("LDAP login is enabled but PIHOLE_RBAC_LDAP_BIND_PASSWORD is not set; LDAP logins will fail")
-		}
-		available[auth.MethodLDAP] = ldapAuth
-		directory = ldapAuth
-	}
-	chain, err := auth.Build(settings.Methods, available)
-	if err != nil {
-		return nil, nil, fmt.Errorf("login methods: %w", err)
-	}
-	return auth.NewSwappable(chain), directory, nil
 }
 
 // pruneSessions deletes expired and idle sessions every 15 minutes until ctx ends.

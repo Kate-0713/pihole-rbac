@@ -37,8 +37,8 @@ const (
 // request (and the local login after it) for long.
 const ldapTimeout = 10 * time.Second
 
-// LDAPSettings are the LDAP runtime settings stored in the database. The bind password is a tier 1 secret
-// (PIHOLE_RBAC_LDAP_BIND_PASSWORD) and is never stored here.
+// LDAPSettings are the LDAP runtime settings stored in the database. The bind password isn't part of them: it is
+// stored encrypted beside them, or comes from PIHOLE_RBAC_LDAP_BIND_PASSWORD.
 type LDAPSettings struct {
 	URL        string `json:"url"`         // ldaps://dc01.example.local:636, or ldap:// (passwords then cross the network in the clear)
 	BindDN     string `json:"bind_dn"`     // read-only service account used to find users and their groups
@@ -112,8 +112,8 @@ type LDAPAuthenticator struct {
 	dial         func() (ldapConn, error)
 }
 
-// NewLDAPAuthenticator builds an authenticator. bindPassword is called on every login, so a reloaded
-// PIHOLE_RBAC_LDAP_BIND_PASSWORD takes effect at once. caFile is PIHOLE_RBAC_LDAP_CA_FILE, or "".
+// NewLDAPAuthenticator builds an authenticator. bindPassword is called on every login, so a reloaded or newly stored
+// bind password takes effect at once. caFile is PIHOLE_RBAC_LDAP_CA_FILE, or "".
 func NewLDAPAuthenticator(s LDAPSettings, bindPassword func() (secrets.Value, bool), caFile string) (*LDAPAuthenticator, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -273,7 +273,7 @@ func (a *LDAPAuthenticator) serviceConn(ctx context.Context) (ldapConn, secrets.
 	}
 	bindPW, ok := a.bindPassword()
 	if !ok {
-		return nil, secrets.Value{}, errors.New("PIHOLE_RBAC_LDAP_BIND_PASSWORD is not set")
+		return nil, secrets.Value{}, errors.New("no LDAP bind password is set")
 	}
 	conn, err := a.dial()
 	if err != nil {
@@ -284,6 +284,39 @@ func (a *LDAPAuthenticator) serviceConn(ctx context.Context) (ldapConn, secrets.
 		return nil, secrets.Value{}, fmt.Errorf("service account bind failed: %w", err)
 	}
 	return conn, bindPW, nil
+}
+
+// CheckBind connects and binds as the service account, then disconnects: the test run before LDAP settings are
+// saved or LDAP login is turned on.
+func (a *LDAPAuthenticator) CheckBind(ctx context.Context) error {
+	conn, _, err := a.serviceConn(ctx)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
+// Group looks a group up by DN with the service account: whether it exists, and how many members it lists. It is how
+// an admin checks that a mapping's DN is right.
+func (a *LDAPAuthenticator) Group(ctx context.Context, dn string) (exists bool, members int, err error) {
+	conn, _, err := a.serviceConn(ctx)
+	if err != nil {
+		return false, 0, err
+	}
+	defer conn.Close()
+	res, err := conn.Search(ldap.NewSearchRequest(
+		dn, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{"member"}, nil,
+	))
+	if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+		return false, 0, nil
+	}
+	if err != nil {
+		return false, 0, fmt.Errorf("group search failed: %w", err)
+	}
+	if len(res.Entries) != 1 {
+		return false, 0, nil
+	}
+	return true, len(res.Entries[0].GetAttributeValues("member")), nil
 }
 
 // findUser returns the DN of the one entry the user filter finds for username, or ErrNoSuchUser.

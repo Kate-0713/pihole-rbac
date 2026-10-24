@@ -771,6 +771,93 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/roles/{id}/ldap-groups:
+    parameters:
+      - $ref: "#/components/parameters/RoleID"
+    get:
+      summary: A role's LDAP group mappings
+      operationId: listLDAPMappings
+      x-permission: roles.manage
+      responses:
+        "200":
+          description: The mappings, sorted by group DN.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPMappingList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Map an LDAP group to a role
+      description: >-
+        Members of the group get the role at their next login or recheck. Needs every grant the role has. After saving,
+        the group is looked up in the directory: `check` says whether it exists and how many members it has, or
+        `check_error` says why it couldn't be looked up (no LDAP settings, or the directory failed). A group that
+        doesn't exist is still saved, so a mapping can be made before the group.
+      operationId: addLDAPMapping
+      x-permission: roles.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LDAPGroupInput"
+      responses:
+        "201":
+          description: The new mapping, with what the directory said about the group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPMappingCreated"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RoleConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/roles/{id}/ldap-groups/{mapping_id}:
+    parameters:
+      - $ref: "#/components/parameters/RoleID"
+      - $ref: "#/components/parameters/MappingID"
+    delete:
+      summary: Remove an LDAP group mapping
+      description: >-
+        Needs every grant the role has. LDAP sessions holding the role are rechecked within a minute. If the caller is
+        an LDAP user holding the role, and it is their last route to roles.manage or users.manage, the change needs
+        `confirm=true` (code confirmation_required).
+      operationId: removeLDAPMapping
+      x-permission: roles.manage
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RoleConflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/users:
     get:
       summary: List the users
@@ -1001,6 +1088,193 @@ paths:
           $ref: "#/components/responses/UserConflict"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/settings/auth:
+    get:
+      summary: The login methods
+      description: The enabled login methods, in the order they are tried.
+      operationId: getLoginMethods
+      x-permission: settings.manage
+      responses:
+        "200":
+          description: The login methods.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginMethods"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Change the login methods
+      description: >-
+        Sets the enabled login methods and their order. Local login must stay enabled: it is the way in when LDAP fails
+        (400 validation_failed otherwise). Turning LDAP on needs saved LDAP settings and a bind password, and a service
+        bind with them that works (502 ldap_failed otherwise). Applies at once, without a restart. Audited as
+        settings_update.
+      operationId: setLoginMethods
+      x-permission: settings.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginMethods"
+      responses:
+        "200":
+          description: The login methods as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginMethods"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/LDAPFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/settings/ldap:
+    get:
+      summary: The LDAP settings
+      description: >-
+        The LDAP connection settings (absent until saved), whether LDAP login is enabled, and where the bind password
+        comes from. Never the password.
+      operationId: getLDAPSettings
+      x-permission: settings.manage
+      responses:
+        "200":
+          description: The LDAP settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPSettingsView"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Save the LDAP settings
+      description: >-
+        Saves the LDAP connection settings and, if given, the bind password (write-only). The bind password is only
+        sent to a server it was entered for: the first save, a new URL, or a change to the TLS mode or the Common Name
+        fallback needs `bind_password` whenever a password is already stored or PIHOLE_RBAC_LDAP_BIND_PASSWORD is set
+        (400 validation_failed with `details.field` bind_password otherwise). When the variable is set, the password
+        given must match it and isn't stored. While LDAP login is enabled, the new settings must pass a service bind
+        first (502 ldap_failed otherwise), and nothing is saved if they don't. Applies at once. Audited as
+        settings_update with the fields that changed.
+      operationId: setLDAPSettings
+      x-permission: settings.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LDAPSettingsInput"
+      responses:
+        "200":
+          description: The LDAP settings as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPSettingsView"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/LDAPFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/ldap/test-user:
+    post:
+      summary: Test how an LDAP user would log in
+      description: >-
+        Looks a username up with the service account, as the session recheck does (no password needed), and reports
+        the user's DN, the groups the directory returned, which mappings matched, the roles they give and the
+        permissions those add up to. Uses the saved LDAP settings whether or not LDAP login is enabled. A username the
+        directory doesn't have is a 200 with `found` false. 409 conflict if no LDAP settings are saved.
+      operationId: testLDAPUser
+      x-permission: roles.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LDAPUserTestInput"
+      responses:
+        "200":
+          description: What the directory says, and what it would mean here.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPUserTest"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/LDAPFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/ldap/check-group:
+    post:
+      summary: Check an LDAP group DN
+      description: >-
+        Looks a group DN up with the service account: whether it exists and how many members it lists. Audited as
+        ldap_mapping_check. 409 conflict if no LDAP settings are saved.
+      operationId: checkLDAPGroup
+      x-permission: roles.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LDAPGroupInput"
+      responses:
+        "200":
+          description: What the directory says about the group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LDAPGroupCheck"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/LDAPFailed"
         "503":
           $ref: "#/components/responses/SetupRequired"
 
@@ -1523,6 +1797,16 @@ components:
         format: int64
         minimum: 1
 
+    MappingID:
+      name: mapping_id
+      in: path
+      required: true
+      description: The LDAP group mapping's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
     TargetID:
       name: target
       in: path
@@ -1611,6 +1895,14 @@ components:
         enabled local admin (code invariant_violated); or it would disable or delete the caller's own account, or take
         away their own roles.manage or users.manage, and needs `confirm=true` (code confirmation_required, with
         `details.would_lose`: "account", or the permissions).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    LDAPFailed:
+      description: >-
+        The LDAP server couldn't be used (code ldap_failed): it didn't answer, refused the service account's bind, or a
+        search failed. Nothing was saved. `details.detail` has the underlying error.
       content:
         application/json:
           schema:
@@ -2344,6 +2636,266 @@ components:
           items:
             $ref: "#/components/schemas/User"
 
+    LoginMethods:
+      type: object
+      additionalProperties: false
+      required: [methods]
+      properties:
+        methods:
+          type: array
+          minItems: 1
+          maxItems: 2
+          description: The enabled methods in the order they are tried. Must include local.
+          items:
+            type: string
+            enum: [local, ldap]
+
+    LDAPConnection:
+      type: object
+      additionalProperties: false
+      required: [url, bind_dn, base_dn, user_filter, tls_mode, allow_cn_fallback]
+      properties:
+        url:
+          type: string
+          description: ldaps://host[:port], or ldap://host[:port] (passwords then cross the network unencrypted).
+        bind_dn:
+          type: string
+          description: The read-only service account that finds users and their groups.
+        base_dn:
+          type: string
+          description: Users and groups are searched for under this DN.
+        user_filter:
+          type: string
+          description: Finds a user by username, with %s exactly once, e.g. (uid=%s) or (sAMAccountName=%s).
+        tls_mode:
+          type: string
+          enum: [verify, insecure]
+        allow_cn_fallback:
+          type: boolean
+          description: >-
+            Accept a certificate whose Common Name, rather than a Subject Alternative Name, matches the host. Only
+            applies with PIHOLE_RBAC_LDAP_CA_FILE.
+
+    LDAPSettingsInput:
+      type: object
+      additionalProperties: false
+      required: [url, bind_dn, base_dn, user_filter]
+      properties:
+        url:
+          type: string
+          maxLength: 1024
+        bind_dn:
+          type: string
+          maxLength: 1024
+        base_dn:
+          type: string
+          maxLength: 1024
+        user_filter:
+          type: string
+          maxLength: 1024
+        tls_mode:
+          type: string
+          enum: [verify, insecure]
+          description: verify if absent.
+        allow_cn_fallback:
+          type: boolean
+        bind_password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: >-
+            Write-only. Stored encrypted, replacing the stored one, unless PIHOLE_RBAC_LDAP_BIND_PASSWORD is set, when it
+            must match the variable. Required when the settings would send an existing password to a new server.
+
+    LDAPSettingsView:
+      type: object
+      additionalProperties: false
+      required: [enabled, bind_password, can_store_password, ca_file_set]
+      properties:
+        settings:
+          $ref: "#/components/schemas/LDAPConnection"
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: string
+        enabled:
+          type: boolean
+          description: Whether LDAP is among the login methods.
+        bind_password:
+          $ref: "#/components/schemas/LDAPBindPasswordStatus"
+        can_store_password:
+          type: boolean
+          description: Whether a master key is set, so a bind password can be stored.
+        ca_file_set:
+          type: boolean
+          description: Whether PIHOLE_RBAC_LDAP_CA_FILE is set.
+
+    LDAPBindPasswordStatus:
+      type: object
+      additionalProperties: false
+      required: [source, variable]
+      description: Where the bind password comes from. Never the password.
+      properties:
+        source:
+          type: string
+          enum: [environment, stored, none]
+        variable:
+          type: string
+          description: The environment variable that overrides a stored password.
+        updated_at:
+          type: string
+          format: date-time
+          description: When the stored password was last set.
+        updated_by:
+          type: string
+
+    LDAPUserTestInput:
+      type: object
+      additionalProperties: false
+      required: [username]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 256
+
+    LDAPUserTest:
+      type: object
+      additionalProperties: false
+      required: [username, found, groups, local_account, mappings, roles, permissions]
+      properties:
+        username:
+          type: string
+        found:
+          type: boolean
+          description: Whether the directory has exactly one entry for the username.
+        dn:
+          type: string
+        groups:
+          type: array
+          description: The group DNs the directory lists the user in, as it returned them.
+          items:
+            type: string
+        local_account:
+          type: boolean
+          description: The username belongs to a local account, so an LDAP login with it is refused.
+        mappings:
+          type: array
+          description: The mappings that match one of the user's groups.
+          items:
+            $ref: "#/components/schemas/LDAPMatchedMapping"
+        roles:
+          type: array
+          description: The roles the user would get, sorted by name. None means they would be refused.
+          items:
+            $ref: "#/components/schemas/RoleRef"
+        permissions:
+          $ref: "#/components/schemas/TestedPermissions"
+
+    LDAPMatchedMapping:
+      type: object
+      additionalProperties: false
+      required: [group_dn, role]
+      properties:
+        group_dn:
+          type: string
+          description: The mapping's group DN, as entered.
+        role:
+          $ref: "#/components/schemas/RoleRef"
+
+    TestedPermissions:
+      type: object
+      additionalProperties: false
+      required: [global, targets]
+      properties:
+        global:
+          type: array
+          items:
+            type: string
+        targets:
+          type: array
+          description: Each instance and mirrored group where the roles give at least one permission, by name.
+          items:
+            $ref: "#/components/schemas/TargetPermissions"
+
+    TargetPermissions:
+      type: object
+      additionalProperties: false
+      required: [target, name, permissions]
+      properties:
+        target:
+          type: string
+          examples: ["i-1"]
+        name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    LDAPGroupInput:
+      type: object
+      additionalProperties: false
+      required: [group_dn]
+      properties:
+        group_dn:
+          type: string
+          minLength: 1
+          maxLength: 1024
+
+    LDAPGroupCheck:
+      type: object
+      additionalProperties: false
+      required: [exists, members]
+      properties:
+        exists:
+          type: boolean
+        members:
+          type: integer
+          description: How many members the group lists; 0 if it doesn't exist.
+
+    LDAPMapping:
+      type: object
+      additionalProperties: false
+      required: [id, role_id, group_dn, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        role_id:
+          type: integer
+          format: int64
+        group_dn:
+          type: string
+          description: As entered. Matching ignores case and spacing.
+        created_at:
+          type: string
+          format: date-time
+
+    LDAPMappingList:
+      type: object
+      additionalProperties: false
+      required: [mappings]
+      properties:
+        mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/LDAPMapping"
+
+    LDAPMappingCreated:
+      type: object
+      additionalProperties: false
+      required: [mapping]
+      properties:
+        mapping:
+          $ref: "#/components/schemas/LDAPMapping"
+        check:
+          $ref: "#/components/schemas/LDAPGroupCheck"
+        check_error:
+          type: string
+          description: Why the group couldn't be looked up, when it couldn't.
+
     TargetSummary:
       type: object
       additionalProperties: false
@@ -2873,7 +3425,7 @@ components:
             Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed,
             unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required,
             invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected,
-            pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured.
+            pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured, ldap_failed.
         message:
           type: string
           description: Human-readable message, safe to show to the user.

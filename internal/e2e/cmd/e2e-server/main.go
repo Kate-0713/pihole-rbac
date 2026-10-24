@@ -36,6 +36,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Kate-0713/pihole-rbac/internal/auth/ldaptest"
 	"github.com/Kate-0713/pihole-rbac/internal/e2e"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi/piholetest"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
@@ -88,6 +89,13 @@ func run() error {
 	defer ph1.Close()
 	defer ph2.Close()
 	fillPihole(ph1)
+	// A directory for the LDAP page's tests. The seeded server doesn't use it until a test saves its settings.
+	directory, err := ldaptest.Start("127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	ldapFixture := ldaptest.Example(directory)
 	down, err := unusedAddr()
 	if err != nil {
 		return err
@@ -106,6 +114,7 @@ func run() error {
 	freshDir, seededDir := filepath.Join(root, "fresh"), filepath.Join(root, "seeded")
 
 	fixture := e2e.NewFixture(ph1.URL, ph2.URL, "http://"+down)
+	fixture.LDAP = &ldapFixture
 	if err := os.MkdirAll(seededDir, 0o700); err != nil {
 		return err
 	}

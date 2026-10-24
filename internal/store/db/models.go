@@ -134,10 +134,15 @@ type SessionRole struct {
 }
 
 type Setting struct {
-	Key       string
-	Value     string
-	UpdatedAt int64
-	UpdatedBy string
+	Key              string
+	Value            string
+	UpdatedAt        int64
+	UpdatedBy        string
+	SecretCiphertext []byte
+	SecretNonce      []byte
+	SecretKeyID      sql.NullString
+	SecretUpdatedAt  sql.NullInt64
+	SecretUpdatedBy  sql.NullString
 }
 
 type SetupState struct {

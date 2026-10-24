@@ -11,3 +11,9 @@ ON CONFLICT (key) DO UPDATE SET
     value      = excluded.value,
     updated_at = excluded.updated_at,
     updated_by = excluded.updated_by;
+
+-- The row must exist: save the setting first.
+-- name: SetSettingSecret :execrows
+UPDATE settings
+SET secret_ciphertext = ?, secret_nonce = ?, secret_key_id = ?, secret_updated_at = ?, secret_updated_by = ?
+WHERE key = ?;

@@ -50,6 +50,7 @@ const (
 	ActionRoleDelete        = "role_delete"
 	ActionLDAPMappingAdd    = "ldap_mapping_add"
 	ActionLDAPMappingRemove = "ldap_mapping_remove"
+	ActionLDAPMappingCheck  = "ldap_mapping_check" // an admin asked the directory about a group DN
 
 	// Users.
 	ActionUserCreate     = "user_create"
@@ -81,6 +82,9 @@ const (
 
 	// Sessions.
 	ActionLDAPRecheck = "ldap_recheck" // an LDAP user's session roles changed, or their sessions ended, at a recheck
+
+	// Settings. The detail lists the fields that changed; a bind password shows as stored or confirmed, never its value.
+	ActionSettingsUpdate = "settings_update"
 
 	// System.
 	ActionConfigReload = "config_reload" // secrets were reloaded; the detail lists the names that changed or failed

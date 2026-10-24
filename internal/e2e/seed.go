@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/auth/ldaptest"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/setup"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
@@ -62,6 +63,10 @@ type Fixture struct {
 	SpareEnvName string `json:"spare_env_name"`
 	// PiholePassword is the fake Pi-holes' app password, for tests that store or confirm one.
 	PiholePassword string `json:"pihole_password"`
+	// LDAP is the fake directory the e2e server starts, for the LDAP page's tests. Seed doesn't configure it: a test
+	// that saves LDAP settings and turns LDAP login on turns it off again. Its users' passwords are their username
+	// followed by "-ldap-password".
+	LDAP *ldaptest.Fixture `json:"ldap,omitempty"`
 }
 
 // NewFixture returns the standard fixture for instances at the given base URLs, named pihole1, pihole2 and so on.

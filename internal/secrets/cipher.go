@@ -100,6 +100,12 @@ func AAD(table string, id int64) []byte {
 	return []byte("pihole-rbac:" + table + ":" + strconv.FormatInt(id, 10))
 }
 
+// AADKey is the associated data for a secret stored in a table row identified by a text key, e.g. AADKey("settings",
+// "ldap").
+func AADKey(table, key string) []byte {
+	return []byte("pihole-rbac:" + table + ":" + key)
+}
+
 // DecodeKey parses a base64 32-byte key, as in PIHOLE_RBAC_SECRET_KEY, PIHOLE_RBAC_SESSION_KEY and session.key.
 // Standard and URL-safe alphabets are accepted, with or without padding. Errors never include the input.
 func DecodeKey(s string) ([]byte, error) {

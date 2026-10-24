@@ -9,6 +9,17 @@ import { stateURL } from './addresses.js';
 // What internal/e2e/cmd/e2e-server reports on GET /state.
 export type User = { username: string; password: string; about: string };
 export type Instance = { id: number; name: string; env_name: string; base_url: string };
+export type Directory = {
+	url: string;
+	base_dn: string;
+	bind_dn: string;
+	bind_password: string;
+	user_filter: string;
+	admin_group: string;
+	staff_group: string;
+	empty_group: string;
+	users: Record<string, string>;
+};
 export type State = {
 	fresh: { url: string; setup_token: string };
 	seeded: {
@@ -22,6 +33,7 @@ export type State = {
 			instances: Instance[];
 			spare_env_name: string;
 			pihole_password: string;
+			ldap: Directory;
 		};
 	};
 };

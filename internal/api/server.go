@@ -22,6 +22,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
@@ -52,8 +53,9 @@ type Options struct {
 	Auth           auth.Authenticator
 	Audit          *audit.Logger
 	Secrets        *secrets.Manager
-	Instances      *instances.Service // instance changes, and the client pool for health and secret reloads
-	Roles          *rbac.Manager      // changes to roles, grants, user roles, LDAP mappings and users
+	Instances      *instances.Service     // instance changes, and the client pool for health and secret reloads
+	Roles          *rbac.Manager          // changes to roles, grants, user roles, LDAP mappings and users
+	LoginSettings  *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
@@ -256,8 +258,8 @@ func (s *Server) paramError(w http.ResponseWriter, _ *http.Request, _ error) {
 }
 
 // responseError handles an error returned by a handler: a refusal from the rbac package is answered as such (see
-// refuse), a failed connection test as a Pi-hole or instance error (see testFailed), and a failed Pi-hole call on a
-// target likewise (see piholeFailed); anything else is an unexpected failure, logged in full but reported to the
+// refuse), a failed connection test as a Pi-hole or instance error (see testFailed), an LDAP server that couldn't be
+// used as ldap_failed, and a failed Pi-hole call on a target likewise (see piholeFailed); anything else is an unexpected failure, logged in full but reported to the
 // client only as "internal".
 func (s *Server) responseError(w http.ResponseWriter, r *http.Request, err error) {
 	if e, ok := rbac.AsError(err); ok {
@@ -267,6 +269,14 @@ func (s *Server) responseError(w http.ResponseWriter, r *http.Request, err error
 	var te *instances.TestError
 	if errors.As(err, &te) {
 		s.testFailed(w, te)
+		return
+	}
+	var de *loginsettings.DirectoryError
+	if errors.As(err, &de) {
+		body := errorBody("ldap_failed", "The LDAP server couldn't be used, so nothing was saved: "+ldapReason(de.Err))
+		details := map[string]any{"detail": de.Err.Error()}
+		body.Error.Details = &details
+		writeJSON(w, http.StatusBadGateway, body)
 		return
 	}
 	var pf *piholeFailure

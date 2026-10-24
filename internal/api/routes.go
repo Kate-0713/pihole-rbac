@@ -63,6 +63,17 @@ var routePermission = map[string]string{
 	"DELETE /api/v1/roles/{id}":     string(rbac.RolesManage),
 	"PUT /api/v1/roles/{id}/grants": string(rbac.RolesManage),
 
+	"GET /api/v1/roles/{id}/ldap-groups":                 string(rbac.RolesManage),
+	"POST /api/v1/roles/{id}/ldap-groups":                string(rbac.RolesManage),
+	"DELETE /api/v1/roles/{id}/ldap-groups/{mapping_id}": string(rbac.RolesManage),
+	"POST /api/v1/ldap/test-user":                        string(rbac.RolesManage),
+	"POST /api/v1/ldap/check-group":                      string(rbac.RolesManage),
+
+	"GET /api/v1/settings/auth": string(rbac.SettingsManage),
+	"PUT /api/v1/settings/auth": string(rbac.SettingsManage),
+	"GET /api/v1/settings/ldap": string(rbac.SettingsManage),
+	"PUT /api/v1/settings/ldap": string(rbac.SettingsManage),
+
 	"GET /api/v1/users":                string(rbac.UsersManage),
 	"POST /api/v1/users":               string(rbac.UsersManage),
 	"GET /api/v1/users/{id}":           string(rbac.UsersManage),

@@ -7,11 +7,12 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const getSetting = `-- name: GetSetting :one
 
-SELECT "key", value, updated_at, updated_by FROM settings WHERE key = ?
+SELECT "key", value, updated_at, updated_by, secret_ciphertext, secret_nonce, secret_key_id, secret_updated_at, secret_updated_by FROM settings WHERE key = ?
 `
 
 // SPDX-FileCopyrightText: 2026 Kate O'Grady
@@ -24,8 +25,44 @@ func (q *Queries) GetSetting(ctx context.Context, key string) (Setting, error) {
 		&i.Value,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+		&i.SecretCiphertext,
+		&i.SecretNonce,
+		&i.SecretKeyID,
+		&i.SecretUpdatedAt,
+		&i.SecretUpdatedBy,
 	)
 	return i, err
+}
+
+const setSettingSecret = `-- name: SetSettingSecret :execrows
+UPDATE settings
+SET secret_ciphertext = ?, secret_nonce = ?, secret_key_id = ?, secret_updated_at = ?, secret_updated_by = ?
+WHERE key = ?
+`
+
+type SetSettingSecretParams struct {
+	SecretCiphertext []byte
+	SecretNonce      []byte
+	SecretKeyID      sql.NullString
+	SecretUpdatedAt  sql.NullInt64
+	SecretUpdatedBy  sql.NullString
+	Key              string
+}
+
+// The row must exist: save the setting first.
+func (q *Queries) SetSettingSecret(ctx context.Context, arg SetSettingSecretParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setSettingSecret,
+		arg.SecretCiphertext,
+		arg.SecretNonce,
+		arg.SecretKeyID,
+		arg.SecretUpdatedAt,
+		arg.SecretUpdatedBy,
+		arg.Key,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertSetting = `-- name: UpsertSetting :exec

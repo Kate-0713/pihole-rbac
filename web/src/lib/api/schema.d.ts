@@ -483,6 +483,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roles/{id}/ldap-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        /** A role's LDAP group mappings */
+        get: operations["listLDAPMappings"];
+        put?: never;
+        /**
+         * Map an LDAP group to a role
+         * @description Members of the group get the role at their next login or recheck. Needs every grant the role has. After saving, the group is looked up in the directory: `check` says whether it exists and how many members it has, or `check_error` says why it couldn't be looked up (no LDAP settings, or the directory failed). A group that doesn't exist is still saved, so a mapping can be made before the group.
+         */
+        post: operations["addLDAPMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/{id}/ldap-groups/{mapping_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+                /** @description The LDAP group mapping's ID. */
+                mapping_id: components["parameters"]["MappingID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an LDAP group mapping
+         * @description Needs every grant the role has. LDAP sessions holding the role are rechecked within a minute. If the caller is an LDAP user holding the role, and it is their last route to roles.manage or users.manage, the change needs `confirm=true` (code confirmation_required).
+         */
+        delete: operations["removeLDAPMapping"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users": {
         parameters: {
             query?: never;
@@ -617,6 +666,94 @@ export interface paths {
          */
         put: operations["setUserRoles"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The login methods
+         * @description The enabled login methods, in the order they are tried.
+         */
+        get: operations["getLoginMethods"];
+        /**
+         * Change the login methods
+         * @description Sets the enabled login methods and their order. Local login must stay enabled: it is the way in when LDAP fails (400 validation_failed otherwise). Turning LDAP on needs saved LDAP settings and a bind password, and a service bind with them that works (502 ldap_failed otherwise). Applies at once, without a restart. Audited as settings_update.
+         */
+        put: operations["setLoginMethods"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/ldap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The LDAP settings
+         * @description The LDAP connection settings (absent until saved), whether LDAP login is enabled, and where the bind password comes from. Never the password.
+         */
+        get: operations["getLDAPSettings"];
+        /**
+         * Save the LDAP settings
+         * @description Saves the LDAP connection settings and, if given, the bind password (write-only). The bind password is only sent to a server it was entered for: the first save, a new URL, or a change to the TLS mode or the Common Name fallback needs `bind_password` whenever a password is already stored or PIHOLE_RBAC_LDAP_BIND_PASSWORD is set (400 validation_failed with `details.field` bind_password otherwise). When the variable is set, the password given must match it and isn't stored. While LDAP login is enabled, the new settings must pass a service bind first (502 ldap_failed otherwise), and nothing is saved if they don't. Applies at once. Audited as settings_update with the fields that changed.
+         */
+        put: operations["setLDAPSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ldap/test-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test how an LDAP user would log in
+         * @description Looks a username up with the service account, as the session recheck does (no password needed), and reports the user's DN, the groups the directory returned, which mappings matched, the roles they give and the permissions those add up to. Uses the saved LDAP settings whether or not LDAP login is enabled. A username the directory doesn't have is a 200 with `found` false. 409 conflict if no LDAP settings are saved.
+         */
+        post: operations["testLDAPUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ldap/check-group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check an LDAP group DN
+         * @description Looks a group DN up with the service account: whether it exists and how many members it lists. Audited as ldap_mapping_check. 409 conflict if no LDAP settings are saved.
+         */
+        post: operations["checkLDAPGroup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1145,6 +1282,125 @@ export interface components {
         UserList: {
             users: components["schemas"]["User"][];
         };
+        LoginMethods: {
+            /** @description The enabled methods in the order they are tried. Must include local. */
+            methods: ("local" | "ldap")[];
+        };
+        LDAPConnection: {
+            /** @description ldaps://host[:port], or ldap://host[:port] (passwords then cross the network unencrypted). */
+            url: string;
+            /** @description The read-only service account that finds users and their groups. */
+            bind_dn: string;
+            /** @description Users and groups are searched for under this DN. */
+            base_dn: string;
+            /** @description Finds a user by username, with %s exactly once, e.g. (uid=%s) or (sAMAccountName=%s). */
+            user_filter: string;
+            /** @enum {string} */
+            tls_mode: "verify" | "insecure";
+            /** @description Accept a certificate whose Common Name, rather than a Subject Alternative Name, matches the host. Only applies with PIHOLE_RBAC_LDAP_CA_FILE. */
+            allow_cn_fallback: boolean;
+        };
+        LDAPSettingsInput: {
+            url: string;
+            bind_dn: string;
+            base_dn: string;
+            user_filter: string;
+            /**
+             * @description verify if absent.
+             * @enum {string}
+             */
+            tls_mode?: "verify" | "insecure";
+            allow_cn_fallback?: boolean;
+            /** @description Write-only. Stored encrypted, replacing the stored one, unless PIHOLE_RBAC_LDAP_BIND_PASSWORD is set, when it must match the variable. Required when the settings would send an existing password to a new server. */
+            bind_password?: string;
+        };
+        LDAPSettingsView: {
+            settings?: components["schemas"]["LDAPConnection"];
+            /** Format: date-time */
+            updated_at?: string;
+            updated_by?: string;
+            /** @description Whether LDAP is among the login methods. */
+            enabled: boolean;
+            bind_password: components["schemas"]["LDAPBindPasswordStatus"];
+            /** @description Whether a master key is set, so a bind password can be stored. */
+            can_store_password: boolean;
+            /** @description Whether PIHOLE_RBAC_LDAP_CA_FILE is set. */
+            ca_file_set: boolean;
+        };
+        /** @description Where the bind password comes from. Never the password. */
+        LDAPBindPasswordStatus: {
+            /** @enum {string} */
+            source: "environment" | "stored" | "none";
+            /** @description The environment variable that overrides a stored password. */
+            variable: string;
+            /**
+             * Format: date-time
+             * @description When the stored password was last set.
+             */
+            updated_at?: string;
+            updated_by?: string;
+        };
+        LDAPUserTestInput: {
+            username: string;
+        };
+        LDAPUserTest: {
+            username: string;
+            /** @description Whether the directory has exactly one entry for the username. */
+            found: boolean;
+            dn?: string;
+            /** @description The group DNs the directory lists the user in, as it returned them. */
+            groups: string[];
+            /** @description The username belongs to a local account, so an LDAP login with it is refused. */
+            local_account: boolean;
+            /** @description The mappings that match one of the user's groups. */
+            mappings: components["schemas"]["LDAPMatchedMapping"][];
+            /** @description The roles the user would get, sorted by name. None means they would be refused. */
+            roles: components["schemas"]["RoleRef"][];
+            permissions: components["schemas"]["TestedPermissions"];
+        };
+        LDAPMatchedMapping: {
+            /** @description The mapping's group DN, as entered. */
+            group_dn: string;
+            role: components["schemas"]["RoleRef"];
+        };
+        TestedPermissions: {
+            global: string[];
+            /** @description Each instance and mirrored group where the roles give at least one permission, by name. */
+            targets: components["schemas"]["TargetPermissions"][];
+        };
+        TargetPermissions: {
+            /** @example i-1 */
+            target: string;
+            name: string;
+            permissions: string[];
+        };
+        LDAPGroupInput: {
+            group_dn: string;
+        };
+        LDAPGroupCheck: {
+            exists: boolean;
+            /** @description How many members the group lists; 0 if it doesn't exist. */
+            members: number;
+        };
+        LDAPMapping: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            role_id: number;
+            /** @description As entered. Matching ignores case and spacing. */
+            group_dn: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        LDAPMappingList: {
+            mappings: components["schemas"]["LDAPMapping"][];
+        };
+        LDAPMappingCreated: {
+            mapping: components["schemas"]["LDAPMapping"];
+            check?: components["schemas"]["LDAPGroupCheck"];
+            /** @description Why the group couldn't be looked up, when it couldn't. */
+            check_error?: string;
+        };
         TargetSummary: {
             blocking: components["schemas"]["BlockingStatus"];
             last_24h: components["schemas"]["DatabaseTotals"];
@@ -1391,7 +1647,7 @@ export interface components {
             error: components["schemas"]["ErrorBody"];
         };
         ErrorBody: {
-            /** @description Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured. */
+            /** @description Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured, ldap_failed. */
             code: string;
             /** @description Human-readable message, safe to show to the user. */
             message: string;
@@ -1492,6 +1748,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The LDAP server couldn't be used (code ldap_failed): it didn't answer, refused the service account's bind, or a search failed. Nothing was saved. `details.detail` has the underlying error. */
+        LDAPFailed: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The connection test failed (code pihole_unreachable, pihole_auth_rejected or pihole_status_error), so nothing was changed. `details.instance` names the instance and `details.detail` has the underlying error. */
         PiholeFailed: {
             headers: {
@@ -1549,6 +1814,8 @@ export interface components {
         Confirm: boolean;
         /** @description The user's ID. */
         UserID: number;
+        /** @description The LDAP group mapping's ID. */
+        MappingID: number;
         /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
         TargetID: string;
     };
@@ -2337,6 +2604,98 @@ export interface operations {
             503: components["responses"]["SetupRequired"];
         };
     };
+    listLDAPMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mappings, sorted by group DN. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LDAPMappingList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    addLDAPMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LDAPGroupInput"];
+            };
+        };
+        responses: {
+            /** @description The new mapping, with what the directory said about the group. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LDAPMappingCreated"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["RoleConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    removeLDAPMapping: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+                /** @description The LDAP group mapping's ID. */
+                mapping_id: components["parameters"]["MappingID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["RoleConflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
     listUsers: {
         parameters: {
             query?: never;
@@ -2569,6 +2928,174 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["UserConflict"];
             415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getLoginMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The login methods. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginMethods"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setLoginMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginMethods"];
+            };
+        };
+        responses: {
+            /** @description The login methods as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginMethods"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["LDAPFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getLDAPSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The LDAP settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LDAPSettingsView"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setLDAPSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LDAPSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description The LDAP settings as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LDAPSettingsView"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["LDAPFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    testLDAPUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LDAPUserTestInput"];
+            };
+        };
+        responses: {
+            /** @description What the directory says, and what it would mean here. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LDAPUserTest"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["LDAPFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    checkLDAPGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LDAPGroupInput"];
+            };
+        };
+        responses: {
+            /** @description What the directory says about the group. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LDAPGroupCheck"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["LDAPFailed"];
             503: components["responses"]["SetupRequired"];
         };
     };

@@ -226,19 +226,19 @@ func (e GroupScopeNameMode) Valid() bool {
 
 // Defines values for InstancePasswordSource.
 const (
-	Environment InstancePasswordSource = "environment"
-	None        InstancePasswordSource = "none"
-	Stored      InstancePasswordSource = "stored"
+	InstancePasswordSourceEnvironment InstancePasswordSource = "environment"
+	InstancePasswordSourceNone        InstancePasswordSource = "none"
+	InstancePasswordSourceStored      InstancePasswordSource = "stored"
 )
 
 // Valid indicates whether the value is a known member of the InstancePasswordSource enum.
 func (e InstancePasswordSource) Valid() bool {
 	switch e {
-	case Environment:
+	case InstancePasswordSourceEnvironment:
 		return true
-	case None:
+	case InstancePasswordSourceNone:
 		return true
-	case Stored:
+	case InstancePasswordSourceStored:
 		return true
 	default:
 		return false
@@ -323,6 +323,81 @@ func (e InstanceTestErrorCode) Valid() bool {
 	case PiholeStatusError:
 		return true
 	case PiholeUnreachable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LDAPBindPasswordStatusSource.
+const (
+	LDAPBindPasswordStatusSourceEnvironment LDAPBindPasswordStatusSource = "environment"
+	LDAPBindPasswordStatusSourceNone        LDAPBindPasswordStatusSource = "none"
+	LDAPBindPasswordStatusSourceStored      LDAPBindPasswordStatusSource = "stored"
+)
+
+// Valid indicates whether the value is a known member of the LDAPBindPasswordStatusSource enum.
+func (e LDAPBindPasswordStatusSource) Valid() bool {
+	switch e {
+	case LDAPBindPasswordStatusSourceEnvironment:
+		return true
+	case LDAPBindPasswordStatusSourceNone:
+		return true
+	case LDAPBindPasswordStatusSourceStored:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LDAPConnectionTlsMode.
+const (
+	LDAPConnectionTlsModeInsecure LDAPConnectionTlsMode = "insecure"
+	LDAPConnectionTlsModeVerify   LDAPConnectionTlsMode = "verify"
+)
+
+// Valid indicates whether the value is a known member of the LDAPConnectionTlsMode enum.
+func (e LDAPConnectionTlsMode) Valid() bool {
+	switch e {
+	case LDAPConnectionTlsModeInsecure:
+		return true
+	case LDAPConnectionTlsModeVerify:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LDAPSettingsInputTlsMode.
+const (
+	LDAPSettingsInputTlsModeInsecure LDAPSettingsInputTlsMode = "insecure"
+	LDAPSettingsInputTlsModeVerify   LDAPSettingsInputTlsMode = "verify"
+)
+
+// Valid indicates whether the value is a known member of the LDAPSettingsInputTlsMode enum.
+func (e LDAPSettingsInputTlsMode) Valid() bool {
+	switch e {
+	case LDAPSettingsInputTlsModeInsecure:
+		return true
+	case LDAPSettingsInputTlsModeVerify:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LoginMethodsMethods.
+const (
+	LoginMethodsMethodsLdap  LoginMethodsMethods = "ldap"
+	LoginMethodsMethodsLocal LoginMethodsMethods = "local"
+)
+
+// Valid indicates whether the value is a known member of the LoginMethodsMethods enum.
+func (e LoginMethodsMethods) Valid() bool {
+	switch e {
+	case LoginMethodsMethodsLdap:
+		return true
+	case LoginMethodsMethodsLocal:
 		return true
 	default:
 		return false
@@ -736,7 +811,7 @@ type Error struct {
 
 // ErrorBody defines model for ErrorBody.
 type ErrorBody struct {
-	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured.
+	// Code Stable machine-readable code: unauthenticated, forbidden, csrf_failed, validation_failed, method_not_allowed, unsupported_media_type, not_found, conflict, invariant_violated, confirmation_required, rate_limited, setup_required, invalid_credentials, no_access, invalid_setup_token, setup_complete, internal, pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing, instance_misconfigured, ldap_failed.
 	Code string `json:"code"`
 
 	// Details Optional structured context, e.g. which instance failed.
@@ -893,6 +968,150 @@ type InstanceTestResult struct {
 	Ok    bool               `json:"ok"`
 }
 
+// LDAPBindPasswordStatus Where the bind password comes from. Never the password.
+type LDAPBindPasswordStatus struct {
+	Source LDAPBindPasswordStatusSource `json:"source"`
+
+	// UpdatedAt When the stored password was last set.
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	UpdatedBy *string    `json:"updated_by,omitempty"`
+
+	// Variable The environment variable that overrides a stored password.
+	Variable string `json:"variable"`
+}
+
+// LDAPBindPasswordStatusSource defines model for LDAPBindPasswordStatus.Source.
+type LDAPBindPasswordStatusSource string
+
+// LDAPConnection defines model for LDAPConnection.
+type LDAPConnection struct {
+	// AllowCnFallback Accept a certificate whose Common Name, rather than a Subject Alternative Name, matches the host. Only applies with PIHOLE_RBAC_LDAP_CA_FILE.
+	AllowCnFallback bool `json:"allow_cn_fallback"`
+
+	// BaseDn Users and groups are searched for under this DN.
+	BaseDn string `json:"base_dn"`
+
+	// BindDn The read-only service account that finds users and their groups.
+	BindDn  string                `json:"bind_dn"`
+	TlsMode LDAPConnectionTlsMode `json:"tls_mode"`
+
+	// Url ldaps://host[:port], or ldap://host[:port] (passwords then cross the network unencrypted).
+	Url string `json:"url"`
+
+	// UserFilter Finds a user by username, with %s exactly once, e.g. (uid=%s) or (sAMAccountName=%s).
+	UserFilter string `json:"user_filter"`
+}
+
+// LDAPConnectionTlsMode defines model for LDAPConnection.TlsMode.
+type LDAPConnectionTlsMode string
+
+// LDAPGroupCheck defines model for LDAPGroupCheck.
+type LDAPGroupCheck struct {
+	Exists bool `json:"exists"`
+
+	// Members How many members the group lists; 0 if it doesn't exist.
+	Members int `json:"members"`
+}
+
+// LDAPGroupInput defines model for LDAPGroupInput.
+type LDAPGroupInput struct {
+	GroupDn string `json:"group_dn"`
+}
+
+// LDAPMapping defines model for LDAPMapping.
+type LDAPMapping struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// GroupDn As entered. Matching ignores case and spacing.
+	GroupDn string `json:"group_dn"`
+	Id      int64  `json:"id"`
+	RoleId  int64  `json:"role_id"`
+}
+
+// LDAPMappingCreated defines model for LDAPMappingCreated.
+type LDAPMappingCreated struct {
+	Check *LDAPGroupCheck `json:"check,omitempty"`
+
+	// CheckError Why the group couldn't be looked up, when it couldn't.
+	CheckError *string     `json:"check_error,omitempty"`
+	Mapping    LDAPMapping `json:"mapping"`
+}
+
+// LDAPMappingList defines model for LDAPMappingList.
+type LDAPMappingList struct {
+	Mappings []LDAPMapping `json:"mappings"`
+}
+
+// LDAPMatchedMapping defines model for LDAPMatchedMapping.
+type LDAPMatchedMapping struct {
+	// GroupDn The mapping's group DN, as entered.
+	GroupDn string  `json:"group_dn"`
+	Role    RoleRef `json:"role"`
+}
+
+// LDAPSettingsInput defines model for LDAPSettingsInput.
+type LDAPSettingsInput struct {
+	AllowCnFallback *bool  `json:"allow_cn_fallback,omitempty"`
+	BaseDn          string `json:"base_dn"`
+	BindDn          string `json:"bind_dn"`
+
+	// BindPassword Write-only. Stored encrypted, replacing the stored one, unless PIHOLE_RBAC_LDAP_BIND_PASSWORD is set, when it must match the variable. Required when the settings would send an existing password to a new server.
+	BindPassword *string `json:"bind_password,omitempty"`
+
+	// TlsMode verify if absent.
+	TlsMode    *LDAPSettingsInputTlsMode `json:"tls_mode,omitempty"`
+	Url        string                    `json:"url"`
+	UserFilter string                    `json:"user_filter"`
+}
+
+// LDAPSettingsInputTlsMode verify if absent.
+type LDAPSettingsInputTlsMode string
+
+// LDAPSettingsView defines model for LDAPSettingsView.
+type LDAPSettingsView struct {
+	// BindPassword Where the bind password comes from. Never the password.
+	BindPassword LDAPBindPasswordStatus `json:"bind_password"`
+
+	// CaFileSet Whether PIHOLE_RBAC_LDAP_CA_FILE is set.
+	CaFileSet bool `json:"ca_file_set"`
+
+	// CanStorePassword Whether a master key is set, so a bind password can be stored.
+	CanStorePassword bool `json:"can_store_password"`
+
+	// Enabled Whether LDAP is among the login methods.
+	Enabled   bool            `json:"enabled"`
+	Settings  *LDAPConnection `json:"settings,omitempty"`
+	UpdatedAt *time.Time      `json:"updated_at,omitempty"`
+	UpdatedBy *string         `json:"updated_by,omitempty"`
+}
+
+// LDAPUserTest defines model for LDAPUserTest.
+type LDAPUserTest struct {
+	Dn *string `json:"dn,omitempty"`
+
+	// Found Whether the directory has exactly one entry for the username.
+	Found bool `json:"found"`
+
+	// Groups The group DNs the directory lists the user in, as it returned them.
+	Groups []string `json:"groups"`
+
+	// LocalAccount The username belongs to a local account, so an LDAP login with it is refused.
+	LocalAccount bool `json:"local_account"`
+
+	// Mappings The mappings that match one of the user's groups.
+	Mappings    []LDAPMatchedMapping `json:"mappings"`
+	Permissions TestedPermissions    `json:"permissions"`
+
+	// Roles The roles the user would get, sorted by name. None means they would be refused.
+	Roles    []RoleRef `json:"roles"`
+	Username string    `json:"username"`
+}
+
+// LDAPUserTestInput defines model for LDAPUserTestInput.
+type LDAPUserTestInput struct {
+	Username string `json:"username"`
+}
+
 // LiveCounters Counters since FTL last started.
 type LiveCounters struct {
 	ActiveClients int `json:"active_clients"`
@@ -913,6 +1132,15 @@ type LiveCounters struct {
 	TotalClients  int            `json:"total_clients"`
 	UniqueDomains int            `json:"unique_domains"`
 }
+
+// LoginMethods defines model for LoginMethods.
+type LoginMethods struct {
+	// Methods The enabled methods in the order they are tried. Must include local.
+	Methods []LoginMethodsMethods `json:"methods"`
+}
+
+// LoginMethodsMethods defines model for LoginMethods.Methods.
+type LoginMethodsMethods string
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -1169,6 +1397,15 @@ type TargetList struct {
 	Targets []Target `json:"targets"`
 }
 
+// TargetPermissions defines model for TargetPermissions.
+type TargetPermissions struct {
+	Name        string   `json:"name"`
+	Permissions []string `json:"permissions"`
+
+	// Target Examples: i-1
+	Target string `json:"target"`
+}
+
 // TargetSummary defines model for TargetSummary.
 type TargetSummary struct {
 	Blocking BlockingStatus `json:"blocking"`
@@ -1178,6 +1415,14 @@ type TargetSummary struct {
 
 	// Live Counters since FTL last started.
 	Live LiveCounters `json:"live"`
+}
+
+// TestedPermissions defines model for TestedPermissions.
+type TestedPermissions struct {
+	Global []string `json:"global"`
+
+	// Targets Each instance and mirrored group where the roles give at least one permission, by name.
+	Targets []TargetPermissions `json:"targets"`
 }
 
 // User defines model for User.
@@ -1254,6 +1499,9 @@ type Confirm = bool
 // InstanceID defines model for InstanceID.
 type InstanceID = int64
 
+// MappingID defines model for MappingID.
+type MappingID = int64
+
 // RoleID defines model for RoleID.
 type RoleID = int64
 
@@ -1274,6 +1522,9 @@ type InstanceConflict = Error
 
 // InvalidOrRejected defines model for InvalidOrRejected.
 type InvalidOrRejected = Error
+
+// LDAPFailed defines model for LDAPFailed.
+type LDAPFailed = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
@@ -1310,6 +1561,12 @@ type ValidationFailed = Error
 
 // SetRoleGrantsParams defines parameters for SetRoleGrants.
 type SetRoleGrantsParams struct {
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// RemoveLDAPMappingParams defines parameters for RemoveLDAPMapping.
+type RemoveLDAPMappingParams struct {
 	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
@@ -1359,6 +1616,12 @@ type UpdateInstanceJSONRequestBody = InstanceInput
 // SetInstancePasswordJSONRequestBody defines body for SetInstancePassword for application/json ContentType.
 type SetInstancePasswordJSONRequestBody = InstancePassword
 
+// CheckLDAPGroupJSONRequestBody defines body for CheckLDAPGroup for application/json ContentType.
+type CheckLDAPGroupJSONRequestBody = LDAPGroupInput
+
+// TestLDAPUserJSONRequestBody defines body for TestLDAPUser for application/json ContentType.
+type TestLDAPUserJSONRequestBody = LDAPUserTestInput
+
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = RoleCreate
 
@@ -1367,6 +1630,15 @@ type UpdateRoleJSONRequestBody = RoleInput
 
 // SetRoleGrantsJSONRequestBody defines body for SetRoleGrants for application/json ContentType.
 type SetRoleGrantsJSONRequestBody = GrantsInput
+
+// AddLDAPMappingJSONRequestBody defines body for AddLDAPMapping for application/json ContentType.
+type AddLDAPMappingJSONRequestBody = LDAPGroupInput
+
+// SetLoginMethodsJSONRequestBody defines body for SetLoginMethods for application/json ContentType.
+type SetLoginMethodsJSONRequestBody = LoginMethods
+
+// SetLDAPSettingsJSONRequestBody defines body for SetLDAPSettings for application/json ContentType.
+type SetLDAPSettingsJSONRequestBody = LDAPSettingsInput
 
 // CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
 type CompleteSetupJSONRequestBody = SetupRequest
@@ -1442,6 +1714,12 @@ type ServerInterface interface {
 	// TestInstance Test the connection to a Pi-hole instance
 	// (POST /api/v1/instances/{id}/test)
 	TestInstance(w http.ResponseWriter, r *http.Request, id InstanceID)
+	// CheckLDAPGroup Check an LDAP group DN
+	// (POST /api/v1/ldap/check-group)
+	CheckLDAPGroup(w http.ResponseWriter, r *http.Request)
+	// TestLDAPUser Test how an LDAP user would log in
+	// (POST /api/v1/ldap/test-user)
+	TestLDAPUser(w http.ResponseWriter, r *http.Request)
 	// ListRoles List the roles
 	// (GET /api/v1/roles)
 	ListRoles(w http.ResponseWriter, r *http.Request)
@@ -1463,6 +1741,27 @@ type ServerInterface interface {
 	// SetRoleGrants Replace a role's grants
 	// (PUT /api/v1/roles/{id}/grants)
 	SetRoleGrants(w http.ResponseWriter, r *http.Request, id RoleID, params SetRoleGrantsParams)
+	// ListLDAPMappings A role's LDAP group mappings
+	// (GET /api/v1/roles/{id}/ldap-groups)
+	ListLDAPMappings(w http.ResponseWriter, r *http.Request, id RoleID)
+	// AddLDAPMapping Map an LDAP group to a role
+	// (POST /api/v1/roles/{id}/ldap-groups)
+	AddLDAPMapping(w http.ResponseWriter, r *http.Request, id RoleID)
+	// RemoveLDAPMapping Remove an LDAP group mapping
+	// (DELETE /api/v1/roles/{id}/ldap-groups/{mapping_id})
+	RemoveLDAPMapping(w http.ResponseWriter, r *http.Request, id RoleID, mappingId MappingID, params RemoveLDAPMappingParams)
+	// GetLoginMethods The login methods
+	// (GET /api/v1/settings/auth)
+	GetLoginMethods(w http.ResponseWriter, r *http.Request)
+	// SetLoginMethods Change the login methods
+	// (PUT /api/v1/settings/auth)
+	SetLoginMethods(w http.ResponseWriter, r *http.Request)
+	// GetLDAPSettings The LDAP settings
+	// (GET /api/v1/settings/ldap)
+	GetLDAPSettings(w http.ResponseWriter, r *http.Request)
+	// SetLDAPSettings Save the LDAP settings
+	// (PUT /api/v1/settings/ldap)
+	SetLDAPSettings(w http.ResponseWriter, r *http.Request)
 	// CompleteSetup Complete first-run setup
 	// (POST /api/v1/setup)
 	CompleteSetup(w http.ResponseWriter, r *http.Request)
@@ -1846,6 +2145,34 @@ func (siw *ServerInterfaceWrapper) TestInstance(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// CheckLDAPGroup operation middleware
+func (siw *ServerInterfaceWrapper) CheckLDAPGroup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckLDAPGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestLDAPUser operation middleware
+func (siw *ServerInterfaceWrapper) TestLDAPUser(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestLDAPUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRoles operation middleware
 func (siw *ServerInterfaceWrapper) ListRoles(w http.ResponseWriter, r *http.Request) {
 
@@ -1999,6 +2326,165 @@ func (siw *ServerInterfaceWrapper) SetRoleGrants(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SetRoleGrants(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListLDAPMappings operation middleware
+func (siw *ServerInterfaceWrapper) ListLDAPMappings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id RoleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLDAPMappings(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddLDAPMapping operation middleware
+func (siw *ServerInterfaceWrapper) AddLDAPMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id RoleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddLDAPMapping(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveLDAPMapping operation middleware
+func (siw *ServerInterfaceWrapper) RemoveLDAPMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id RoleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "mapping_id" -------------
+	var mappingId MappingID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mapping_id", r.PathValue("mapping_id"), &mappingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mapping_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemoveLDAPMappingParams
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveLDAPMapping(w, r, id, mappingId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLoginMethods operation middleware
+func (siw *ServerInterfaceWrapper) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLoginMethods(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetLoginMethods operation middleware
+func (siw *ServerInterfaceWrapper) SetLoginMethods(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetLoginMethods(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLDAPSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetLDAPSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLDAPSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetLDAPSettings operation middleware
+func (siw *ServerInterfaceWrapper) SetLDAPSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetLDAPSettings(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2826,6 +3312,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles/{id}", wrapper.GetRole)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/roles/{id}", wrapper.UpdateRole)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/roles/{id}/grants", wrapper.SetRoleGrants)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles/{id}/ldap-groups", wrapper.ListLDAPMappings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/roles/{id}/ldap-groups", wrapper.AddLDAPMapping)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/roles/{id}/ldap-groups/{mapping_id}", wrapper.RemoveLDAPMapping)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users", wrapper.ListUsers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users", wrapper.CreateUser)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{id}", wrapper.DeleteUser)
@@ -2834,6 +3323,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{id}/disable", wrapper.DisableUser)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{id}/password", wrapper.SetUserPassword)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/users/{id}/roles", wrapper.SetUserRoles)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.GetLoginMethods)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.SetLoginMethods)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/ldap", wrapper.GetLDAPSettings)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/settings/ldap", wrapper.SetLDAPSettings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ldap/test-user", wrapper.TestLDAPUser)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ldap/check-group", wrapper.CheckLDAPGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/summary", wrapper.GetTargetSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/blocking", wrapper.GetBlocking)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/targets/{target}/blocking", wrapper.SetBlocking)
@@ -2857,6 +3352,8 @@ type ForbiddenJSONResponse Error
 type InstanceConflictJSONResponse Error
 
 type InvalidOrRejectedJSONResponse Error
+
+type LDAPFailedJSONResponse Error
 
 type NotFoundJSONResponse Error
 
@@ -4136,6 +4633,250 @@ func (response TestInstance503JSONResponse) VisitTestInstanceResponse(w http.Res
 	return err
 }
 
+type CheckLDAPGroupRequestObject struct {
+	Body *CheckLDAPGroupJSONRequestBody
+}
+
+type CheckLDAPGroupResponseObject interface {
+	VisitCheckLDAPGroupResponse(w http.ResponseWriter) error
+}
+
+type CheckLDAPGroup200JSONResponse LDAPGroupCheck
+
+func (response CheckLDAPGroup200JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckLDAPGroup400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response CheckLDAPGroup400JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckLDAPGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CheckLDAPGroup401JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckLDAPGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CheckLDAPGroup403JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckLDAPGroup409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CheckLDAPGroup409JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckLDAPGroup415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response CheckLDAPGroup415JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckLDAPGroup502JSONResponse struct{ LDAPFailedJSONResponse }
+
+func (response CheckLDAPGroup502JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckLDAPGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response CheckLDAPGroup503JSONResponse) VisitCheckLDAPGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUserRequestObject struct {
+	Body *TestLDAPUserJSONRequestBody
+}
+
+type TestLDAPUserResponseObject interface {
+	VisitTestLDAPUserResponse(w http.ResponseWriter) error
+}
+
+type TestLDAPUser200JSONResponse LDAPUserTest
+
+func (response TestLDAPUser200JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUser400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response TestLDAPUser400JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUser401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response TestLDAPUser401JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUser403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response TestLDAPUser403JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUser409JSONResponse struct{ ConflictJSONResponse }
+
+func (response TestLDAPUser409JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUser415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response TestLDAPUser415JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUser502JSONResponse struct{ LDAPFailedJSONResponse }
+
+func (response TestLDAPUser502JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLDAPUser503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response TestLDAPUser503JSONResponse) VisitTestLDAPUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRolesRequestObject struct {
 }
 
@@ -4770,6 +5511,637 @@ func (response SetRoleGrants415JSONResponse) VisitSetRoleGrantsResponse(w http.R
 type SetRoleGrants503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response SetRoleGrants503JSONResponse) VisitSetRoleGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLDAPMappingsRequestObject struct {
+	Id RoleID `json:"id"`
+}
+
+type ListLDAPMappingsResponseObject interface {
+	VisitListLDAPMappingsResponse(w http.ResponseWriter) error
+}
+
+type ListLDAPMappings200JSONResponse LDAPMappingList
+
+func (response ListLDAPMappings200JSONResponse) VisitListLDAPMappingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLDAPMappings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListLDAPMappings401JSONResponse) VisitListLDAPMappingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLDAPMappings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListLDAPMappings403JSONResponse) VisitListLDAPMappingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLDAPMappings404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListLDAPMappings404JSONResponse) VisitListLDAPMappingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLDAPMappings503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListLDAPMappings503JSONResponse) VisitListLDAPMappingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMappingRequestObject struct {
+	Id   RoleID `json:"id"`
+	Body *AddLDAPMappingJSONRequestBody
+}
+
+type AddLDAPMappingResponseObject interface {
+	VisitAddLDAPMappingResponse(w http.ResponseWriter) error
+}
+
+type AddLDAPMapping201JSONResponse LDAPMappingCreated
+
+func (response AddLDAPMapping201JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMapping400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response AddLDAPMapping400JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMapping401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddLDAPMapping401JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMapping403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddLDAPMapping403JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMapping404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddLDAPMapping404JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMapping409JSONResponse struct{ RoleConflictJSONResponse }
+
+func (response AddLDAPMapping409JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMapping415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response AddLDAPMapping415JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddLDAPMapping503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response AddLDAPMapping503JSONResponse) VisitAddLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveLDAPMappingRequestObject struct {
+	Id        RoleID    `json:"id"`
+	MappingId MappingID `json:"mapping_id"`
+	Params    RemoveLDAPMappingParams
+}
+
+type RemoveLDAPMappingResponseObject interface {
+	VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error
+}
+
+type RemoveLDAPMapping204Response struct {
+}
+
+func (response RemoveLDAPMapping204Response) VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveLDAPMapping401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RemoveLDAPMapping401JSONResponse) VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveLDAPMapping403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RemoveLDAPMapping403JSONResponse) VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveLDAPMapping404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RemoveLDAPMapping404JSONResponse) VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveLDAPMapping409JSONResponse struct{ RoleConflictJSONResponse }
+
+func (response RemoveLDAPMapping409JSONResponse) VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveLDAPMapping503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RemoveLDAPMapping503JSONResponse) VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoginMethodsRequestObject struct {
+}
+
+type GetLoginMethodsResponseObject interface {
+	VisitGetLoginMethodsResponse(w http.ResponseWriter) error
+}
+
+type GetLoginMethods200JSONResponse LoginMethods
+
+func (response GetLoginMethods200JSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoginMethods401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetLoginMethods401JSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoginMethods403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetLoginMethods403JSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoginMethods503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetLoginMethods503JSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLoginMethodsRequestObject struct {
+	Body *SetLoginMethodsJSONRequestBody
+}
+
+type SetLoginMethodsResponseObject interface {
+	VisitSetLoginMethodsResponse(w http.ResponseWriter) error
+}
+
+type SetLoginMethods200JSONResponse LoginMethods
+
+func (response SetLoginMethods200JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLoginMethods400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetLoginMethods400JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLoginMethods401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetLoginMethods401JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLoginMethods403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetLoginMethods403JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLoginMethods415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetLoginMethods415JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLoginMethods502JSONResponse struct{ LDAPFailedJSONResponse }
+
+func (response SetLoginMethods502JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLoginMethods503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetLoginMethods503JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLDAPSettingsRequestObject struct {
+}
+
+type GetLDAPSettingsResponseObject interface {
+	VisitGetLDAPSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetLDAPSettings200JSONResponse LDAPSettingsView
+
+func (response GetLDAPSettings200JSONResponse) VisitGetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLDAPSettings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetLDAPSettings401JSONResponse) VisitGetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLDAPSettings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetLDAPSettings403JSONResponse) VisitGetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLDAPSettings503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetLDAPSettings503JSONResponse) VisitGetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLDAPSettingsRequestObject struct {
+	Body *SetLDAPSettingsJSONRequestBody
+}
+
+type SetLDAPSettingsResponseObject interface {
+	VisitSetLDAPSettingsResponse(w http.ResponseWriter) error
+}
+
+type SetLDAPSettings200JSONResponse LDAPSettingsView
+
+func (response SetLDAPSettings200JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLDAPSettings400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetLDAPSettings400JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLDAPSettings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetLDAPSettings401JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLDAPSettings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetLDAPSettings403JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLDAPSettings415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetLDAPSettings415JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLDAPSettings502JSONResponse struct{ LDAPFailedJSONResponse }
+
+func (response SetLDAPSettings502JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetLDAPSettings503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetLDAPSettings503JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -7497,6 +8869,12 @@ type StrictServerInterface interface {
 	// TestInstance Test the connection to a Pi-hole instance
 	// (POST /api/v1/instances/{id}/test)
 	TestInstance(ctx context.Context, request TestInstanceRequestObject) (TestInstanceResponseObject, error)
+	// CheckLDAPGroup Check an LDAP group DN
+	// (POST /api/v1/ldap/check-group)
+	CheckLDAPGroup(ctx context.Context, request CheckLDAPGroupRequestObject) (CheckLDAPGroupResponseObject, error)
+	// TestLDAPUser Test how an LDAP user would log in
+	// (POST /api/v1/ldap/test-user)
+	TestLDAPUser(ctx context.Context, request TestLDAPUserRequestObject) (TestLDAPUserResponseObject, error)
 	// ListRoles List the roles
 	// (GET /api/v1/roles)
 	ListRoles(ctx context.Context, request ListRolesRequestObject) (ListRolesResponseObject, error)
@@ -7518,6 +8896,27 @@ type StrictServerInterface interface {
 	// SetRoleGrants Replace a role's grants
 	// (PUT /api/v1/roles/{id}/grants)
 	SetRoleGrants(ctx context.Context, request SetRoleGrantsRequestObject) (SetRoleGrantsResponseObject, error)
+	// ListLDAPMappings A role's LDAP group mappings
+	// (GET /api/v1/roles/{id}/ldap-groups)
+	ListLDAPMappings(ctx context.Context, request ListLDAPMappingsRequestObject) (ListLDAPMappingsResponseObject, error)
+	// AddLDAPMapping Map an LDAP group to a role
+	// (POST /api/v1/roles/{id}/ldap-groups)
+	AddLDAPMapping(ctx context.Context, request AddLDAPMappingRequestObject) (AddLDAPMappingResponseObject, error)
+	// RemoveLDAPMapping Remove an LDAP group mapping
+	// (DELETE /api/v1/roles/{id}/ldap-groups/{mapping_id})
+	RemoveLDAPMapping(ctx context.Context, request RemoveLDAPMappingRequestObject) (RemoveLDAPMappingResponseObject, error)
+	// GetLoginMethods The login methods
+	// (GET /api/v1/settings/auth)
+	GetLoginMethods(ctx context.Context, request GetLoginMethodsRequestObject) (GetLoginMethodsResponseObject, error)
+	// SetLoginMethods Change the login methods
+	// (PUT /api/v1/settings/auth)
+	SetLoginMethods(ctx context.Context, request SetLoginMethodsRequestObject) (SetLoginMethodsResponseObject, error)
+	// GetLDAPSettings The LDAP settings
+	// (GET /api/v1/settings/ldap)
+	GetLDAPSettings(ctx context.Context, request GetLDAPSettingsRequestObject) (GetLDAPSettingsResponseObject, error)
+	// SetLDAPSettings Save the LDAP settings
+	// (PUT /api/v1/settings/ldap)
+	SetLDAPSettings(ctx context.Context, request SetLDAPSettingsRequestObject) (SetLDAPSettingsResponseObject, error)
 	// CompleteSetup Complete first-run setup
 	// (POST /api/v1/setup)
 	CompleteSetup(ctx context.Context, request CompleteSetupRequestObject) (CompleteSetupResponseObject, error)
@@ -8046,6 +9445,68 @@ func (sh *strictHandler) TestInstance(w http.ResponseWriter, r *http.Request, id
 	}
 }
 
+// CheckLDAPGroup operation middleware
+func (sh *strictHandler) CheckLDAPGroup(w http.ResponseWriter, r *http.Request) {
+	var request CheckLDAPGroupRequestObject
+
+	var body CheckLDAPGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CheckLDAPGroup(ctx, request.(CheckLDAPGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CheckLDAPGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CheckLDAPGroupResponseObject); ok {
+		if err := validResponse.VisitCheckLDAPGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TestLDAPUser operation middleware
+func (sh *strictHandler) TestLDAPUser(w http.ResponseWriter, r *http.Request) {
+	var request TestLDAPUserRequestObject
+
+	var body TestLDAPUserJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TestLDAPUser(ctx, request.(TestLDAPUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TestLDAPUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TestLDAPUserResponseObject); ok {
+		if err := validResponse.VisitTestLDAPUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListRoles operation middleware
 func (sh *strictHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	var request ListRolesRequestObject
@@ -8237,6 +9698,203 @@ func (sh *strictHandler) SetRoleGrants(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetRoleGrantsResponseObject); ok {
 		if err := validResponse.VisitSetRoleGrantsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListLDAPMappings operation middleware
+func (sh *strictHandler) ListLDAPMappings(w http.ResponseWriter, r *http.Request, id RoleID) {
+	var request ListLDAPMappingsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLDAPMappings(ctx, request.(ListLDAPMappingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLDAPMappings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLDAPMappingsResponseObject); ok {
+		if err := validResponse.VisitListLDAPMappingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddLDAPMapping operation middleware
+func (sh *strictHandler) AddLDAPMapping(w http.ResponseWriter, r *http.Request, id RoleID) {
+	var request AddLDAPMappingRequestObject
+
+	request.Id = id
+
+	var body AddLDAPMappingJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddLDAPMapping(ctx, request.(AddLDAPMappingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddLDAPMapping")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddLDAPMappingResponseObject); ok {
+		if err := validResponse.VisitAddLDAPMappingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveLDAPMapping operation middleware
+func (sh *strictHandler) RemoveLDAPMapping(w http.ResponseWriter, r *http.Request, id RoleID, mappingId MappingID, params RemoveLDAPMappingParams) {
+	var request RemoveLDAPMappingRequestObject
+
+	request.Id = id
+	request.MappingId = mappingId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveLDAPMapping(ctx, request.(RemoveLDAPMappingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveLDAPMapping")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveLDAPMappingResponseObject); ok {
+		if err := validResponse.VisitRemoveLDAPMappingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLoginMethods operation middleware
+func (sh *strictHandler) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
+	var request GetLoginMethodsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLoginMethods(ctx, request.(GetLoginMethodsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLoginMethods")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLoginMethodsResponseObject); ok {
+		if err := validResponse.VisitGetLoginMethodsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetLoginMethods operation middleware
+func (sh *strictHandler) SetLoginMethods(w http.ResponseWriter, r *http.Request) {
+	var request SetLoginMethodsRequestObject
+
+	var body SetLoginMethodsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetLoginMethods(ctx, request.(SetLoginMethodsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetLoginMethods")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetLoginMethodsResponseObject); ok {
+		if err := validResponse.VisitSetLoginMethodsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLDAPSettings operation middleware
+func (sh *strictHandler) GetLDAPSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetLDAPSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLDAPSettings(ctx, request.(GetLDAPSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLDAPSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLDAPSettingsResponseObject); ok {
+		if err := validResponse.VisitGetLDAPSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetLDAPSettings operation middleware
+func (sh *strictHandler) SetLDAPSettings(w http.ResponseWriter, r *http.Request) {
+	var request SetLDAPSettingsRequestObject
+
+	var body SetLDAPSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetLDAPSettings(ctx, request.(SetLDAPSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetLDAPSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetLDAPSettingsResponseObject); ok {
+		if err := validResponse.VisitSetLDAPSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

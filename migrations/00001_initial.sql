@@ -225,11 +225,22 @@ CREATE TABLE setup_state (
 
 -- Configuration ----------------------------------------------------------------
 
+-- A setting can carry one secret, write-only through the API: the LDAP bind password on the ldap row. It is
+-- AES-256-GCM under the master key, bound to the row's key (see secrets.AADKey). The secret columns are all set or
+-- all NULL, and are left alone when the value is saved.
 CREATE TABLE settings (
-    key        TEXT    PRIMARY KEY CHECK (key <> ''),
-    value      TEXT    NOT NULL CHECK (json_valid(value)),
-    updated_at INTEGER NOT NULL,
-    updated_by TEXT    NOT NULL DEFAULT ''
+    key               TEXT    PRIMARY KEY CHECK (key <> ''),
+    value             TEXT    NOT NULL CHECK (json_valid(value)),
+    updated_at        INTEGER NOT NULL,
+    updated_by        TEXT    NOT NULL DEFAULT '',
+    secret_ciphertext BLOB,
+    secret_nonce      BLOB    CHECK (secret_nonce IS NULL OR length(secret_nonce) = 12),
+    secret_key_id     TEXT,
+    secret_updated_at INTEGER,
+    secret_updated_by TEXT,
+    CHECK ((secret_ciphertext IS NULL) = (secret_nonce IS NULL)
+       AND (secret_ciphertext IS NULL) = (secret_key_id IS NULL)
+       AND (secret_ciphertext IS NULL) = (secret_updated_at IS NULL))
 );
 
 -- The secret is AES-256-GCM (12-byte nonce). Ciphertext, nonce and key ID are
