@@ -144,9 +144,9 @@ func isSafeMethod(m string) bool {
 }
 
 // gate runs before every generated route (r.Pattern is set by then). For API routes it requires a JSON body on
-// state-changing requests, loads the session, checks the Origin and CSRF token on state-changing requests, and
-// refuses requests without a session unless the route is public, and refuses sessions that lack the global
-// permission the route declares in routePermission. A route missing from that table is refused: fail closed.
+// state-changing requests, loads the session, refuses requests without a session unless the route is public, checks
+// the Origin and CSRF token on state-changing requests, and refuses sessions that lack the global permission the
+// route declares in routePermission. A route missing from that table is refused: fail closed.
 func (s *Server) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -181,18 +181,20 @@ func (s *Server) gate(next http.Handler) http.Handler {
 			return
 		}
 
-		if unsafe && (!sameOrigin(r, s.TrustedProxies) || !s.Sessions.CheckCSRF(r, sess)) {
-			writeError(w, http.StatusForbidden, "csrf_failed", "The request was refused because its CSRF token or origin didn't match. Reload the page and try again.")
-			return
-		}
 		access, declared := routePermission[r.Pattern]
 		if !declared {
 			s.Logger.Error("route has no declared permission", "pattern", r.Pattern)
 			writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 			return
 		}
+		// Before the CSRF check, so a state-changing request whose session has ended (expired, revoked, or a new
+		// session key) is told to log in again rather than that its token didn't match. Nothing is changed either way.
 		if sess == nil && access != accessPublic {
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "You need to log in.")
+			return
+		}
+		if unsafe && (!sameOrigin(r, s.TrustedProxies) || !s.Sessions.CheckCSRF(r, sess)) {
+			writeError(w, http.StatusForbidden, "csrf_failed", "The request was refused because its CSRF token or origin didn't match. Reload the page and try again.")
 			return
 		}
 

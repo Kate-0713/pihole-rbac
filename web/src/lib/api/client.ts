@@ -36,6 +36,35 @@ const sendCSRFToken: Middleware = {
 export const api = createClient<paths>({ baseUrl: '', credentials: 'same-origin' });
 api.use(sendCSRFToken);
 
+// What to do when any call finds the session gone (401 unauthenticated) or setup not done (503 setup_required). The
+// server checks the session before the CSRF token, so a write whose session has ended gets the 401 too.
+// The session store registers these: client.ts can't import the store, because the store imports client.ts.
+type ResponseHandlers = { unauthenticated?: () => void; setupRequired?: () => void };
+let handlers: ResponseHandlers = {};
+
+export function onSessionResponses(h: ResponseHandlers): void {
+	handlers = h;
+}
+
+// Only the codes count, not the statuses: a wrong password is also a 401, but its code is invalid_credentials, and
+// it must not send the login page to itself.
+const watchResponses: Middleware = {
+	async onResponse({ response }) {
+		if (response.status !== 401 && response.status !== 503) return undefined;
+		let code: string | undefined;
+		try {
+			const body: unknown = await response.clone().json();
+			if (isErrorEnvelope(body)) code = body.error.code;
+		} catch {
+			return undefined;
+		}
+		if (code === 'unauthenticated') handlers.unauthenticated?.();
+		if (code === 'setup_required') handlers.setupRequired?.();
+		return undefined;
+	}
+};
+api.use(watchResponses);
+
 // A failed API call. `code` is the server's error code (see ErrorBody in the spec), or one of two codes made up
 // here: network_error when no answer arrived, and unexpected_response when the answer wasn't the error envelope.
 export class ApiError extends Error {

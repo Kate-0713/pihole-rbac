@@ -314,3 +314,52 @@ func TestCSPMatchesEmbeddedPage(t *testing.T) {
 		t.Fatalf("%s, want %s", got, want)
 	}
 }
+
+// A state-changing request whose session has ended is answered 401, not 403 csrf_failed: the session is checked
+// before the CSRF token, so the SPA knows to send the user to log in. Public routes still get the CSRF check, and a
+// live session with a bad token is still refused as csrf_failed.
+func TestEndedSessionWriteIsUnauthenticated(t *testing.T) {
+	e := newTestEnv(t)
+	e.addUser("alice", "alice-password-1", true)
+	c := e.loggedIn("alice", "alice-password-1")
+	held := *c.cookies[auth.SessionCookie]
+	heldToken := c.csrf
+	if res := c.do(http.MethodPost, "/api/v1/auth/logout", nil); res.Code != http.StatusNoContent {
+		t.Fatalf("logout: %d", res.Code)
+	}
+
+	stale := func(method, path string, modify func(*http.Request)) response {
+		r := c.request(method, path, nil)
+		r.AddCookie(&held)
+		r.Header.Set(auth.CSRFHeader, heldToken)
+		if modify != nil {
+			modify(r)
+		}
+		return c.send(r)
+	}
+	tests := []struct {
+		name     string
+		path     string
+		modify   func(*http.Request)
+		wantCode int
+		want     string
+	}{
+		{"ended session, its old token", "/api/v1/auth/logout", nil, http.StatusUnauthorized, "unauthenticated"},
+		{"ended session, no token", "/api/v1/system/reload", func(r *http.Request) { r.Header.Del(auth.CSRFHeader) }, http.StatusUnauthorized, "unauthenticated"},
+		{"ended session, cross-site", "/api/v1/system/reload", func(r *http.Request) { r.Header.Set("Origin", "http://evil.example") }, http.StatusUnauthorized, "unauthenticated"},
+		{"public route still checks CSRF", "/api/v1/auth/login", nil, http.StatusForbidden, "csrf_failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if res := stale(http.MethodPost, tt.path, tt.modify); res.Code != tt.wantCode || res.errorCode() != tt.want {
+				t.Fatalf("got %d %q, want %d %q", res.Code, res.errorCode(), tt.wantCode, tt.want)
+			}
+		})
+	}
+
+	live := e.loggedIn("alice", "alice-password-1")
+	live.csrf = "bogus"
+	if res := live.do(http.MethodPost, "/api/v1/auth/logout", nil); res.Code != http.StatusForbidden || res.errorCode() != "csrf_failed" {
+		t.Fatalf("live session, bad token: %d %q", res.Code, res.errorCode())
+	}
+}
