@@ -208,6 +208,23 @@ func fillPihole(ph *piholetest.Server) {
 	ph.AddDomain(piholetest.Domain{Domain: "school.example", Type: "allow", Kind: "exact", Enabled: true, Groups: []int{0, kids}})
 	ph.AddClient(piholetest.Client{Client: "10.0.0.0/24", Comment: "lab subnet", Groups: []int{0}})
 	ph.AddClient(piholetest.Client{Client: "10.0.1.5", Name: "printer.lan", Groups: []int{kids}})
+
+	// Five queries, newest first, a minute apart and ending a minute ago: two blocked, three answered.
+	now := time.Now()
+	q := func(i int, domain, ip, name, status, reply, upstream string, replySec float64) piholetest.Query {
+		e := piholetest.Query{ID: 5 - i, Time: float64(now.Add(-time.Duration(i+1)*time.Minute).UnixMilli()) / 1000,
+			Type: "A", Domain: domain, Status: status, Upstream: upstream}
+		e.Client.IP, e.Client.Name = ip, name
+		e.Reply.Type, e.Reply.Time = reply, replySec
+		return e
+	}
+	ph.SetQueries([]piholetest.Query{
+		q(0, "ads.example", "10.0.1.5", "printer.lan", "GRAVITY", "IP", "", 0.0001),
+		q(1, "school.example", "10.0.0.7", "", "FORWARDED", "IP", "9.9.9.9#53", 0.0123),
+		q(2, "games.example", "10.0.1.5", "printer.lan", "DENYLIST", "IP", "", 0.0002),
+		q(3, "school.example", "10.0.0.8", "", "CACHE", "IP", "", 0.0003),
+		q(4, "news.example", "10.0.0.7", "", "FORWARDED", "IP", "9.9.9.9#53", 0.021),
+	})
 }
 
 // unusedAddr returns a local address nothing listens on: it is taken and released at once.
