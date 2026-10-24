@@ -66,3 +66,28 @@ ORDER BY u.id;
 
 -- name: SetUserSessionsRolesChecked :exec
 UPDATE sessions SET roles_checked_at = ? WHERE user_id = ?;
+
+-- Active sessions, newest first, for the sessions pages: not past their end, not idle, and of an enabled user.
+-- user_id narrows them to one user. The cursor is the (created_at, public_id) of the last row of the previous page.
+-- name: ListActiveSessions :many
+SELECT s.public_id, s.user_id, s.created_at, s.expires_at, s.last_seen_at, s.ip, s.user_agent, u.username, u.source
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.expires_at > sqlc.arg(now)
+  AND s.last_seen_at > sqlc.arg(idle_cutoff)
+  AND u.disabled = 0
+  AND (CAST(sqlc.arg(user_id) AS INTEGER) = 0 OR s.user_id = sqlc.arg(user_id))
+  AND (CAST(sqlc.arg(after_created) AS INTEGER) = 0
+       OR s.created_at < sqlc.arg(after_created)
+       OR (s.created_at = sqlc.arg(after_created) AND s.public_id < sqlc.arg(after_public_id)))
+ORDER BY s.created_at DESC, s.public_id DESC
+LIMIT sqlc.arg(row_limit);
+
+-- name: GetSessionByPublicID :one
+SELECT s.public_id, s.user_id, u.username
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.public_id = ?;
+
+-- name: DeleteSessionByPublicID :execrows
+DELETE FROM sessions WHERE public_id = ?;

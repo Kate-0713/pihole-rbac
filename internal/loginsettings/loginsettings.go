@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package loginsettings owns how people log in: the enabled login methods, the LDAP connection settings and the LDAP
-// bind password, and the authenticator built from them. Saving any of them rebuilds the login chain and the
+// bind password, and the authenticator built from them; and the general settings, which for now are how long
+// sessions last. Saving any of them rebuilds the login chain and the
 // directory the session recheck uses, without a restart.
 //
 // The bind password is a tier 2 secret: stored encrypted on the ldap settings row, with
@@ -45,6 +46,8 @@ type Service struct {
 	CAFile  string // PIHOLE_RBAC_LDAP_CA_FILE
 	Logger  *slog.Logger
 	Now     func() time.Time
+	// Sessions takes the session lifetimes from the general settings; nil in tests that don't need them.
+	Sessions SessionLifetimes
 
 	auth *auth.SwappableAuthenticator
 
@@ -57,6 +60,8 @@ type Service struct {
 	ldapBy    string
 	stored    StoredPassword
 	directory *auth.LDAPAuthenticator // built from the saved LDAP settings, enabled or not; nil without them
+	generalAt time.Time               // when the general settings were last saved, and by whom
+	generalBy string
 }
 
 // StoredPassword is the bind password as kept in the database.
@@ -93,12 +98,15 @@ func (s *Service) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// Load reads the settings and builds the login chain. A saved value that doesn't validate, or LDAP login enabled
+// Load reads the settings, applies the session lifetimes and builds the login chain. A saved value that doesn't validate, or LDAP login enabled
 // without LDAP settings, stops startup rather than silently changing who can log in.
 func (s *Service) Load(ctx context.Context) error {
 	q := s.Store.Read()
 	settings, err := auth.LoadSettings(ctx, q)
 	if err != nil {
+		return err
+	}
+	if err := s.loadGeneral(ctx, q); err != nil {
 		return err
 	}
 	ls, found, err := auth.LoadLDAPSettings(ctx, q)

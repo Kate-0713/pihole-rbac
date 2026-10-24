@@ -128,6 +128,11 @@
 					</DropdownMenu.Label>
 					<DropdownMenu.Separator />
 					<!-- An LDAP user's password lives in the directory, so only local accounts can change it here. -->
+					<DropdownMenu.Item>
+						{#snippet child({ props })}
+							<a {...props} href="/account/sessions">Your sessions</a>
+						{/snippet}
+					</DropdownMenu.Item>
 					{#if session.user?.source === 'local'}
 						<DropdownMenu.Item onSelect={() => (passwordOpen = true)}>Change password</DropdownMenu.Item>
 					{/if}

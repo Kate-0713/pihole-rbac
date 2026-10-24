@@ -1278,6 +1278,132 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/sessions:
+    get:
+      summary: List active sessions
+      description: >-
+        Active sessions, newest first: every user's with sessions.manage, otherwise only the caller's own. `mine=true`
+        asks for only the caller's own either way. `all` in the answer says which you got. Paged with `limit` and
+        `cursor`: pass the previous answer's `next_cursor` to get the next page; it is absent on the last page.
+      operationId: listSessions
+      x-permission: session
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: How many sessions to return, 1 to 200.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+            maxLength: 128
+        - name: mine
+          in: query
+          required: false
+          description: Only the caller's own sessions, even with sessions.manage.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/sessions/{public_id}:
+    parameters:
+      - name: public_id
+        in: path
+        required: true
+        description: The session's public ID.
+        schema:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{22}$"
+    delete:
+      summary: End a session
+      description: >-
+        Ends one of the caller's own sessions, or anyone's with sessions.manage. Ending the caller's current session
+        logs them out. A session that doesn't exist, or that the caller may not end, is 404 either way, so the answer
+        doesn't say whether another user's session exists. Audited as session_revoke.
+      operationId: revokeSession
+      x-permission: session
+      responses:
+        "204":
+          description: Ended.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/settings/general:
+    get:
+      summary: The general settings
+      description: How long sessions last. Defaults until saved.
+      operationId: getGeneralSettings
+      x-permission: settings.manage
+      responses:
+        "200":
+          description: The general settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettings"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Change the general settings
+      description: >-
+        A new session lifetime applies to sessions started from now on; a new idle timeout applies to every session at
+        once. Audited as settings_update.
+      operationId: setGeneralSettings
+      x-permission: settings.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeneralSettingsInput"
+      responses:
+        "200":
+          description: The general settings as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneralSettings"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/targets/{target}/summary:
     parameters:
       - $ref: "#/components/parameters/TargetID"
@@ -2895,6 +3021,82 @@ components:
         check_error:
           type: string
           description: Why the group couldn't be looked up, when it couldn't.
+
+    SessionInfo:
+      type: object
+      additionalProperties: false
+      required: [public_id, user, created_at, last_seen_at, expires_at, ip, user_agent, current]
+      properties:
+        public_id:
+          type: string
+        user:
+          $ref: "#/components/schemas/SessionUser"
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+          description: The last request, to within a minute.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the session ends at the latest. It ends sooner after the idle timeout without requests.
+        ip:
+          type: string
+        user_agent:
+          type: string
+        current:
+          type: boolean
+          description: Whether this is the caller's current session.
+
+    SessionList:
+      type: object
+      additionalProperties: false
+      required: [sessions, all]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionInfo"
+        all:
+          type: boolean
+          description: Whether these are every user's sessions (sessions.manage, without mine), or only the caller's.
+        next_cursor:
+          type: string
+          description: Pass as `cursor` for the next page. Absent on the last page.
+
+    GeneralSettingsInput:
+      type: object
+      additionalProperties: false
+      required: [session_lifetime_minutes, idle_timeout_minutes]
+      properties:
+        session_lifetime_minutes:
+          type: integer
+          minimum: 15
+          maximum: 43200
+          description: How long a session lasts at most, from login. 15 minutes to 30 days.
+        idle_timeout_minutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+          description: How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime.
+
+    GeneralSettings:
+      type: object
+      additionalProperties: false
+      required: [session_lifetime_minutes, idle_timeout_minutes]
+      properties:
+        session_lifetime_minutes:
+          type: integer
+        idle_timeout_minutes:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+          description: Absent until the settings are first saved.
+        updated_by:
+          type: string
 
     TargetSummary:
       type: object

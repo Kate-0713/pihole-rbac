@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/config"
@@ -69,6 +70,10 @@ type Sessions struct {
 	key  func() secrets.Value
 	opts SessionOptions
 	now  func() time.Time
+
+	// The lifetimes are runtime settings, so they can change while the server runs (see SetLifetimes).
+	lifetime atomic.Int64 // nanoseconds
+	idle     atomic.Int64
 }
 
 // NewSessions returns a session store. key is called on every use, so a reloaded session key takes effect at once
@@ -86,7 +91,27 @@ func NewSessions(st *store.Store, key func() secrets.Value, opts SessionOptions)
 	if opts.RecheckGrace <= 0 {
 		opts.RecheckGrace = DefaultRecheckGrace
 	}
-	return &Sessions{st: st, key: key, opts: opts, now: time.Now}
+	s := &Sessions{st: st, key: key, opts: opts, now: time.Now}
+	s.lifetime.Store(int64(opts.Lifetime))
+	s.idle.Store(int64(opts.IdleTimeout))
+	return s
+}
+
+// SetLifetimes changes the absolute lifetime and the idle timeout. A new lifetime applies to sessions created from now
+// on, since each session's end is fixed when it starts; a new idle timeout applies to every session at once. Zero
+// keeps a value as it is.
+func (s *Sessions) SetLifetimes(lifetime, idle time.Duration) {
+	if lifetime > 0 {
+		s.lifetime.Store(int64(lifetime))
+	}
+	if idle > 0 {
+		s.idle.Store(int64(idle))
+	}
+}
+
+// Lifetimes returns the current absolute lifetime and idle timeout.
+func (s *Sessions) Lifetimes() (lifetime, idle time.Duration) {
+	return time.Duration(s.lifetime.Load()), time.Duration(s.idle.Load())
 }
 
 // Session is a logged-in session.
@@ -135,7 +160,7 @@ func (s *Sessions) Create(ctx context.Context, q *db.Queries, n NewSession) (coo
 		UserID:         n.UserID,
 		RoleIDs:        n.RoleIDs,
 		CreatedAt:      now,
-		ExpiresAt:      now.Add(s.opts.Lifetime),
+		ExpiresAt:      now.Add(time.Duration(s.lifetime.Load())),
 		LastSeenAt:     now,
 		RolesCheckedAt: now,
 		IP:             n.IP,
@@ -211,7 +236,7 @@ func (s *Sessions) Get(ctx context.Context, r *http.Request) (*Session, error) {
 
 	now := s.now()
 	lastSeen := store.FromMillis(row.LastSeenAt)
-	if row.Disabled || !now.Before(store.FromMillis(row.ExpiresAt)) || now.Sub(lastSeen) >= s.opts.IdleTimeout {
+	if row.Disabled || !now.Before(store.FromMillis(row.ExpiresAt)) || now.Sub(lastSeen) >= time.Duration(s.idle.Load()) {
 		// Best effort: Prune removes it later if this fails.
 		_ = s.st.WithTx(ctx, func(q *db.Queries) error { return q.DeleteSession(ctx, hash[:]) })
 		return nil, ErrNoSession
@@ -276,7 +301,7 @@ func (s *Sessions) Prune(ctx context.Context) (int64, error) {
 		var err error
 		n, err = q.DeleteExpiredSessions(ctx, db.DeleteExpiredSessionsParams{
 			Now:        store.Millis(now),
-			IdleCutoff: store.Millis(now.Add(-s.opts.IdleTimeout)),
+			IdleCutoff: store.Millis(now.Add(-time.Duration(s.idle.Load()))),
 		})
 		return err
 	})

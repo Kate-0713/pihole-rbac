@@ -821,6 +821,25 @@ type ErrorBody struct {
 	Message string `json:"message"`
 }
 
+// GeneralSettings defines model for GeneralSettings.
+type GeneralSettings struct {
+	IdleTimeoutMinutes     int `json:"idle_timeout_minutes"`
+	SessionLifetimeMinutes int `json:"session_lifetime_minutes"`
+
+	// UpdatedAt Absent until the settings are first saved.
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	UpdatedBy *string    `json:"updated_by,omitempty"`
+}
+
+// GeneralSettingsInput defines model for GeneralSettingsInput.
+type GeneralSettingsInput struct {
+	// IdleTimeoutMinutes How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime.
+	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`
+
+	// SessionLifetimeMinutes How long a session lasts at most, from login. 15 minutes to 30 days.
+	SessionLifetimeMinutes int `json:"session_lifetime_minutes"`
+}
+
 // Grant One permission within one scope.
 type Grant struct {
 	// Id The instance or group, for scope instance or group. Absent for scope all.
@@ -1348,6 +1367,34 @@ type SecretStatusKind string
 // SecretStatusSource Where the value came from. Absent when the secret isn't set. Only `file` can change on a reload.
 type SecretStatusSource string
 
+// SessionInfo defines model for SessionInfo.
+type SessionInfo struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// Current Whether this is the caller's current session.
+	Current bool `json:"current"`
+
+	// ExpiresAt When the session ends at the latest. It ends sooner after the idle timeout without requests.
+	ExpiresAt time.Time `json:"expires_at"`
+	Ip        string    `json:"ip"`
+
+	// LastSeenAt The last request, to within a minute.
+	LastSeenAt time.Time   `json:"last_seen_at"`
+	PublicId   string      `json:"public_id"`
+	User       SessionUser `json:"user"`
+	UserAgent  string      `json:"user_agent"`
+}
+
+// SessionList defines model for SessionList.
+type SessionList struct {
+	// All Whether these are every user's sessions (sessions.manage, without mine), or only the caller's.
+	All bool `json:"all"`
+
+	// NextCursor Pass as `cursor` for the next page. Absent on the last page.
+	NextCursor *string       `json:"next_cursor,omitempty"`
+	Sessions   []SessionInfo `json:"sessions"`
+}
+
 // SessionUser defines model for SessionUser.
 type SessionUser struct {
 	Id       int64             `json:"id"`
@@ -1571,6 +1618,18 @@ type RemoveLDAPMappingParams struct {
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
+// ListSessionsParams defines parameters for ListSessions.
+type ListSessionsParams struct {
+	// Limit How many sessions to return, 1 to 200.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Mine Only the caller's own sessions, even with sessions.manage.
+	Mine *bool `form:"mine,omitempty" json:"mine,omitempty"`
+}
+
 // ListQueriesParams defines parameters for ListQueries.
 type ListQueriesParams struct {
 	// Length How many of the newest entries to read, 1 to 1000. Default 100.
@@ -1636,6 +1695,9 @@ type AddLDAPMappingJSONRequestBody = LDAPGroupInput
 
 // SetLoginMethodsJSONRequestBody defines body for SetLoginMethods for application/json ContentType.
 type SetLoginMethodsJSONRequestBody = LoginMethods
+
+// SetGeneralSettingsJSONRequestBody defines body for SetGeneralSettings for application/json ContentType.
+type SetGeneralSettingsJSONRequestBody = GeneralSettingsInput
 
 // SetLDAPSettingsJSONRequestBody defines body for SetLDAPSettings for application/json ContentType.
 type SetLDAPSettingsJSONRequestBody = LDAPSettingsInput
@@ -1750,12 +1812,24 @@ type ServerInterface interface {
 	// RemoveLDAPMapping Remove an LDAP group mapping
 	// (DELETE /api/v1/roles/{id}/ldap-groups/{mapping_id})
 	RemoveLDAPMapping(w http.ResponseWriter, r *http.Request, id RoleID, mappingId MappingID, params RemoveLDAPMappingParams)
+	// ListSessions List active sessions
+	// (GET /api/v1/sessions)
+	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
+	// RevokeSession End a session
+	// (DELETE /api/v1/sessions/{public_id})
+	RevokeSession(w http.ResponseWriter, r *http.Request, publicId string)
 	// GetLoginMethods The login methods
 	// (GET /api/v1/settings/auth)
 	GetLoginMethods(w http.ResponseWriter, r *http.Request)
 	// SetLoginMethods Change the login methods
 	// (PUT /api/v1/settings/auth)
 	SetLoginMethods(w http.ResponseWriter, r *http.Request)
+	// GetGeneralSettings The general settings
+	// (GET /api/v1/settings/general)
+	GetGeneralSettings(w http.ResponseWriter, r *http.Request)
+	// SetGeneralSettings Change the general settings
+	// (PUT /api/v1/settings/general)
+	SetGeneralSettings(w http.ResponseWriter, r *http.Request)
 	// GetLDAPSettings The LDAP settings
 	// (GET /api/v1/settings/ldap)
 	GetLDAPSettings(w http.ResponseWriter, r *http.Request)
@@ -2438,6 +2512,91 @@ func (siw *ServerInterfaceWrapper) RemoveLDAPMapping(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSessionsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "mine" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "mine", r.URL.Query(), &params.Mine, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mine"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mine", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeSession operation middleware
+func (siw *ServerInterfaceWrapper) RevokeSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "public_id" -------------
+	var publicId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "public_id", r.PathValue("public_id"), &publicId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "public_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeSession(w, r, publicId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetLoginMethods operation middleware
 func (siw *ServerInterfaceWrapper) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
 
@@ -2457,6 +2616,34 @@ func (siw *ServerInterfaceWrapper) SetLoginMethods(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SetLoginMethods(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGeneralSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetGeneralSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGeneralSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetGeneralSettings operation middleware
+func (siw *ServerInterfaceWrapper) SetGeneralSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetGeneralSettings(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3329,6 +3516,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/settings/ldap", wrapper.SetLDAPSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ldap/test-user", wrapper.TestLDAPUser)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ldap/check-group", wrapper.CheckLDAPGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sessions", wrapper.ListSessions)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/sessions/{public_id}", wrapper.RevokeSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/general", wrapper.GetGeneralSettings)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/settings/general", wrapper.SetGeneralSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/summary", wrapper.GetTargetSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/blocking", wrapper.GetBlocking)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/targets/{target}/blocking", wrapper.SetBlocking)
@@ -5811,6 +6002,142 @@ func (response RemoveLDAPMapping503JSONResponse) VisitRemoveLDAPMappingResponse(
 	return err
 }
 
+type ListSessionsRequestObject struct {
+	Params ListSessionsParams
+}
+
+type ListSessionsResponseObject interface {
+	VisitListSessionsResponse(w http.ResponseWriter) error
+}
+
+type ListSessions200JSONResponse SessionList
+
+func (response ListSessions200JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListSessions400JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSessions401JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListSessions503JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSessionRequestObject struct {
+	PublicId string `json:"public_id"`
+}
+
+type RevokeSessionResponseObject interface {
+	VisitRevokeSessionResponse(w http.ResponseWriter) error
+}
+
+type RevokeSession204Response struct {
+}
+
+func (response RevokeSession204Response) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeSession401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RevokeSession401JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeSession403JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeSession404JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RevokeSession503JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetLoginMethodsRequestObject struct {
 }
 
@@ -5971,6 +6298,163 @@ func (response SetLoginMethods502JSONResponse) VisitSetLoginMethodsResponse(w ht
 type SetLoginMethods503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response SetLoginMethods503JSONResponse) VisitSetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGeneralSettingsRequestObject struct {
+}
+
+type GetGeneralSettingsResponseObject interface {
+	VisitGetGeneralSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetGeneralSettings200JSONResponse GeneralSettings
+
+func (response GetGeneralSettings200JSONResponse) VisitGetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGeneralSettings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetGeneralSettings401JSONResponse) VisitGetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGeneralSettings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetGeneralSettings403JSONResponse) VisitGetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGeneralSettings503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetGeneralSettings503JSONResponse) VisitGetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGeneralSettingsRequestObject struct {
+	Body *SetGeneralSettingsJSONRequestBody
+}
+
+type SetGeneralSettingsResponseObject interface {
+	VisitSetGeneralSettingsResponse(w http.ResponseWriter) error
+}
+
+type SetGeneralSettings200JSONResponse GeneralSettings
+
+func (response SetGeneralSettings200JSONResponse) VisitSetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGeneralSettings400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetGeneralSettings400JSONResponse) VisitSetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGeneralSettings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetGeneralSettings401JSONResponse) VisitSetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGeneralSettings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetGeneralSettings403JSONResponse) VisitSetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGeneralSettings415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetGeneralSettings415JSONResponse) VisitSetGeneralSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGeneralSettings503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetGeneralSettings503JSONResponse) VisitSetGeneralSettingsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -8905,12 +9389,24 @@ type StrictServerInterface interface {
 	// RemoveLDAPMapping Remove an LDAP group mapping
 	// (DELETE /api/v1/roles/{id}/ldap-groups/{mapping_id})
 	RemoveLDAPMapping(ctx context.Context, request RemoveLDAPMappingRequestObject) (RemoveLDAPMappingResponseObject, error)
+	// ListSessions List active sessions
+	// (GET /api/v1/sessions)
+	ListSessions(ctx context.Context, request ListSessionsRequestObject) (ListSessionsResponseObject, error)
+	// RevokeSession End a session
+	// (DELETE /api/v1/sessions/{public_id})
+	RevokeSession(ctx context.Context, request RevokeSessionRequestObject) (RevokeSessionResponseObject, error)
 	// GetLoginMethods The login methods
 	// (GET /api/v1/settings/auth)
 	GetLoginMethods(ctx context.Context, request GetLoginMethodsRequestObject) (GetLoginMethodsResponseObject, error)
 	// SetLoginMethods Change the login methods
 	// (PUT /api/v1/settings/auth)
 	SetLoginMethods(ctx context.Context, request SetLoginMethodsRequestObject) (SetLoginMethodsResponseObject, error)
+	// GetGeneralSettings The general settings
+	// (GET /api/v1/settings/general)
+	GetGeneralSettings(ctx context.Context, request GetGeneralSettingsRequestObject) (GetGeneralSettingsResponseObject, error)
+	// SetGeneralSettings Change the general settings
+	// (PUT /api/v1/settings/general)
+	SetGeneralSettings(ctx context.Context, request SetGeneralSettingsRequestObject) (SetGeneralSettingsResponseObject, error)
 	// GetLDAPSettings The LDAP settings
 	// (GET /api/v1/settings/ldap)
 	GetLDAPSettings(ctx context.Context, request GetLDAPSettingsRequestObject) (GetLDAPSettingsResponseObject, error)
@@ -9792,6 +10288,58 @@ func (sh *strictHandler) RemoveLDAPMapping(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// ListSessions operation middleware
+func (sh *strictHandler) ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams) {
+	var request ListSessionsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSessions(ctx, request.(ListSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSessionsResponseObject); ok {
+		if err := validResponse.VisitListSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeSession operation middleware
+func (sh *strictHandler) RevokeSession(w http.ResponseWriter, r *http.Request, publicId string) {
+	var request RevokeSessionRequestObject
+
+	request.PublicId = publicId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeSession(ctx, request.(RevokeSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeSessionResponseObject); ok {
+		if err := validResponse.VisitRevokeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetLoginMethods operation middleware
 func (sh *strictHandler) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
 	var request GetLoginMethodsRequestObject
@@ -9840,6 +10388,61 @@ func (sh *strictHandler) SetLoginMethods(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetLoginMethodsResponseObject); ok {
 		if err := validResponse.VisitSetLoginMethodsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGeneralSettings operation middleware
+func (sh *strictHandler) GetGeneralSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetGeneralSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGeneralSettings(ctx, request.(GetGeneralSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGeneralSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGeneralSettingsResponseObject); ok {
+		if err := validResponse.VisitGetGeneralSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetGeneralSettings operation middleware
+func (sh *strictHandler) SetGeneralSettings(w http.ResponseWriter, r *http.Request) {
+	var request SetGeneralSettingsRequestObject
+
+	var body SetGeneralSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetGeneralSettings(ctx, request.(SetGeneralSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetGeneralSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetGeneralSettingsResponseObject); ok {
+		if err := validResponse.VisitSetGeneralSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

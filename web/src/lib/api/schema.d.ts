@@ -760,6 +760,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active sessions
+         * @description Active sessions, newest first: every user's with sessions.manage, otherwise only the caller's own. `mine=true` asks for only the caller's own either way. `all` in the answer says which you got. Paged with `limit` and `cursor`: pass the previous answer's `next_cursor` to get the next page; it is absent on the last page.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session's public ID. */
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * End a session
+         * @description Ends one of the caller's own sessions, or anyone's with sessions.manage. Ending the caller's current session logs them out. A session that doesn't exist, or that the caller may not end, is 404 either way, so the answer doesn't say whether another user's session exists. Audited as session_revoke.
+         */
+        delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/general": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The general settings
+         * @description How long sessions last. Defaults until saved.
+         */
+        get: operations["getGeneralSettings"];
+        /**
+         * Change the general settings
+         * @description A new session lifetime applies to sessions started from now on; a new idle timeout applies to every session at once. Audited as settings_update.
+         */
+        put: operations["setGeneralSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/targets/{target}/summary": {
         parameters: {
             query?: never;
@@ -1400,6 +1467,49 @@ export interface components {
             check?: components["schemas"]["LDAPGroupCheck"];
             /** @description Why the group couldn't be looked up, when it couldn't. */
             check_error?: string;
+        };
+        SessionInfo: {
+            public_id: string;
+            user: components["schemas"]["SessionUser"];
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description The last request, to within a minute.
+             */
+            last_seen_at: string;
+            /**
+             * Format: date-time
+             * @description When the session ends at the latest. It ends sooner after the idle timeout without requests.
+             */
+            expires_at: string;
+            ip: string;
+            user_agent: string;
+            /** @description Whether this is the caller's current session. */
+            current: boolean;
+        };
+        SessionList: {
+            sessions: components["schemas"]["SessionInfo"][];
+            /** @description Whether these are every user's sessions (sessions.manage, without mine), or only the caller's. */
+            all: boolean;
+            /** @description Pass as `cursor` for the next page. Absent on the last page. */
+            next_cursor?: string;
+        };
+        GeneralSettingsInput: {
+            /** @description How long a session lasts at most, from login. 15 minutes to 30 days. */
+            session_lifetime_minutes: number;
+            /** @description How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime. */
+            idle_timeout_minutes: number;
+        };
+        GeneralSettings: {
+            session_lifetime_minutes: number;
+            idle_timeout_minutes: number;
+            /**
+             * Format: date-time
+             * @description Absent until the settings are first saved.
+             */
+            updated_at?: string;
+            updated_by?: string;
         };
         TargetSummary: {
             blocking: components["schemas"]["BlockingStatus"];
@@ -3096,6 +3206,113 @@ export interface operations {
             409: components["responses"]["Conflict"];
             415: components["responses"]["UnsupportedMediaType"];
             502: components["responses"]["LDAPFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: {
+                /** @description How many sessions to return, 1 to 200. */
+                limit?: number;
+                /** @description The `next_cursor` of the previous page. */
+                cursor?: string;
+                /** @description Only the caller's own sessions, even with sessions.manage. */
+                mine?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sessions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session's public ID. */
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getGeneralSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The general settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setGeneralSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneralSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description The general settings as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralSettings"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            415: components["responses"]["UnsupportedMediaType"];
             503: components["responses"]["SetupRequired"];
         };
     };

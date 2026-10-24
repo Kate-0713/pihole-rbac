@@ -109,6 +109,18 @@ func (q *Queries) DeleteSession(ctx context.Context, idHash []byte) error {
 	return err
 }
 
+const deleteSessionByPublicID = `-- name: DeleteSessionByPublicID :execrows
+DELETE FROM sessions WHERE public_id = ?
+`
+
+func (q *Queries) DeleteSessionByPublicID(ctx context.Context, publicID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSessionByPublicID, publicID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteUserSessions = `-- name: DeleteUserSessions :execrows
 DELETE FROM sessions WHERE user_id = ?
 `
@@ -136,6 +148,26 @@ func (q *Queries) DeleteUserSessionsExcept(ctx context.Context, arg DeleteUserSe
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const getSessionByPublicID = `-- name: GetSessionByPublicID :one
+SELECT s.public_id, s.user_id, u.username
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.public_id = ?
+`
+
+type GetSessionByPublicIDRow struct {
+	PublicID string
+	UserID   int64
+	Username string
+}
+
+func (q *Queries) GetSessionByPublicID(ctx context.Context, publicID string) (GetSessionByPublicIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionByPublicID, publicID)
+	var i GetSessionByPublicIDRow
+	err := row.Scan(&i.PublicID, &i.UserID, &i.Username)
+	return i, err
 }
 
 const getSessionWithUser = `-- name: GetSessionWithUser :one
@@ -179,6 +211,84 @@ func (q *Queries) GetSessionWithUser(ctx context.Context, idHash []byte) (GetSes
 		&i.Disabled,
 	)
 	return i, err
+}
+
+const listActiveSessions = `-- name: ListActiveSessions :many
+SELECT s.public_id, s.user_id, s.created_at, s.expires_at, s.last_seen_at, s.ip, s.user_agent, u.username, u.source
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.expires_at > ?1
+  AND s.last_seen_at > ?2
+  AND u.disabled = 0
+  AND (CAST(?3 AS INTEGER) = 0 OR s.user_id = ?3)
+  AND (CAST(?4 AS INTEGER) = 0
+       OR s.created_at < ?4
+       OR (s.created_at = ?4 AND s.public_id < ?5))
+ORDER BY s.created_at DESC, s.public_id DESC
+LIMIT ?6
+`
+
+type ListActiveSessionsParams struct {
+	Now           int64
+	IdleCutoff    int64
+	UserID        int64
+	AfterCreated  int64
+	AfterPublicID string
+	RowLimit      int64
+}
+
+type ListActiveSessionsRow struct {
+	PublicID   string
+	UserID     int64
+	CreatedAt  int64
+	ExpiresAt  int64
+	LastSeenAt int64
+	Ip         string
+	UserAgent  string
+	Username   string
+	Source     string
+}
+
+// Active sessions, newest first, for the sessions pages: not past their end, not idle, and of an enabled user.
+// user_id narrows them to one user. The cursor is the (created_at, public_id) of the last row of the previous page.
+func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveSessions,
+		arg.Now,
+		arg.IdleCutoff,
+		arg.UserID,
+		arg.AfterCreated,
+		arg.AfterPublicID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveSessionsRow{}
+	for rows.Next() {
+		var i ListActiveSessionsRow
+		if err := rows.Scan(
+			&i.PublicID,
+			&i.UserID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.Ip,
+			&i.UserAgent,
+			&i.Username,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLDAPUsersDueForRecheck = `-- name: ListLDAPUsersDueForRecheck :many

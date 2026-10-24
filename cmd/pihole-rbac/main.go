@@ -125,14 +125,16 @@ func serve() error {
 
 	// The login methods, LDAP settings and bind password, and the login chain built from them. Saving them through the
 	// API rebuilds the chain and the recheck's directory without a restart.
-	login := &loginsettings.Service{Store: st, Audit: auditLog, Secrets: sec, CAFile: cfg.LDAPCAFile, Logger: logger}
-	if err := login.Load(ctx); err != nil {
-		return err
-	}
 	sessions := auth.NewSessions(st, sec.SessionKey, auth.SessionOptions{
 		CookieSecure:   cfg.CookieSecure,
 		TrustedProxies: cfg.TrustedProxies,
 	})
+	login := &loginsettings.Service{
+		Store: st, Audit: auditLog, Secrets: sec, CAFile: cfg.LDAPCAFile, Logger: logger, Sessions: sessions,
+	}
+	if err := login.Load(ctx); err != nil {
+		return err
+	}
 	byIP, byUser := api.DefaultLoginLimits()
 	// One Pi-hole client per enabled instance. Closing the pool logs every client out of its Pi-hole, so sessions
 	// don't hold Pi-hole's API seats after a restart.

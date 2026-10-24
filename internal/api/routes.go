@@ -69,10 +69,15 @@ var routePermission = map[string]string{
 	"POST /api/v1/ldap/test-user":                        string(rbac.RolesManage),
 	"POST /api/v1/ldap/check-group":                      string(rbac.RolesManage),
 
-	"GET /api/v1/settings/auth": string(rbac.SettingsManage),
-	"PUT /api/v1/settings/auth": string(rbac.SettingsManage),
-	"GET /api/v1/settings/ldap": string(rbac.SettingsManage),
-	"PUT /api/v1/settings/ldap": string(rbac.SettingsManage),
+	"GET /api/v1/sessions":                accessSession,
+	"DELETE /api/v1/sessions/{public_id}": accessSession,
+
+	"GET /api/v1/settings/general": string(rbac.SettingsManage),
+	"PUT /api/v1/settings/general": string(rbac.SettingsManage),
+	"GET /api/v1/settings/auth":    string(rbac.SettingsManage),
+	"PUT /api/v1/settings/auth":    string(rbac.SettingsManage),
+	"GET /api/v1/settings/ldap":    string(rbac.SettingsManage),
+	"PUT /api/v1/settings/ldap":    string(rbac.SettingsManage),
 
 	"GET /api/v1/users":                string(rbac.UsersManage),
 	"POST /api/v1/users":               string(rbac.UsersManage),

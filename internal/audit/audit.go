@@ -81,7 +81,8 @@ const (
 	ActionClientUpdate = "client_update"
 
 	// Sessions.
-	ActionLDAPRecheck = "ldap_recheck" // an LDAP user's session roles changed, or their sessions ended, at a recheck
+	ActionLDAPRecheck   = "ldap_recheck"   // an LDAP user's session roles changed, or their sessions ended, at a recheck
+	ActionSessionRevoke = "session_revoke" // a session was ended from the sessions page, by its user or an admin
 
 	// Settings. The detail lists the fields that changed; a bind password shows as stored or confirmed, never its value.
 	ActionSettingsUpdate = "settings_update"

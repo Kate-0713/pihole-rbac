@@ -70,9 +70,11 @@ function readRemembered(): string | null {
 
 export const targets = new TargetsStore();
 
-// usesTarget says whether a page acts on the selected target. Admin pages don't, and their URLs never carry one.
+// usesTarget says whether a page acts on the selected target. Admin and account pages don't, and their URLs never
+// carry one.
 export function usesTarget(pathname: string): boolean {
-	return pathname !== '/admin' && !pathname.startsWith('/admin/');
+	const outside = (prefix: string) => pathname === prefix || pathname.startsWith(prefix + '/');
+	return !outside('/admin') && !outside('/account');
 }
 
 // withTarget adds the selected target to an in-app link, so moving between pages keeps it. Links to admin pages are
