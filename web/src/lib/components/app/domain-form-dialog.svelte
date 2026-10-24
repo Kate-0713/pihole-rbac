@@ -10,16 +10,8 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import {
-		commentProblem,
-		domainProblem,
-		kindLabel,
-		typeLabel,
-		type Domain,
-		type DomainKind,
-		type DomainType,
-		type PiholeGroup
-	} from '#lib/domains.js';
+	import { domainProblem, kindLabel, typeLabel, type Domain, type DomainKind, type DomainType } from '#lib/domains.js';
+	import { commentProblem, type PiholeGroup } from '#lib/pihole.js';
 	import { failureMessage, reportResults } from '#lib/write-report.js';
 	import GroupPicker from './group-picker.svelte';
 

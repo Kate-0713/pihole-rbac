@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ApiError, api, unwrap } from '#lib/api/client.js';
-import type { Domain, PiholeGroup } from '#lib/domains.js';
+import type { Domain } from '#lib/domains.js';
+import type { PiholeGroup } from '#lib/pihole.js';
 import { can } from '#lib/permissions.js';
 import type { PageLoad } from './$types';
 

@@ -58,7 +58,8 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import { entryKey, groupNames, kindLabel, typeLabel, type PiholeGroup } from '#lib/domains.js';
+	import { entryKey, kindLabel, typeLabel } from '#lib/domains.js';
+	import { groupNames, type PiholeGroup } from '#lib/pihole.js';
 
 	let {
 		domains,

@@ -5,7 +5,7 @@
 <script lang="ts">
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import type { PiholeGroup } from '#lib/domains.js';
+	import type { PiholeGroup } from '#lib/pihole.js';
 
 	// $bindable lets the parent write bind:selected={ids}, so ticking a box updates the parent's array, the Svelte 5
 	// way of a two-way prop.
