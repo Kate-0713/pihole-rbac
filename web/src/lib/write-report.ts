@@ -4,6 +4,7 @@
 // Tells the user how a Pi-hole write went, from its per-instance results (see results.ts). Every instance ok is one
 // success toast; each instance that failed or was skipped is its own error, which stays until dismissed. With a
 // single instance that's simply a toast or an error; with a mirrored group, a partial failure shows both.
+import { ApiError } from '#lib/api/client.js';
 import { failedResults, summarise, type InstanceResult } from '#lib/api/results.js';
 import { notices } from '#lib/stores/notices.svelte.js';
 
@@ -32,6 +33,17 @@ export function reportFailure(e: unknown, text: WriteText): void {
 		return;
 	}
 	notices.error(e, text.failed);
+}
+
+// failureMessage is what to show inside a form when a write fails, so the form can stay open for another try: each
+// instance's own error when the failure carries results, otherwise the error's message.
+export function failureMessage(e: unknown): string {
+	const results = failedResults(e);
+	if (results && results.length > 0) {
+		return results.map((r) => r.error?.message ?? `Pi-hole "${r.instance}" failed.`).join(' ');
+	}
+	if (e instanceof ApiError) return e.message;
+	return 'Something went wrong. Try again.';
 }
 
 function names(results: readonly InstanceResult[]): string {

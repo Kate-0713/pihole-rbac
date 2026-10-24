@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '#lib/api/client.js';
 import type { InstanceResult } from '#lib/api/results.js';
 import { notices } from '#lib/stores/notices.svelte.js';
-import { reportFailure, reportResults } from './write-report.js';
+import { failureMessage, reportFailure, reportResults } from './write-report.js';
 
 const text = { done: 'Blocking turned off', failed: "Couldn't turn blocking off" };
 const ok = (instance: string): InstanceResult => ({ instance, instance_id: 1, status: 'ok' });
@@ -65,5 +65,17 @@ describe('reportFailure', () => {
 	it("shows the server's message for a refusal without results", () => {
 		reportFailure(new ApiError(403, 'forbidden', "You don't have permission."), text);
 		expect(notices.errors.map((n) => n.message)).toEqual(["Couldn't turn blocking off: You don't have permission."]);
+	});
+});
+
+describe('failureMessage', () => {
+	it("is the instances' own errors when the failure carries results", () => {
+		const e = new ApiError(400, 'pihole_rejected', 'Refused.', { results: [failed] });
+		expect(failureMessage(e)).toBe('Pi-hole "pihole2" refused the request.');
+	});
+
+	it("is the server's message otherwise, and a generic one for anything else", () => {
+		expect(failureMessage(new ApiError(400, 'validation_failed', 'The domain is too long.'))).toBe('The domain is too long.');
+		expect(failureMessage(new Error('boom'))).toBe('Something went wrong. Try again.');
 	});
 });

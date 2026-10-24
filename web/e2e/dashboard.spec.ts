@@ -4,18 +4,7 @@
 // The dashboard, against the seeded server. pihole1's fake Pi-hole reports fixed counters (see piholetest), and
 // pihole3 is down. Blocking is shared state on the fake, so each test sets it first.
 import type { Page } from '@playwright/test';
-import { expect, openAs, test } from './fixtures.js';
-
-// writeAs makes an API write with the page's session, as the SPA would: the session's CSRF token and our Origin.
-async function apiWrite(page: Page, method: 'PUT' | 'POST', path: string, data?: unknown) {
-	const session = await page.request.get('/api/v1/auth/session');
-	expect(session.ok()).toBe(true);
-	const { csrf_token } = await session.json();
-	const origin = new URL(page.url()).origin;
-	const res = await page.request.fetch(path, { method, data, headers: { 'X-CSRF-Token': csrf_token, Origin: origin } });
-	expect(res.ok(), await res.text()).toBe(true);
-	return res;
-}
+import { apiWrite, expect, openAs, test } from './fixtures.js';
 
 const setBlocking = (page: Page, enabled: boolean) =>
 	apiWrite(page, 'PUT', '/api/v1/targets/i-1/blocking', { enabled });

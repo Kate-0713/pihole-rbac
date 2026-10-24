@@ -67,3 +67,15 @@ export async function openAs(page: Page, user: User, path = '/'): Promise<void> 
 export function picker(page: Page) {
 	return page.getByRole('combobox', { name: 'Instance' });
 }
+
+// apiWrite makes an API write with the page's session, as the SPA would: the session's CSRF token and the page's
+// Origin. For setting things up or checking them, not for what a test is about.
+export async function apiWrite(page: Page, method: 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, data?: unknown) {
+	const session = await page.request.get('/api/v1/auth/session');
+	expect(session.ok()).toBe(true);
+	const { csrf_token } = await session.json();
+	const origin = new URL(page.url()).origin;
+	const res = await page.request.fetch(path, { method, data, headers: { 'X-CSRF-Token': csrf_token, Origin: origin } });
+	expect(res.ok(), await res.text()).toBe(true);
+	return res;
+}
