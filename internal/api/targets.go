@@ -33,10 +33,12 @@ type instanceRef struct {
 
 // piholeFailure is a Pi-hole call that failed for one instance: the instance can't be used, or its Pi-hole was
 // unreachable, refused the app password, answered unexpectedly or refused the request's content. responseError
-// answers it with piholeFailed.
+// answers it with piholeFailed. Results, when set, are a write's results for every instance, sent in
+// details.results (see finishWrite).
 type piholeFailure struct {
 	Instance string
 	Err      error
+	Results  any
 }
 
 func (e *piholeFailure) Error() string {
@@ -121,49 +123,26 @@ func (s *Server) call(ctx context.Context, ref instanceRef, fn func(context.Cont
 	return &piholeFailure{Instance: ref.name, Err: err}
 }
 
-// piholeFailed answers a *piholeFailure. Pi-hole refusing the request's content is the client's 400; an instance
-// that can't be used is a 409, as for enabling one; anything else is the Pi-hole failing, a 502. The underlying error
-// can name internal addresses, so it goes to the log and the audit log, not to the client; Pi-hole's own reason for
-// a rejection is passed on, as text.
+// piholeFailed answers a *piholeFailure with the error envelope (see describeFailure), adding the write's results
+// when it has them.
 func (s *Server) piholeFailed(w http.ResponseWriter, r *http.Request, pf *piholeFailure) {
-	code := instances.Kind(pf.Err)
-	details := map[string]any{"instance": pf.Instance}
-	status := http.StatusBadGateway
-	var msg string
-	switch code {
-	case piholeapi.CodeRejected:
-		status = http.StatusBadRequest
-		msg = fmt.Sprintf("Pi-hole %q refused the request.", pf.Instance)
-		var re *piholeapi.RejectedError
-		if errors.As(pf.Err, &re) && re.Message != "" {
-			details["pihole_message"] = re.Message
-			msg = fmt.Sprintf("Pi-hole %q refused the request: %s", pf.Instance, re.Message)
-		}
-	case piholeapi.CodeUnreachable:
-		msg = fmt.Sprintf("Pi-hole %q didn't respond.", pf.Instance)
-	case piholeapi.CodeAuthRejected:
-		msg = fmt.Sprintf("Pi-hole %q refused the app's password. An administrator needs to check it.", pf.Instance)
-	case piholeapi.CodeStatusError:
-		msg = fmt.Sprintf("Pi-hole %q answered, but not as expected.", pf.Instance)
-	case instances.CodePasswordMissing:
-		status = http.StatusConflict
-		msg = fmt.Sprintf("Pi-hole %q can't be used yet: its password isn't set. An administrator needs to set it.", pf.Instance)
-	case instances.CodeMisconfigured:
-		status = http.StatusConflict
-		msg = fmt.Sprintf("The settings of Pi-hole %q can't be used. An administrator needs to fix them.", pf.Instance)
-	default:
+	f := describeFailure(pf)
+	if f.internal {
 		s.Logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", pf)
 		writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 		return
 	}
-	level := s.Logger.Warn
-	if code == piholeapi.CodeRejected {
-		level = s.Logger.Info
+	s.logFailure(r.Pattern, pf)
+	details := map[string]any{"instance": pf.Instance}
+	if f.piholeMessage != "" {
+		details["pihole_message"] = f.piholeMessage
 	}
-	level("pi-hole call failed", "instance", pf.Instance, "request", r.Pattern, "code", code, "err", pf.Err)
-	body := errorBody(code, msg)
+	if pf.Results != nil {
+		details["results"] = pf.Results
+	}
+	body := errorBody(f.code, f.message)
 	body.Error.Details = &details
-	writeJSON(w, status, body)
+	writeJSON(w, f.status, body)
 }
 
 // auditPihole records a Pi-hole write after the call, with its result. Handlers call it only when the write was

@@ -69,7 +69,7 @@ func (s *Server) UpdateClient(ctx context.Context, req gen.UpdateClientRequestOb
 	var saved piholeapi.ClientEntry
 	var detail map[string]any
 	var attempted bool
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
+	o, err := s.write(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
 		attempted = false
 		list, err := c.ListClients(ctx)
 		if err != nil {
@@ -115,12 +115,28 @@ func (s *Server) UpdateClient(ctx context.Context, req gen.UpdateClientRequestOb
 		return err
 	})
 	if attempted {
-		s.auditPihole(ctx, ref, audit.ActionClientUpdate, err, detail)
+		s.auditPihole(ctx, ref, audit.ActionClientUpdate, o.callErr, detail)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return gen.UpdateClient200JSONResponse(clientJSON(saved)), nil
+	outs := []outcome{o}
+	results := resultsOf(outs, func(o outcome, st gen.WriteStatus, we *gen.WriteError) gen.ClientWriteResult {
+		r := gen.ClientWriteResult{Instance: o.ref.name, InstanceId: o.ref.id, Status: st, Error: we}
+		if o.ok() {
+			c := clientJSON(saved)
+			r.Entry = &c
+		}
+		return r
+	})
+	multi, err := s.finishWrite(ctx, outs, results)
+	if err != nil {
+		return nil, err
+	}
+	if multi {
+		return gen.UpdateClient207JSONResponse{Results: results}, nil
+	}
+	return gen.UpdateClient200JSONResponse{Results: results}, nil
 }
 
 func clientJSON(ce piholeapi.ClientEntry) gen.PiholeClient {

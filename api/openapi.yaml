@@ -554,7 +554,8 @@ paths:
       summary: Turn blocking on or off
       description: >-
         Sets blocking to the given state; setting the state it already has is allowed. With `timer`, which needs
-        `enabled` false, Pi-hole turns blocking back on after that many seconds. Audited as blocking_set.
+        `enabled` false, Pi-hole turns blocking back on after that many seconds. Answers with a result per instance
+        (see WriteResults under the schemas). Audited as blocking_set.
       operationId: setBlocking
       x-permission: target:blocking.toggle
       requestBody:
@@ -565,11 +566,19 @@ paths:
               $ref: "#/components/schemas/BlockingInput"
       responses:
         "200":
-          description: The blocking status after the change.
+          description: Every instance succeeded; each result has the blocking status after the change.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BlockingStatus"
+                $ref: "#/components/schemas/BlockingWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockingWriteResults"
         "400":
           $ref: "#/components/responses/InvalidOrRejected"
         "401":
@@ -594,17 +603,25 @@ paths:
       summary: Restart Pi-hole's DNS resolver
       description: >-
         Checks that the Pi-hole is reachable, then asks it to restart its resolver. The API goes down with the
-        resolver, so a connection that drops during the restart is a 200 with `confirmed` false rather than an error.
-        Audited as dns_restart.
+        resolver, so a connection that drops during the restart is an ok result with `confirmed` false rather than a
+        failure. Answers with a result per instance (see WriteResults under the schemas). Audited as dns_restart.
       operationId: restartDNS
       x-permission: target:dns.restart
       responses:
         "200":
-          description: The restart was requested.
+          description: The restart was requested on every instance.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DNSRestartResult"
+                $ref: "#/components/schemas/DNSRestartResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DNSRestartResults"
         "400":
           $ref: "#/components/responses/ValidationFailed"
         "401":
@@ -654,7 +671,8 @@ paths:
       description: >-
         Adds an enabled entry. The groups must exist on the Pi-hole. Without `groups`, the entry goes in the Default
         group (ID 0), as in Pi-hole's own interface; an empty list puts it in no group. Pi-hole refusing the entry
-        (already on that list, or not a valid domain or regex) is a 400 pihole_rejected. Audited as domain_add.
+        (already on that list, or not a valid domain or regex) is a pihole_rejected failure. Answers with a result
+        per instance (see WriteResults under the schemas). Audited as domain_add.
       operationId: addDomain
       x-permission: target:domains.edit
       requestBody:
@@ -664,12 +682,20 @@ paths:
             schema:
               $ref: "#/components/schemas/DomainInput"
       responses:
-        "201":
-          description: The entry as saved.
+        "200":
+          description: Every instance succeeded; each result has the entry as saved.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Domain"
+                $ref: "#/components/schemas/DomainWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainWriteResults"
         "400":
           $ref: "#/components/responses/InvalidOrRejected"
         "401":
@@ -691,7 +717,8 @@ paths:
       description: >-
         The body names the entry by domain, type and kind, which must match it exactly, and gives the fields to
         change; fields left out keep their value, and so does whether the entry is enabled. An entry that doesn't
-        exist is a 404: it is never created. Audited as domain_update, with the groups before and after.
+        exist is a 404: it is never created. Answers with a result per instance (see WriteResults under the schemas).
+        Audited as domain_update, with the groups before and after.
       operationId: updateDomain
       x-permission: target:domains.edit
       requestBody:
@@ -702,11 +729,19 @@ paths:
               $ref: "#/components/schemas/DomainUpdate"
       responses:
         "200":
-          description: The entry as saved.
+          description: Every instance succeeded; each result has the entry as saved.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Domain"
+                $ref: "#/components/schemas/DomainWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainWriteResults"
         "400":
           $ref: "#/components/responses/InvalidOrRejected"
         "401":
@@ -727,7 +762,8 @@ paths:
       summary: Delete a list entry
       description: >-
         The body names the entry by domain, type and kind, which must match it exactly. An entry that doesn't exist
-        is a 404. Audited as domain_delete, with the entry's groups and comment.
+        is a 404. Answers with a result per instance (see WriteResults under the schemas). Audited as domain_delete,
+        with the entry's groups and comment.
       operationId: deleteDomain
       x-permission: target:domains.edit
       requestBody:
@@ -737,8 +773,20 @@ paths:
             schema:
               $ref: "#/components/schemas/DomainKey"
       responses:
-        "204":
-          description: Deleted.
+        "200":
+          description: Deleted on every instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResults"
         "400":
           $ref: "#/components/responses/InvalidOrRejected"
         "401":
@@ -789,8 +837,9 @@ paths:
       summary: Change a client's groups or comment
       description: >-
         The body names the client by its identifier, which must match exactly, and gives the fields to change;
-        fields left out keep their value. A client that doesn't exist is a 404: it is never created. Audited as
-        client_update, with the groups before and after.
+        fields left out keep their value. A client that doesn't exist is a 404: it is never created. Answers with a
+        result per instance (see WriteResults under the schemas). Audited as client_update, with the groups before
+        and after.
       operationId: updateClient
       x-permission: target:clients.edit
       requestBody:
@@ -801,11 +850,19 @@ paths:
               $ref: "#/components/schemas/ClientUpdate"
       responses:
         "200":
-          description: The client as saved.
+          description: Every instance succeeded; each result has the client as saved.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PiholeClient"
+                $ref: "#/components/schemas/ClientWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientWriteResults"
         "400":
           $ref: "#/components/responses/InvalidOrRejected"
         "401":
@@ -1004,7 +1061,8 @@ components:
         A field is invalid (code validation_failed), or the Pi-hole refused the request's content (code
         pihole_rejected): a duplicate entry, say, or a domain it doesn't accept. For pihole_rejected,
         `details.instance` names the instance and `details.pihole_message` has Pi-hole's reason, which is Pi-hole's
-        text: show it as text.
+        text: show it as text. On a write, a pihole_rejected answer means no instance succeeded, and `details.results`
+        has the result per instance, in the shape of the 200 response's `results`.
       content:
         application/json:
           schema:
@@ -1012,7 +1070,8 @@ components:
     TargetUnavailable:
       description: >-
         The instance can't be used: its password variable isn't set (code instance_password_missing) or its settings
-        can't be used (code instance_misconfigured). `details.instance` names it.
+        can't be used (code instance_misconfigured). `details.instance` names it. On a write, this answer means no instance
+        succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`.
       content:
         application/json:
           schema:
@@ -1021,7 +1080,8 @@ components:
       description: >-
         The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected)
         or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. The underlying
-        error goes to the server log only.
+        error goes to the server log only. On a write, this answer means no instance
+        succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`.
       content:
         application/json:
           schema:
@@ -1472,16 +1532,184 @@ components:
           maximum: 86400
           description: Only with `enabled` false. Seconds until Pi-hole turns blocking back on.
 
+    # WriteResults: every Pi-hole write (blocking, DNS restart, domain and client changes) answers with one result per
+    # instance it acted on: one for an instance target, one per member for a mirrored group. 200 when every result is
+    # ok, 207 when they differ; when none is ok, the error envelope of the first failure, with the results in
+    # details.results. Requests refused before any Pi-hole is changed (bad input, no permission, an entry that doesn't
+    # exist) answer with the error envelope as usual.
+    WriteStatus:
+      type: string
+      enum: [ok, failed, skipped]
+      description: >-
+        ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the
+        instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+
+    WriteError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      description: Why an instance failed or was skipped. Present exactly when the status isn't ok.
+      properties:
+        code:
+          type: string
+          description: >-
+            pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing
+            or instance_misconfigured.
+        message:
+          type: string
+          description: Safe to show to the user.
+        pihole_message:
+          type: string
+          description: For pihole_rejected, Pi-hole's own reason, when it gave one. Pi-hole's text; show it as text.
+
+    BlockingWriteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of turning blocking on or off.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BlockingWriteResult"
+
+    BlockingWriteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+          description: The instance's name.
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
+        blocking:
+          $ref: "#/components/schemas/BlockingStatus"
+          description: Present when ok.
+
+    DNSRestartResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of a DNS restart.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/DNSRestartResult"
+
     DNSRestartResult:
       type: object
       additionalProperties: false
-      required: [confirmed]
+      required: [instance, instance_id, status]
       properties:
+        instance:
+          type: string
+          description: The instance's name.
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
         confirmed:
           type: boolean
           description: >-
-            False when the connection dropped while the restart was being requested, which happens when the restart
-            goes ahead: check the dashboard in a few seconds.
+            Present when ok. False when the connection dropped while the restart was being requested, which happens
+            when the restart goes ahead: check the dashboard in a few seconds.
+
+    DomainWriteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of adding or changing a list entry.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/DomainWriteResult"
+
+    DomainWriteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+          description: The instance's name.
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
+        entry:
+          $ref: "#/components/schemas/Domain"
+          description: Present when ok. The entry as saved.
+
+    ClientWriteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of changing a client.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientWriteResult"
+
+    ClientWriteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+          description: The instance's name.
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
+        entry:
+          $ref: "#/components/schemas/PiholeClient"
+          description: Present when ok. The client as saved.
+
+    DeleteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of deleting a list entry.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeleteResult"
+
+    DeleteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+          description: The instance's name.
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
 
     DomainList:
       type: object

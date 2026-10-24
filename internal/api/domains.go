@@ -70,7 +70,7 @@ func (s *Server) AddDomain(ctx context.Context, req gen.AddDomainRequestObject) 
 	var saved piholeapi.DomainEntry
 	var names []string
 	var attempted bool
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
+	o, err := s.write(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
 		attempted = false
 		groups, err := c.ListGroups(ctx)
 		if err != nil {
@@ -85,14 +85,30 @@ func (s *Server) AddDomain(ctx context.Context, req gen.AddDomainRequestObject) 
 		return err
 	})
 	if attempted {
-		s.auditPihole(ctx, ref, audit.ActionDomainAdd, err, map[string]any{
+		s.auditPihole(ctx, ref, audit.ActionDomainAdd, o.callErr, map[string]any{
 			"domain": entry.Domain, "type": entry.Type, "kind": entry.Kind, "comment": entry.Comment, "groups": names,
 		})
 	}
 	if err != nil {
 		return nil, err
 	}
-	return gen.AddDomain201JSONResponse(domainJSON(saved)), nil
+	outs := []outcome{o}
+	results := resultsOf(outs, func(o outcome, st gen.WriteStatus, we *gen.WriteError) gen.DomainWriteResult {
+		r := gen.DomainWriteResult{Instance: o.ref.name, InstanceId: o.ref.id, Status: st, Error: we}
+		if o.ok() {
+			d := domainJSON(saved)
+			r.Entry = &d
+		}
+		return r
+	})
+	multi, err := s.finishWrite(ctx, outs, results)
+	if err != nil {
+		return nil, err
+	}
+	if multi {
+		return gen.AddDomain207JSONResponse{Results: results}, nil
+	}
+	return gen.AddDomain200JSONResponse{Results: results}, nil
 }
 
 // UpdateDomain reads the entry first: Pi-hole's PUT would create an entry that doesn't exist, and would enable a
@@ -128,7 +144,7 @@ func (s *Server) UpdateDomain(ctx context.Context, req gen.UpdateDomainRequestOb
 	var saved piholeapi.DomainEntry
 	var detail map[string]any
 	var attempted bool
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
+	o, err := s.write(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
 		attempted = false
 		cur, groups, err := findDomain(ctx, c, ref, key)
 		if err != nil {
@@ -158,12 +174,28 @@ func (s *Server) UpdateDomain(ctx context.Context, req gen.UpdateDomainRequestOb
 		return err
 	})
 	if attempted {
-		s.auditPihole(ctx, ref, audit.ActionDomainUpdate, err, detail)
+		s.auditPihole(ctx, ref, audit.ActionDomainUpdate, o.callErr, detail)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return gen.UpdateDomain200JSONResponse(domainJSON(saved)), nil
+	outs := []outcome{o}
+	results := resultsOf(outs, func(o outcome, st gen.WriteStatus, we *gen.WriteError) gen.DomainWriteResult {
+		r := gen.DomainWriteResult{Instance: o.ref.name, InstanceId: o.ref.id, Status: st, Error: we}
+		if o.ok() {
+			d := domainJSON(saved)
+			r.Entry = &d
+		}
+		return r
+	})
+	multi, err := s.finishWrite(ctx, outs, results)
+	if err != nil {
+		return nil, err
+	}
+	if multi {
+		return gen.UpdateDomain207JSONResponse{Results: results}, nil
+	}
+	return gen.UpdateDomain200JSONResponse{Results: results}, nil
 }
 
 // DeleteDomain reads the entry first, so a delete of something that isn't there is a 404 and the audit row can say
@@ -184,7 +216,7 @@ func (s *Server) DeleteDomain(ctx context.Context, req gen.DeleteDomainRequestOb
 
 	var detail map[string]any
 	var attempted bool
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
+	o, err := s.write(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
 		attempted = false
 		cur, groups, err := findDomain(ctx, c, ref, key)
 		if err != nil {
@@ -198,12 +230,24 @@ func (s *Server) DeleteDomain(ctx context.Context, req gen.DeleteDomainRequestOb
 		return c.DeleteDomain(ctx, key.Domain, key.Type, key.Kind)
 	})
 	if attempted {
-		s.auditPihole(ctx, ref, audit.ActionDomainDelete, err, detail)
+		s.auditPihole(ctx, ref, audit.ActionDomainDelete, o.callErr, detail)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return gen.DeleteDomain204Response{}, nil
+	outs := []outcome{o}
+	results := resultsOf(outs, func(o outcome, st gen.WriteStatus, we *gen.WriteError) gen.DeleteResult {
+		r := gen.DeleteResult{Instance: o.ref.name, InstanceId: o.ref.id, Status: st, Error: we}
+		return r
+	})
+	multi, err := s.finishWrite(ctx, outs, results)
+	if err != nil {
+		return nil, err
+	}
+	if multi {
+		return gen.DeleteDomain207JSONResponse{Results: results}, nil
+	}
+	return gen.DeleteDomain200JSONResponse{Results: results}, nil
 }
 
 // findDomain reads the lists and the groups, and returns the entry key names exactly, or a 404.

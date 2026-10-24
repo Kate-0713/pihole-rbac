@@ -353,6 +353,27 @@ func (e TargetKind) Valid() bool {
 	}
 }
 
+// Defines values for WriteStatus.
+const (
+	WriteStatusFailed  WriteStatus = "failed"
+	WriteStatusOk      WriteStatus = "ok"
+	WriteStatusSkipped WriteStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the WriteStatus enum.
+func (e WriteStatus) Valid() bool {
+	switch e {
+	case WriteStatusFailed:
+		return true
+	case WriteStatusOk:
+		return true
+	case WriteStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
 // About defines model for About.
 type About struct {
 	// License SPDX licence identifier.
@@ -386,6 +407,27 @@ type BlockingStatus struct {
 // BlockingStatusBlocking failed and unknown mean Pi-hole couldn't tell.
 type BlockingStatusBlocking string
 
+// BlockingWriteResult defines model for BlockingWriteResult.
+type BlockingWriteResult struct {
+	// Blocking Present when ok.
+	Blocking *BlockingStatus `json:"blocking,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Instance The instance's name.
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// BlockingWriteResults The result per instance of turning blocking on or off.
+type BlockingWriteResults struct {
+	Results []BlockingWriteResult `json:"results"`
+}
+
 // CSRFToken defines model for CSRFToken.
 type CSRFToken struct {
 	// CsrfToken Send as the X-CSRF-Token header on every state-changing request.
@@ -406,6 +448,27 @@ type ClientUpdate struct {
 	Groups *[]int `json:"groups,omitempty"`
 }
 
+// ClientWriteResult defines model for ClientWriteResult.
+type ClientWriteResult struct {
+	// Entry Present when ok. The client as saved.
+	Entry *PiholeClient `json:"entry,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Instance The instance's name.
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// ClientWriteResults The result per instance of changing a client.
+type ClientWriteResults struct {
+	Results []ClientWriteResult `json:"results"`
+}
+
 // CurrentSession defines model for CurrentSession.
 type CurrentSession struct {
 	// CsrfToken Send as the X-CSRF-Token header on every state-changing request.
@@ -424,8 +487,23 @@ type CurrentSession struct {
 
 // DNSRestartResult defines model for DNSRestartResult.
 type DNSRestartResult struct {
-	// Confirmed False when the connection dropped while the restart was being requested, which happens when the restart goes ahead: check the dashboard in a few seconds.
-	Confirmed bool `json:"confirmed"`
+	// Confirmed Present when ok. False when the connection dropped while the restart was being requested, which happens when the restart goes ahead: check the dashboard in a few seconds.
+	Confirmed *bool `json:"confirmed,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Instance The instance's name.
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// DNSRestartResults The result per instance of a DNS restart.
+type DNSRestartResults struct {
+	Results []DNSRestartResult `json:"results"`
 }
 
 // DatabaseTotals Totals for the last 24 hours from Pi-hole's long-term database, unaffected by FTL restarts.
@@ -434,6 +512,24 @@ type DatabaseTotals struct {
 	Clients        int     `json:"clients"`
 	PercentBlocked float64 `json:"percent_blocked"`
 	Queries        int     `json:"queries"`
+}
+
+// DeleteResult defines model for DeleteResult.
+type DeleteResult struct {
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Instance The instance's name.
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// DeleteResults The result per instance of deleting a list entry.
+type DeleteResults struct {
+	Results []DeleteResult `json:"results"`
 }
 
 // Domain defines model for Domain.
@@ -512,6 +608,27 @@ type DomainUpdateKind string
 
 // DomainUpdateType defines model for DomainUpdate.Type.
 type DomainUpdateType string
+
+// DomainWriteResult defines model for DomainWriteResult.
+type DomainWriteResult struct {
+	// Entry Present when ok. The entry as saved.
+	Entry *Domain `json:"entry,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Instance The instance's name.
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// DomainWriteResults The result per instance of adding or changing a list entry.
+type DomainWriteResults struct {
+	Results []DomainWriteResult `json:"results"`
+}
 
 // Error defines model for Error.
 type Error struct {
@@ -821,6 +938,21 @@ type TargetSummary struct {
 	// Live Counters since FTL last started.
 	Live LiveCounters `json:"live"`
 }
+
+// WriteError Why an instance failed or was skipped. Present exactly when the status isn't ok.
+type WriteError struct {
+	// Code pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured.
+	Code string `json:"code"`
+
+	// Message Safe to show to the user.
+	Message string `json:"message"`
+
+	// PiholeMessage For pihole_rejected, Pi-hole's own reason, when it gave one. Pi-hole's text; show it as text.
+	PiholeMessage *string `json:"pihole_message,omitempty"`
+}
+
+// WriteStatus ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+type WriteStatus string
 
 // InstanceID defines model for InstanceID.
 type InstanceID = int64
@@ -3321,7 +3453,7 @@ type SetBlockingResponseObject interface {
 	VisitSetBlockingResponse(w http.ResponseWriter) error
 }
 
-type SetBlocking200JSONResponse BlockingStatus
+type SetBlocking200JSONResponse BlockingWriteResults
 
 func (response SetBlocking200JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
 
@@ -3331,6 +3463,20 @@ func (response SetBlocking200JSONResponse) VisitSetBlockingResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetBlocking207JSONResponse BlockingWriteResults
+
+func (response SetBlocking207JSONResponse) VisitSetBlockingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3578,7 +3724,7 @@ type UpdateClientResponseObject interface {
 	VisitUpdateClientResponse(w http.ResponseWriter) error
 }
 
-type UpdateClient200JSONResponse PiholeClient
+type UpdateClient200JSONResponse ClientWriteResults
 
 func (response UpdateClient200JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
 
@@ -3588,6 +3734,20 @@ func (response UpdateClient200JSONResponse) VisitUpdateClientResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateClient207JSONResponse ClientWriteResults
+
+func (response UpdateClient207JSONResponse) VisitUpdateClientResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3714,7 +3874,7 @@ type RestartDNSResponseObject interface {
 	VisitRestartDNSResponse(w http.ResponseWriter) error
 }
 
-type RestartDNS200JSONResponse DNSRestartResult
+type RestartDNS200JSONResponse DNSRestartResults
 
 func (response RestartDNS200JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
 
@@ -3724,6 +3884,20 @@ func (response RestartDNS200JSONResponse) VisitRestartDNSResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartDNS207JSONResponse DNSRestartResults
+
+func (response RestartDNS207JSONResponse) VisitRestartDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3835,12 +4009,32 @@ type DeleteDomainResponseObject interface {
 	VisitDeleteDomainResponse(w http.ResponseWriter) error
 }
 
-type DeleteDomain204Response struct {
+type DeleteDomain200JSONResponse DeleteResults
+
+func (response DeleteDomain200JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
-func (response DeleteDomain204Response) VisitDeleteDomainResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
-	return nil
+type DeleteDomain207JSONResponse DeleteResults
+
+func (response DeleteDomain207JSONResponse) VisitDeleteDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type DeleteDomain400JSONResponse struct{ InvalidOrRejectedJSONResponse }
@@ -4086,7 +4280,7 @@ type UpdateDomainResponseObject interface {
 	VisitUpdateDomainResponse(w http.ResponseWriter) error
 }
 
-type UpdateDomain200JSONResponse Domain
+type UpdateDomain200JSONResponse DomainWriteResults
 
 func (response UpdateDomain200JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
 
@@ -4096,6 +4290,20 @@ func (response UpdateDomain200JSONResponse) VisitUpdateDomainResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDomain207JSONResponse DomainWriteResults
+
+func (response UpdateDomain207JSONResponse) VisitUpdateDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4223,16 +4431,30 @@ type AddDomainResponseObject interface {
 	VisitAddDomainResponse(w http.ResponseWriter) error
 }
 
-type AddDomain201JSONResponse Domain
+type AddDomain200JSONResponse DomainWriteResults
 
-func (response AddDomain201JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+func (response AddDomain200JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain207JSONResponse DomainWriteResults
+
+func (response AddDomain207JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
 	_, err := buf.WriteTo(w)
 	return err
 }

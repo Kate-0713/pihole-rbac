@@ -4,7 +4,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -78,6 +80,51 @@ func (te *targetEnv) piholeWrites() []string {
 }
 
 func strp(s string) *string { return &s }
+
+// writeResult is what every per-instance write result has in common.
+type writeResult interface {
+	gen.BlockingWriteResult | gen.DNSRestartResult | gen.DomainWriteResult | gen.ClientWriteResult | gen.DeleteResult
+}
+
+// okResult checks that a write answered 200 with exactly one ok result, for pihole1, and returns it.
+func okResult[T writeResult](te *targetEnv, res response) T {
+	te.t.Helper()
+	mustStatus(te.t, res, http.StatusOK)
+	var body struct{ Results []T }
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		te.t.Fatal(err)
+	}
+	if len(body.Results) != 1 {
+		te.t.Fatalf("results %s", res.Body)
+	}
+	var common struct {
+		Instance   string          `json:"instance"`
+		InstanceID int64           `json:"instance_id"`
+		Status     string          `json:"status"`
+		Error      *gen.WriteError `json:"error"`
+	}
+	raw, _ := json.Marshal(body.Results[0])
+	_ = json.Unmarshal(raw, &common)
+	if common.Instance != "pihole1" || common.InstanceID != te.id || common.Status != "ok" || common.Error != nil {
+		te.t.Fatalf("result %s", raw)
+	}
+	return body.Results[0]
+}
+
+// failedResults returns the per-instance results carried in an error envelope's details.results.
+func failedResults(t *testing.T, res response) []map[string]any {
+	t.Helper()
+	d := errorDetails(t, res)
+	list, ok := d["results"].([]any)
+	if !ok {
+		t.Fatalf("no results in %s", res.Body)
+	}
+	out := make([]map[string]any, 0, len(list))
+	for _, x := range list {
+		out = append(out, x.(map[string]any))
+	}
+	return out
+}
 func intsp(ids ...int) *[]int {
 	if ids == nil {
 		ids = []int{}
@@ -193,8 +240,7 @@ func TestSummaryAndBlocking(t *testing.T) {
 	// Disable for five minutes.
 	timer := 300
 	res = te.admin.do(http.MethodPut, te.path("/blocking"), gen.BlockingInput{Enabled: false, Timer: &timer})
-	mustStatus(t, res, http.StatusOK)
-	if st := decode[gen.BlockingStatus](t, res); st.Blocking != "disabled" || st.Timer == nil || *st.Timer != 300 {
+	if st := okResult[gen.BlockingWriteResult](te, res).Blocking; st == nil || st.Blocking != "disabled" || st.Timer == nil || *st.Timer != 300 {
 		t.Errorf("after disabling: %s", res.Body)
 	}
 	if on, tm := te.ph.Blocking(); on || tm == nil || *tm != 300 {
@@ -210,7 +256,9 @@ func TestSummaryAndBlocking(t *testing.T) {
 	}
 
 	res = te.admin.do(http.MethodPut, te.path("/blocking"), gen.BlockingInput{Enabled: true})
-	mustStatus(t, res, http.StatusOK)
+	if st := okResult[gen.BlockingWriteResult](te, res).Blocking; st == nil || st.Blocking != "enabled" {
+		t.Errorf("after enabling: %s", res.Body)
+	}
 	if on, tm := te.ph.Blocking(); !on || tm != nil {
 		t.Errorf("fake Pi-hole after enabling: blocking %v, timer %v", on, tm)
 	}
@@ -235,8 +283,7 @@ func TestSummaryAndBlocking(t *testing.T) {
 func TestRestartDNS(t *testing.T) {
 	te := newTargetEnv(t)
 	res := te.admin.do(http.MethodPost, te.path("/dns/restart"), nil)
-	mustStatus(t, res, http.StatusOK)
-	if r := decode[gen.DNSRestartResult](t, res); !r.Confirmed {
+	if r := okResult[gen.DNSRestartResult](te, res); r.Confirmed == nil || !*r.Confirmed {
 		t.Errorf("result %s", res.Body)
 	}
 	row, detail := te.lastAudit()
@@ -257,8 +304,7 @@ func TestRestartDNS(t *testing.T) {
 		return true
 	})
 	res = te.admin.do(http.MethodPost, te.path("/dns/restart"), nil)
-	mustStatus(t, res, http.StatusOK)
-	if r := decode[gen.DNSRestartResult](t, res); r.Confirmed {
+	if r := okResult[gen.DNSRestartResult](te, res); r.Confirmed == nil || *r.Confirmed {
 		t.Errorf("result %s, want unconfirmed", res.Body)
 	}
 	if row, detail := te.lastAudit(); row.Action != audit.ActionDNSRestart || row.Result != audit.ResultSuccess || detail["confirmed"] != false {
@@ -282,8 +328,7 @@ func TestDomains(t *testing.T) {
 
 	// Add: surrounding spaces go, the Default group is the default.
 	res := te.admin.do(http.MethodPost, te.path("/domains"), gen.DomainInput{Domain: "  ads.example ", Type: "deny", Kind: "exact", Comment: strp("tracker")})
-	mustStatus(t, res, http.StatusCreated)
-	if d := decode[gen.Domain](t, res); d.Domain != "ads.example" || !d.Enabled || !slices.Equal(d.Groups, []int{0}) || d.Comment != "tracker" {
+	if d := okResult[gen.DomainWriteResult](te, res).Entry; d == nil || d.Domain != "ads.example" || !d.Enabled || !slices.Equal(d.Groups, []int{0}) || d.Comment != "tracker" {
 		t.Errorf("added %s", res.Body)
 	}
 	row, detail := te.lastAudit()
@@ -292,13 +337,18 @@ func TestDomains(t *testing.T) {
 		t.Errorf("audit %+v %v", row, detail)
 	}
 
-	// A duplicate is Pi-hole's rejection: a 400 with its message, audited as a failure.
+	// A duplicate is Pi-hole's rejection: a 400 with its message and the failed result, audited as a failure.
 	res = te.admin.do(http.MethodPost, te.path("/domains"), gen.DomainInput{Domain: "ads.example", Type: "deny", Kind: "exact"})
 	if res.Code != http.StatusBadRequest || res.errorCode() != "pihole_rejected" {
 		t.Fatalf("duplicate: %d %s", res.Code, res.Body)
 	}
 	if d := errorDetails(t, res); d["instance"] != "pihole1" || !strings.Contains(d["pihole_message"].(string), "UNIQUE") {
 		t.Errorf("details %v", d)
+	}
+	if rs := failedResults(t, res); len(rs) != 1 || rs[0]["instance"] != "pihole1" || rs[0]["status"] != "failed" || rs[0]["entry"] != nil {
+		t.Errorf("results %v", rs)
+	} else if e := rs[0]["error"].(map[string]any); e["code"] != "pihole_rejected" || !strings.Contains(e["pihole_message"].(string), "UNIQUE") {
+		t.Errorf("result error %v", e)
 	}
 	if row, detail := te.lastAudit(); row.Action != audit.ActionDomainAdd || row.Result != audit.ResultFailure || detail["error_code"] != "pihole_rejected" {
 		t.Errorf("audit %+v %v", row, detail)
@@ -329,15 +379,13 @@ func TestDomains(t *testing.T) {
 	}
 	// A long regex is fine.
 	res = te.admin.do(http.MethodPost, te.path("/domains"), gen.DomainInput{Domain: "^" + strings.Repeat("a", 500) + "$", Type: "deny", Kind: "regex", Groups: intsp()})
-	mustStatus(t, res, http.StatusCreated)
-	if d := decode[gen.Domain](t, res); len(d.Groups) != 0 {
+	if d := okResult[gen.DomainWriteResult](te, res).Entry; d == nil || len(d.Groups) != 0 {
 		t.Errorf("an empty groups list gave %v", d.Groups)
 	}
 
 	// Update: groups and comment change, the entry stays disabled.
 	res = te.admin.do(http.MethodPatch, te.path("/domains"), gen.DomainUpdate{Domain: "games.example", Type: "deny", Kind: "exact", Groups: intsp(kids, kids, 0)})
-	mustStatus(t, res, http.StatusOK)
-	if d := decode[gen.Domain](t, res); d.Enabled || !slices.Equal(d.Groups, []int{0, kids}) || d.Comment != "old" {
+	if d := okResult[gen.DomainWriteResult](te, res).Entry; d == nil || d.Enabled || !slices.Equal(d.Groups, []int{0, kids}) || d.Comment != "old" {
 		t.Errorf("updated %s", res.Body)
 	}
 	got := te.ph.Domains()[0]
@@ -353,7 +401,9 @@ func TestDomains(t *testing.T) {
 	// A change that changes nothing isn't sent or audited.
 	n, writes = te.auditCount(), len(te.piholeWrites())
 	res = te.admin.do(http.MethodPatch, te.path("/domains"), gen.DomainUpdate{Domain: "games.example", Type: "deny", Kind: "exact", Comment: strp("old")})
-	mustStatus(t, res, http.StatusOK)
+	if d := okResult[gen.DomainWriteResult](te, res).Entry; d == nil || d.Comment != "old" {
+		t.Errorf("no-op update %s", res.Body)
+	}
 	if te.auditCount() != n || len(te.piholeWrites()) != writes {
 		t.Error("a no-op update was audited or sent")
 	}
@@ -378,7 +428,7 @@ func TestDomains(t *testing.T) {
 
 	// Delete.
 	res = te.admin.do(http.MethodDelete, te.path("/domains"), gen.DomainKey{Domain: "games.example", Type: "deny", Kind: "exact"})
-	mustStatus(t, res, http.StatusNoContent)
+	okResult[gen.DeleteResult](te, res)
 	if slices.ContainsFunc(te.ph.Domains(), func(d piholetest.Domain) bool { return d.Domain == "games.example" }) {
 		t.Error("the entry is still there")
 	}
@@ -401,8 +451,7 @@ func TestClients(t *testing.T) {
 	}
 
 	res := te.admin.do(http.MethodPatch, te.path("/clients"), gen.ClientUpdate{Client: "10.0.0.0/24", Groups: intsp(lab)})
-	mustStatus(t, res, http.StatusOK)
-	if c := decode[gen.PiholeClient](t, res); !slices.Equal(c.Groups, []int{lab}) || c.Comment != "lab subnet" {
+	if c := okResult[gen.ClientWriteResult](te, res).Entry; c == nil || !slices.Equal(c.Groups, []int{lab}) || c.Comment != "lab subnet" {
 		t.Errorf("updated %s", res.Body)
 	}
 	if got := te.ph.Clients()[0]; !slices.Equal(got.Groups, []int{lab}) || got.Comment != "lab subnet" {
@@ -505,11 +554,15 @@ func TestPiholeFailures(t *testing.T) {
 	if d["instance"] != "pihole1" || d["detail"] != nil || strings.Contains(res.Body.String(), "127.0.0.1") {
 		t.Errorf("details %v", d)
 	}
-	// Within the backoff, a write fails at once and isn't audited: it was never sent.
+	// Within the backoff, a write fails at once and isn't audited: it was never sent, so its result is skipped.
 	n := te.auditCount()
 	res = te.admin.do(http.MethodPut, te.path("/blocking"), gen.BlockingInput{Enabled: false})
-	if res.Code != http.StatusBadGateway {
-		t.Errorf("write while down: %d", res.Code)
+	if res.Code != http.StatusBadGateway || res.errorCode() != "pihole_unreachable" {
+		t.Errorf("write while down: %d %s", res.Code, res.Body)
+	}
+	if rs := failedResults(t, res); len(rs) != 1 || rs[0]["status"] != "skipped" || rs[0]["blocking"] != nil ||
+		rs[0]["error"].(map[string]any)["code"] != "pihole_unreachable" || strings.Contains(res.Body.String(), "127.0.0.1") {
+		t.Errorf("results %v", rs)
 	}
 	if te.auditCount() != n {
 		t.Error("a write that was never sent was audited")
@@ -542,5 +595,61 @@ func TestPiholeFailedStatuses(t *testing.T) {
 				t.Errorf("details %v", d)
 			}
 		})
+	}
+}
+
+// TestFinishWrite: 200 when every instance succeeded, 207 when results differ, and the first failure, carrying the
+// results, when none did. A mirrored group is the only target with several instances, so this is tested directly.
+func TestFinishWrite(t *testing.T) {
+	e := newTestEnv(t)
+	ok := func(name string) outcome { return outcome{ref: instanceRef{name: name}, ran: true} }
+	failed := func(name string, err error, ran bool) outcome {
+		return outcome{ref: instanceRef{name: name}, ran: ran, err: &piholeFailure{Instance: name, Err: err}}
+	}
+	ctx := context.WithValue(t.Context(), reqInfoKey{}, &reqInfo{r: httptest.NewRequest(http.MethodPut, "/", nil)})
+	tests := []struct {
+		name      string
+		outs      []outcome
+		wantMulti bool
+		wantErr   string // the failing instance, "" for none
+	}{
+		{"all ok", []outcome{ok("a"), ok("b")}, false, ""},
+		{"mixed", []outcome{ok("a"), failed("b", piholeapi.ErrUnreachable, false)}, true, ""},
+		{"none ok", []outcome{failed("a", &piholeapi.RejectedError{Message: "dup"}, true), failed("b", piholeapi.ErrUnreachable, false)}, false, "a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := resultsOf(tt.outs, func(o outcome, st gen.WriteStatus, we *gen.WriteError) gen.DeleteResult {
+				return gen.DeleteResult{Instance: o.ref.name, Status: st, Error: we}
+			})
+			multi, err := e.srv.finishWrite(ctx, tt.outs, results)
+			if multi != tt.wantMulti {
+				t.Errorf("multi = %v", multi)
+			}
+			var pf *piholeFailure
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("err = %v", err)
+				}
+				return
+			}
+			if !errors.As(err, &pf) || pf.Instance != tt.wantErr || pf.Results == nil {
+				t.Fatalf("err = %#v", err)
+			}
+			w := httptest.NewRecorder()
+			e.srv.piholeFailed(w, httptest.NewRequest(http.MethodPut, "/", nil), pf)
+			res := response{w}
+			if res.Code != http.StatusBadRequest || res.errorCode() != "pihole_rejected" {
+				t.Fatalf("%d %s", res.Code, res.Body)
+			}
+			rs := failedResults(t, res)
+			if len(rs) != 2 || rs[0]["status"] != "failed" || rs[1]["status"] != "skipped" ||
+				rs[0]["error"].(map[string]any)["pihole_message"] != "dup" || rs[1]["error"].(map[string]any)["code"] != "pihole_unreachable" {
+				t.Errorf("results %v", rs)
+			}
+		})
+	}
+	if st, we := ok("a").status(); st != "ok" || we != nil {
+		t.Errorf("ok status %q %v", st, we)
 	}
 }

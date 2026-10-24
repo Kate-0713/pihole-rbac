@@ -98,24 +98,38 @@ func (s *Server) SetBlocking(ctx context.Context, req gen.SetBlockingRequestObje
 		return nil, err
 	}
 	var st *piholeapi.Status
-	var attempted bool
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
-		attempted = true
+	o, err := s.write(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
 		var err error
 		st, err = c.SetBlocking(ctx, b.Enabled, timer)
 		return err
 	})
-	if attempted {
+	if o.ran {
 		detail := map[string]any{"enabled": b.Enabled}
 		if b.Timer != nil {
 			detail["timer"] = *b.Timer
 		}
-		s.auditPihole(ctx, ref, audit.ActionBlockingSet, err, detail)
+		s.auditPihole(ctx, ref, audit.ActionBlockingSet, o.callErr, detail)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return gen.SetBlocking200JSONResponse(blockingJSON(st)), nil
+	outs := []outcome{o}
+	results := resultsOf(outs, func(o outcome, st2 gen.WriteStatus, we *gen.WriteError) gen.BlockingWriteResult {
+		r := gen.BlockingWriteResult{Instance: o.ref.name, InstanceId: o.ref.id, Status: st2, Error: we}
+		if o.ok() {
+			bs := blockingJSON(st)
+			r.Blocking = &bs
+		}
+		return r
+	})
+	multi, err := s.finishWrite(ctx, outs, results)
+	if err != nil {
+		return nil, err
+	}
+	if multi {
+		return gen.SetBlocking207JSONResponse{Results: results}, nil
+	}
+	return gen.SetBlocking200JSONResponse{Results: results}, nil
 }
 
 // RestartDNS checks the Pi-hole answers before asking for the restart, so a Pi-hole that is down is reported as
@@ -127,7 +141,7 @@ func (s *Server) RestartDNS(ctx context.Context, req gen.RestartDNSRequestObject
 		return nil, err
 	}
 	var sent, confirmed bool
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
+	o, err := s.write(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
 		sent, confirmed = false, false
 		if _, err := c.GetStatus(ctx); err != nil {
 			return err
@@ -141,12 +155,28 @@ func (s *Server) RestartDNS(ctx context.Context, req gen.RestartDNSRequestObject
 		return err
 	})
 	if sent {
-		s.auditPihole(ctx, ref, audit.ActionDNSRestart, err, map[string]any{"confirmed": confirmed})
+		s.auditPihole(ctx, ref, audit.ActionDNSRestart, o.callErr, map[string]any{"confirmed": confirmed})
 	}
 	if err != nil {
 		return nil, err
 	}
-	return gen.RestartDNS200JSONResponse{Confirmed: confirmed}, nil
+	outs := []outcome{o}
+	results := resultsOf(outs, func(o outcome, st gen.WriteStatus, we *gen.WriteError) gen.DNSRestartResult {
+		r := gen.DNSRestartResult{Instance: o.ref.name, InstanceId: o.ref.id, Status: st, Error: we}
+		if o.ok() {
+			c := confirmed
+			r.Confirmed = &c
+		}
+		return r
+	})
+	multi, err := s.finishWrite(ctx, outs, results)
+	if err != nil {
+		return nil, err
+	}
+	if multi {
+		return gen.RestartDNS207JSONResponse{Results: results}, nil
+	}
+	return gen.RestartDNS200JSONResponse{Results: results}, nil
 }
 
 // blockingJSON reports Pi-hole's blocking state, with anything it doesn't document as unknown, and the timer in

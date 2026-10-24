@@ -385,7 +385,7 @@ export interface paths {
         get: operations["getBlocking"];
         /**
          * Turn blocking on or off
-         * @description Sets blocking to the given state; setting the state it already has is allowed. With `timer`, which needs `enabled` false, Pi-hole turns blocking back on after that many seconds. Audited as blocking_set.
+         * @description Sets blocking to the given state; setting the state it already has is allowed. With `timer`, which needs `enabled` false, Pi-hole turns blocking back on after that many seconds. Answers with a result per instance (see WriteResults under the schemas). Audited as blocking_set.
          */
         put: operations["setBlocking"];
         post?: never;
@@ -409,7 +409,7 @@ export interface paths {
         put?: never;
         /**
          * Restart Pi-hole's DNS resolver
-         * @description Checks that the Pi-hole is reachable, then asks it to restart its resolver. The API goes down with the resolver, so a connection that drops during the restart is a 200 with `confirmed` false rather than an error. Audited as dns_restart.
+         * @description Checks that the Pi-hole is reachable, then asks it to restart its resolver. The API goes down with the resolver, so a connection that drops during the restart is an ok result with `confirmed` false rather than a failure. Answers with a result per instance (see WriteResults under the schemas). Audited as dns_restart.
          */
         post: operations["restartDNS"];
         delete?: never;
@@ -436,19 +436,19 @@ export interface paths {
         put?: never;
         /**
          * Add a domain to a list
-         * @description Adds an enabled entry. The groups must exist on the Pi-hole. Without `groups`, the entry goes in the Default group (ID 0), as in Pi-hole's own interface; an empty list puts it in no group. Pi-hole refusing the entry (already on that list, or not a valid domain or regex) is a 400 pihole_rejected. Audited as domain_add.
+         * @description Adds an enabled entry. The groups must exist on the Pi-hole. Without `groups`, the entry goes in the Default group (ID 0), as in Pi-hole's own interface; an empty list puts it in no group. Pi-hole refusing the entry (already on that list, or not a valid domain or regex) is a pihole_rejected failure. Answers with a result per instance (see WriteResults under the schemas). Audited as domain_add.
          */
         post: operations["addDomain"];
         /**
          * Delete a list entry
-         * @description The body names the entry by domain, type and kind, which must match it exactly. An entry that doesn't exist is a 404. Audited as domain_delete, with the entry's groups and comment.
+         * @description The body names the entry by domain, type and kind, which must match it exactly. An entry that doesn't exist is a 404. Answers with a result per instance (see WriteResults under the schemas). Audited as domain_delete, with the entry's groups and comment.
          */
         delete: operations["deleteDomain"];
         options?: never;
         head?: never;
         /**
          * Change a list entry's groups or comment
-         * @description The body names the entry by domain, type and kind, which must match it exactly, and gives the fields to change; fields left out keep their value, and so does whether the entry is enabled. An entry that doesn't exist is a 404: it is never created. Audited as domain_update, with the groups before and after.
+         * @description The body names the entry by domain, type and kind, which must match it exactly, and gives the fields to change; fields left out keep their value, and so does whether the entry is enabled. An entry that doesn't exist is a 404: it is never created. Answers with a result per instance (see WriteResults under the schemas). Audited as domain_update, with the groups before and after.
          */
         patch: operations["updateDomain"];
         trace?: never;
@@ -475,7 +475,7 @@ export interface paths {
         head?: never;
         /**
          * Change a client's groups or comment
-         * @description The body names the client by its identifier, which must match exactly, and gives the fields to change; fields left out keep their value. A client that doesn't exist is a 404: it is never created. Audited as client_update, with the groups before and after.
+         * @description The body names the client by its identifier, which must match exactly, and gives the fields to change; fields left out keep their value. A client that doesn't exist is a 404: it is never created. Answers with a result per instance (see WriteResults under the schemas). Audited as client_update, with the groups before and after.
          */
         patch: operations["updateClient"];
         trace?: never;
@@ -766,9 +766,87 @@ export interface components {
             /** @description Only with `enabled` false. Seconds until Pi-hole turns blocking back on. */
             timer?: number;
         };
+        /**
+         * @description ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+         * @enum {string}
+         */
+        WriteStatus: "ok" | "failed" | "skipped";
+        /** @description Why an instance failed or was skipped. Present exactly when the status isn't ok. */
+        WriteError: {
+            /** @description pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured. */
+            code: string;
+            /** @description Safe to show to the user. */
+            message: string;
+            /** @description For pihole_rejected, Pi-hole's own reason, when it gave one. Pi-hole's text; show it as text. */
+            pihole_message?: string;
+        };
+        /** @description The result per instance of turning blocking on or off. */
+        BlockingWriteResults: {
+            results: components["schemas"]["BlockingWriteResult"][];
+        };
+        BlockingWriteResult: {
+            /** @description The instance's name. */
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Present when ok. */
+            blocking?: components["schemas"]["BlockingStatus"];
+        };
+        /** @description The result per instance of a DNS restart. */
+        DNSRestartResults: {
+            results: components["schemas"]["DNSRestartResult"][];
+        };
         DNSRestartResult: {
-            /** @description False when the connection dropped while the restart was being requested, which happens when the restart goes ahead: check the dashboard in a few seconds. */
-            confirmed: boolean;
+            /** @description The instance's name. */
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Present when ok. False when the connection dropped while the restart was being requested, which happens when the restart goes ahead: check the dashboard in a few seconds. */
+            confirmed?: boolean;
+        };
+        /** @description The result per instance of adding or changing a list entry. */
+        DomainWriteResults: {
+            results: components["schemas"]["DomainWriteResult"][];
+        };
+        DomainWriteResult: {
+            /** @description The instance's name. */
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Present when ok. The entry as saved. */
+            entry?: components["schemas"]["Domain"];
+        };
+        /** @description The result per instance of changing a client. */
+        ClientWriteResults: {
+            results: components["schemas"]["ClientWriteResult"][];
+        };
+        ClientWriteResult: {
+            /** @description The instance's name. */
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Present when ok. The client as saved. */
+            entry?: components["schemas"]["PiholeClient"];
+        };
+        /** @description The result per instance of deleting a list entry. */
+        DeleteResults: {
+            results: components["schemas"]["DeleteResult"][];
+        };
+        DeleteResult: {
+            /** @description The instance's name. */
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
         };
         DomainList: {
             domains: components["schemas"]["Domain"][];
@@ -977,7 +1055,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description A field is invalid (code validation_failed), or the Pi-hole refused the request's content (code pihole_rejected): a duplicate entry, say, or a domain it doesn't accept. For pihole_rejected, `details.instance` names the instance and `details.pihole_message` has Pi-hole's reason, which is Pi-hole's text: show it as text. */
+        /** @description A field is invalid (code validation_failed), or the Pi-hole refused the request's content (code pihole_rejected): a duplicate entry, say, or a domain it doesn't accept. For pihole_rejected, `details.instance` names the instance and `details.pihole_message` has Pi-hole's reason, which is Pi-hole's text: show it as text. On a write, a pihole_rejected answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
         InvalidOrRejected: {
             headers: {
                 [name: string]: unknown;
@@ -986,7 +1064,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The instance can't be used: its password variable isn't set (code instance_password_missing) or its settings can't be used (code instance_misconfigured). `details.instance` names it. */
+        /** @description The instance can't be used: its password variable isn't set (code instance_password_missing) or its settings can't be used (code instance_misconfigured). `details.instance` names it. On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
         TargetUnavailable: {
             headers: {
                 [name: string]: unknown;
@@ -995,7 +1073,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected) or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. The underlying error goes to the server log only. */
+        /** @description The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected) or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. The underlying error goes to the server log only. On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
         TargetPiholeFailed: {
             headers: {
                 [name: string]: unknown;
@@ -1611,13 +1689,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The blocking status after the change. */
+            /** @description Every instance succeeded; each result has the blocking status after the change. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BlockingStatus"];
+                    "application/json": components["schemas"]["BlockingWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockingWriteResults"];
                 };
             };
             400: components["responses"]["InvalidOrRejected"];
@@ -1642,13 +1729,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The restart was requested. */
+            /** @description The restart was requested on every instance. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DNSRestartResult"];
+                    "application/json": components["schemas"]["DNSRestartResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DNSRestartResults"];
                 };
             };
             400: components["responses"]["ValidationFailed"];
@@ -1706,13 +1802,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The entry as saved. */
-            201: {
+            /** @description Every instance succeeded; each result has the entry as saved. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Domain"];
+                    "application/json": components["schemas"]["DomainWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DomainWriteResults"];
                 };
             };
             400: components["responses"]["InvalidOrRejected"];
@@ -1741,12 +1846,23 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Deleted. */
-            204: {
+            /** @description Deleted on every instance. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DeleteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResults"];
+                };
             };
             400: components["responses"]["InvalidOrRejected"];
             401: components["responses"]["Unauthenticated"];
@@ -1774,13 +1890,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The entry as saved. */
+            /** @description Every instance succeeded; each result has the entry as saved. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Domain"];
+                    "application/json": components["schemas"]["DomainWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DomainWriteResults"];
                 };
             };
             400: components["responses"]["InvalidOrRejected"];
@@ -1839,13 +1964,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The client as saved. */
+            /** @description Every instance succeeded; each result has the client as saved. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PiholeClient"];
+                    "application/json": components["schemas"]["ClientWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientWriteResults"];
                 };
             };
             400: components["responses"]["InvalidOrRejected"];
