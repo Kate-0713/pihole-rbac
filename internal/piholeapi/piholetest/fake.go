@@ -98,9 +98,15 @@ type Server struct {
 
 // New starts a plain HTTP fake that accepts password. It is closed when the test ends.
 func New(t testing.TB, password string) *Server {
+	s := Start(password)
+	t.Cleanup(s.Close)
+	return s
+}
+
+// Start starts a plain HTTP fake outside a test, for the end-to-end test server. The caller closes it.
+func Start(password string) *Server {
 	s := newServer(password)
 	s.Server = httptest.NewServer(s)
-	t.Cleanup(s.Close)
 	return s
 }
 

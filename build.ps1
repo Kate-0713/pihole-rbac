@@ -14,7 +14,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'web', 'web-check', 'build', 'check-embedded', 'test', 'generate', 'generate-check', 'dev-api', 'dev-web', 'snapshot', 'clean')]
+    [ValidateSet('help', 'web', 'web-check', 'web-test', 'e2e', 'build', 'check-embedded', 'test', 'generate', 'generate-check', 'dev-api', 'dev-web', 'snapshot', 'clean')]
     [string]$Task = 'help'
 )
 
@@ -70,7 +70,7 @@ function Test-Embedded {
 try {
     switch ($Task) {
         'help' {
-            Write-Host 'Tasks: web, web-check, build, check-embedded, test, generate, generate-check, dev-api, dev-web, snapshot, clean'
+            Write-Host 'Tasks: web, web-check, web-test, e2e, build, check-embedded, test, generate, generate-check, dev-api, dev-web, snapshot, clean'
         }
         'web' {
             Install-WebDeps
@@ -79,6 +79,17 @@ try {
         'web-check' {
             Install-WebDeps
             Invoke-Native 'npm' @('--prefix', 'web', 'run', 'check')
+        }
+        'web-test' {
+            Install-WebDeps
+            Invoke-Native 'npm' @('--prefix', 'web', 'test')
+        }
+        'e2e' {
+            # Builds first, as the Makefile's e2e depends on build. Playwright downloads its Chromium once; later runs
+            # find it installed.
+            & $PSCommandPath 'build'
+            Invoke-Native 'npm' @('--prefix', 'web', 'exec', '--', 'playwright', 'install', 'chromium')
+            Invoke-Native 'npm' @('--prefix', 'web', 'run', 'e2e')
         }
         'build' {
             Install-WebDeps
@@ -135,7 +146,7 @@ try {
             Invoke-Native 'goreleaser' @('release', '--snapshot', '--clean')
         }
         'clean' {
-            foreach ($p in @('bin', 'dist', 'web\build\app')) {
+            foreach ($p in @('bin', 'dist', 'web\build\app', 'web\test-results', 'web\playwright-report')) {
                 if (Test-Path $p) { Remove-Item -Recurse -Force $p }
             }
         }

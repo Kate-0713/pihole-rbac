@@ -24,10 +24,10 @@ API_GEN  := internal/api/gen/api.gen.go web/src/lib/api/schema.d.ts
 export CGO_ENABLED := 0
 export PIHOLE_RBAC_DATA_DIR ?= $(CURDIR)/.devdata
 
-.PHONY: help web web-check build check-embedded test generate generate-check dev-api dev-web snapshot clean
+.PHONY: help web web-check web-test e2e build check-embedded test generate generate-check dev-api dev-web snapshot clean
 
 help: ## List tasks
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-15s %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-15s %s\n", $$1, $$2}'
 
 web/node_modules: web/package-lock.json
 	npm --prefix web ci
@@ -38,6 +38,14 @@ web: web/node_modules ## Build the SvelteKit app into web/build/app
 
 web-check: web/node_modules ## Type-check the SvelteKit app
 	npm --prefix web run check
+
+web-test: web/node_modules ## Run the frontend unit tests (Vitest)
+	npm --prefix web test
+
+# Playwright downloads its Chromium once; later runs find it installed.
+e2e: build ## Run the browser tests (Playwright) against the built binary and a fake Pi-hole
+	npm --prefix web exec -- playwright install chromium
+	npm --prefix web run e2e
 
 build: web ## Build the frontend, then the binary with it embedded
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/pihole-rbac
@@ -78,4 +86,4 @@ snapshot: ## GoReleaser snapshot build into dist/
 	goreleaser release --snapshot --clean
 
 clean: ## Remove build output
-	rm -rf bin dist web/build/app
+	rm -rf bin dist web/build/app web/test-results web/playwright-report

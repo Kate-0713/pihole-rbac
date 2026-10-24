@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Kate O'Grady
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+/// <reference types="vitest/config" />
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -41,5 +42,11 @@ export default defineConfig({
 				changeOrigin: false
 			}
 		}
+	},
+	// Vitest reads this same config, so tests compile .svelte.ts modules and resolve #lib and $app as the app does.
+	// Unit tests sit next to the code as *.test.ts; the Playwright tests in e2e/ are run by Playwright, not Vitest.
+	test: {
+		include: ['src/**/*.test.ts'],
+		environment: 'node'
 	}
 });
