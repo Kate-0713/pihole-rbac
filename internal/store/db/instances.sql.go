@@ -26,6 +26,17 @@ func (q *Queries) AddInstanceGroupMember(ctx context.Context, arg AddInstanceGro
 	return err
 }
 
+const countClientResetTargetsForGroup = `-- name: CountClientResetTargetsForGroup :one
+SELECT COUNT(*) FROM client_reset_targets WHERE group_id = ?
+`
+
+func (q *Queries) CountClientResetTargetsForGroup(ctx context.Context, groupID sql.NullInt64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countClientResetTargetsForGroup, groupID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countClientResetTargetsForInstance = `-- name: CountClientResetTargetsForInstance :one
 SELECT COUNT(*) FROM client_reset_targets WHERE instance_id = ?
 `
@@ -99,6 +110,15 @@ func (q *Queries) DeleteInstance(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteInstanceGroup = `-- name: DeleteInstanceGroup :exec
+DELETE FROM instance_groups WHERE id = ?
+`
+
+func (q *Queries) DeleteInstanceGroup(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteInstanceGroup, id)
+	return err
+}
+
 const getInstance = `-- name: GetInstance :one
 SELECT id, name, base_url, env_name, tls_mode, ca_file, enabled, created_at, password_ciphertext, password_nonce, password_key_id, password_updated_at, password_updated_by FROM instances WHERE id = ?
 `
@@ -120,6 +140,23 @@ func (q *Queries) GetInstance(ctx context.Context, id int64) (Instance, error) {
 		&i.PasswordKeyID,
 		&i.PasswordUpdatedAt,
 		&i.PasswordUpdatedBy,
+	)
+	return i, err
+}
+
+const getInstanceGroup = `-- name: GetInstanceGroup :one
+SELECT id, name, mode, primary_instance_id, created_at FROM instance_groups WHERE id = ?
+`
+
+func (q *Queries) GetInstanceGroup(ctx context.Context, id int64) (InstanceGroup, error) {
+	row := q.db.QueryRowContext(ctx, getInstanceGroup, id)
+	var i InstanceGroup
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Mode,
+		&i.PrimaryInstanceID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -207,6 +244,33 @@ func (q *Queries) ListInstanceEnvNames(ctx context.Context) ([]sql.NullString, e
 			return nil, err
 		}
 		items = append(items, env_name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInstanceGroupMembers = `-- name: ListInstanceGroupMembers :many
+SELECT instance_id FROM instance_group_members WHERE group_id = ? ORDER BY instance_id
+`
+
+func (q *Queries) ListInstanceGroupMembers(ctx context.Context, groupID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listInstanceGroupMembers, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var instance_id int64
+		if err := rows.Scan(&instance_id); err != nil {
+			return nil, err
+		}
+		items = append(items, instance_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -321,6 +385,36 @@ func (q *Queries) ListInstances(ctx context.Context) ([]Instance, error) {
 	return items, nil
 }
 
+const listRolesWithAnyGrantOnGroup = `-- name: ListRolesWithAnyGrantOnGroup :many
+SELECT DISTINCT r.name FROM role_grants g JOIN roles r ON r.id = g.role_id
+WHERE g.group_id = ?
+ORDER BY r.name
+`
+
+// What still refers to a group, so a refused delete can say where it is used.
+func (q *Queries) ListRolesWithAnyGrantOnGroup(ctx context.Context, groupID sql.NullInt64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listRolesWithAnyGrantOnGroup, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRolesWithGrantsOnInstance = `-- name: ListRolesWithGrantsOnInstance :many
 SELECT DISTINCT r.name FROM role_grants g JOIN roles r ON r.id = g.role_id
 WHERE g.instance_id = ?
@@ -349,6 +443,20 @@ func (q *Queries) ListRolesWithGrantsOnInstance(ctx context.Context, instanceID 
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeInstanceGroupMember = `-- name: RemoveInstanceGroupMember :exec
+DELETE FROM instance_group_members WHERE group_id = ? AND instance_id = ?
+`
+
+type RemoveInstanceGroupMemberParams struct {
+	GroupID    int64
+	InstanceID int64
+}
+
+func (q *Queries) RemoveInstanceGroupMember(ctx context.Context, arg RemoveInstanceGroupMemberParams) error {
+	_, err := q.db.ExecContext(ctx, removeInstanceGroupMember, arg.GroupID, arg.InstanceID)
+	return err
 }
 
 const setInstanceEnabled = `-- name: SetInstanceEnabled :exec
@@ -412,6 +520,29 @@ func (q *Queries) UpdateInstance(ctx context.Context, arg UpdateInstanceParams) 
 		arg.EnvName,
 		arg.TlsMode,
 		arg.CaFile,
+		arg.ID,
+	)
+	return err
+}
+
+const updateInstanceGroup = `-- name: UpdateInstanceGroup :exec
+UPDATE instance_groups SET name = ?, mode = ?, primary_instance_id = ? WHERE id = ?
+`
+
+type UpdateInstanceGroupParams struct {
+	Name              string
+	Mode              string
+	PrimaryInstanceID sql.NullInt64
+	ID                int64
+}
+
+// The mode and primary change together, as the table's CHECK requires; a new mode reaches the members' group_mode
+// through the composite foreign key's ON UPDATE CASCADE.
+func (q *Queries) UpdateInstanceGroup(ctx context.Context, arg UpdateInstanceGroupParams) error {
+	_, err := q.db.ExecContext(ctx, updateInstanceGroup,
+		arg.Name,
+		arg.Mode,
+		arg.PrimaryInstanceID,
 		arg.ID,
 	)
 	return err

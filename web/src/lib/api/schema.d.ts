@@ -388,6 +388,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instance-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the instance groups
+         * @description Every instance group, by name, with its mode, its members (by name, with whether each is enabled) and, for a mirrored group, its primary.
+         */
+        get: operations["listInstanceGroups"];
+        put?: never;
+        /**
+         * Add an instance group
+         * @description An independent group is a label for organising instances and scoping grants: a grant on it covers each current member. A mirrored group treats its members as one Pi-hole: it is a target (`g-<id>`), reads come from its primary and writes go to every enabled member. A mirrored group needs a primary, which must be a member; an independent group has none. An instance can be in at most one mirrored group. Audited as group_create.
+         */
+        post: operations["createInstanceGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instance-groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        /** One instance group */
+        get: operations["getInstanceGroup"];
+        /**
+         * Change an instance group
+         * @description Replaces the group's name, mode, members and primary, under the same rules as adding one. A mirrored group can't become independent while a role holds a mirrored-group permission (drift.view, drift.reconcile) on it (code invariant_violated, with `details.roles`). Members added to an independent group are covered by its grants at once, and members removed lose them. Audited as group_update, with the fields that changed and the members added and removed.
+         */
+        put: operations["updateInstanceGroup"];
+        post?: never;
+        /**
+         * Delete an instance group
+         * @description Removes the group and its memberships; the instances themselves are untouched. Refused with 409 conflict while a role grant or a client-reset target refers to the group; the message lists them, and `details` has `roles` and `client_reset_targets`. Audited as group_delete.
+         */
+        delete: operations["deleteInstanceGroup"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -1220,6 +1272,45 @@ export interface components {
             /** @description The underlying error, such as a TLS or connection error. Never contains the password. */
             detail?: string;
         };
+        InstanceGroupInput: {
+            /** @description Unique, ignoring case. */
+            name: string;
+            /** @enum {string} */
+            mode: "independent" | "mirrored";
+            /** @description The member instances' IDs. A mirrored group needs at least its primary. */
+            members: number[];
+            /**
+             * Format: int64
+             * @description Required for a mirrored group, and must be one of its members: the reference for reads and drift checks. Must be absent for an independent group.
+             */
+            primary_instance_id?: number;
+        };
+        InstanceGroup: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @enum {string} */
+            mode: "independent" | "mirrored";
+            /**
+             * Format: int64
+             * @description The primary, for a mirrored group. Absent for an independent group.
+             */
+            primary_instance_id?: number;
+            /** @description By name. */
+            members: components["schemas"]["InstanceGroupMember"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        InstanceGroupMember: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description A disabled member is left out of everything done through a mirrored group. */
+            enabled: boolean;
+        };
+        InstanceGroupList: {
+            groups: components["schemas"]["InstanceGroup"][];
+        };
         /** @description One permission within one scope. */
         Grant: {
             /**
@@ -1840,6 +1931,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The change conflicts with existing data (code conflict): the name is taken, or an instance is already in another mirrored group (`details.field` members, `details.instance` and `details.group` name them); or a mirrored group would become independent while roles hold mirrored-group permissions on it (code invariant_violated, with `details.roles`). */
+        InstanceGroupConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The change conflicts with existing data, such as a name already taken (code conflict); it would break an invariant, such as changing the builtin admin role or deleting a role in use (code invariant_violated); or it would take away the caller's own roles.manage or users.manage and needs `confirm=true` (code confirmation_required, with `details.would_lose`). */
         RoleConflict: {
             headers: {
@@ -1918,6 +2018,8 @@ export interface components {
     parameters: {
         /** @description The instance's ID. */
         InstanceID: number;
+        /** @description The instance group's ID. */
+        GroupID: number;
         /** @description The role's ID. */
         RoleID: number;
         /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
@@ -2511,6 +2613,146 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listInstanceGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The groups. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceGroupList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    createInstanceGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceGroupInput"];
+            };
+        };
+        responses: {
+            /** @description The new group. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceGroup"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["InstanceGroupConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getInstanceGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The group. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceGroup"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateInstanceGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceGroupInput"];
+            };
+        };
+        responses: {
+            /** @description The group as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceGroup"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["InstanceGroupConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteInstanceGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             503: components["responses"]["SetupRequired"];
         };
     };

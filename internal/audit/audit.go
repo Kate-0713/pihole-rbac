@@ -71,6 +71,11 @@ const (
 	ActionInstancePassword = "instance_password" // a new app password stored; never the value
 	ActionInstanceTest     = "instance_test"
 
+	// Instance groups.
+	ActionGroupCreate = "group_create"
+	ActionGroupUpdate = "group_update"
+	ActionGroupDelete = "group_delete"
+
 	// Pi-hole writes, recorded after the call with the instance and its result. Target is the API target (i-<id>);
 	// the detail names the item. A write Pi-hole refused is a failure with its message.
 	ActionBlockingSet  = "blocking_set"

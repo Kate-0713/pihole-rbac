@@ -54,6 +54,11 @@ var routePermission = map[string]string{
 	"POST /api/v1/instances/{id}/enable":  string(rbac.InstancesManage),
 	"POST /api/v1/instances/{id}/disable": string(rbac.InstancesManage),
 	"PUT /api/v1/instances/{id}/password": string(rbac.InstancesManage),
+	"GET /api/v1/instance-groups":         string(rbac.InstancesManage),
+	"POST /api/v1/instance-groups":        string(rbac.InstancesManage),
+	"GET /api/v1/instance-groups/{id}":    string(rbac.InstancesManage),
+	"PUT /api/v1/instance-groups/{id}":    string(rbac.InstancesManage),
+	"DELETE /api/v1/instance-groups/{id}": string(rbac.InstancesManage),
 
 	"GET /api/v1/roles":             anyOf(rbac.RolesManage, rbac.UsersManage),
 	"POST /api/v1/roles":            string(rbac.RolesManage),

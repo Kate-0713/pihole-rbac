@@ -208,16 +208,16 @@ func (e GrantScope) Valid() bool {
 
 // Defines values for GroupScopeNameMode.
 const (
-	Independent GroupScopeNameMode = "independent"
-	Mirrored    GroupScopeNameMode = "mirrored"
+	GroupScopeNameModeIndependent GroupScopeNameMode = "independent"
+	GroupScopeNameModeMirrored    GroupScopeNameMode = "mirrored"
 )
 
 // Valid indicates whether the value is a known member of the GroupScopeNameMode enum.
 func (e GroupScopeNameMode) Valid() bool {
 	switch e {
-	case Independent:
+	case GroupScopeNameModeIndependent:
 		return true
-	case Mirrored:
+	case GroupScopeNameModeMirrored:
 		return true
 	default:
 		return false
@@ -257,6 +257,42 @@ func (e InstanceTlsMode) Valid() bool {
 	case InstanceTlsModeInsecure:
 		return true
 	case InstanceTlsModeVerify:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstanceGroupMode.
+const (
+	InstanceGroupModeIndependent InstanceGroupMode = "independent"
+	InstanceGroupModeMirrored    InstanceGroupMode = "mirrored"
+)
+
+// Valid indicates whether the value is a known member of the InstanceGroupMode enum.
+func (e InstanceGroupMode) Valid() bool {
+	switch e {
+	case InstanceGroupModeIndependent:
+		return true
+	case InstanceGroupModeMirrored:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstanceGroupInputMode.
+const (
+	InstanceGroupInputModeIndependent InstanceGroupInputMode = "independent"
+	InstanceGroupInputModeMirrored    InstanceGroupInputMode = "mirrored"
+)
+
+// Valid indicates whether the value is a known member of the InstanceGroupInputMode enum.
+func (e InstanceGroupInputMode) Valid() bool {
+	switch e {
+	case InstanceGroupInputModeIndependent:
+		return true
+	case InstanceGroupInputModeMirrored:
 		return true
 	default:
 		return false
@@ -912,6 +948,52 @@ type InstancePasswordSource string
 // InstanceTlsMode defines model for Instance.TlsMode.
 type InstanceTlsMode string
 
+// InstanceGroup defines model for InstanceGroup.
+type InstanceGroup struct {
+	CreatedAt time.Time `json:"created_at"`
+	Id        int64     `json:"id"`
+
+	// Members By name.
+	Members []InstanceGroupMember `json:"members"`
+	Mode    InstanceGroupMode     `json:"mode"`
+	Name    string                `json:"name"`
+
+	// PrimaryInstanceId The primary, for a mirrored group. Absent for an independent group.
+	PrimaryInstanceId *int64 `json:"primary_instance_id,omitempty"`
+}
+
+// InstanceGroupMode defines model for InstanceGroup.Mode.
+type InstanceGroupMode string
+
+// InstanceGroupInput defines model for InstanceGroupInput.
+type InstanceGroupInput struct {
+	// Members The member instances' IDs. A mirrored group needs at least its primary.
+	Members []int64                `json:"members"`
+	Mode    InstanceGroupInputMode `json:"mode"`
+
+	// Name Unique, ignoring case.
+	Name string `json:"name"`
+
+	// PrimaryInstanceId Required for a mirrored group, and must be one of its members: the reference for reads and drift checks. Must be absent for an independent group.
+	PrimaryInstanceId *int64 `json:"primary_instance_id,omitempty"`
+}
+
+// InstanceGroupInputMode defines model for InstanceGroupInput.Mode.
+type InstanceGroupInputMode string
+
+// InstanceGroupList defines model for InstanceGroupList.
+type InstanceGroupList struct {
+	Groups []InstanceGroup `json:"groups"`
+}
+
+// InstanceGroupMember defines model for InstanceGroupMember.
+type InstanceGroupMember struct {
+	// Enabled A disabled member is left out of everything done through a mirrored group.
+	Enabled bool   `json:"enabled"`
+	Id      int64  `json:"id"`
+	Name    string `json:"name"`
+}
+
 // InstanceHealth Present only for enabled instances.
 type InstanceHealth struct {
 	// LastError The error code of the last failure, kept after a later success.
@@ -1543,6 +1625,9 @@ type WriteStatus string
 // Confirm defines model for Confirm.
 type Confirm = bool
 
+// GroupID defines model for GroupID.
+type GroupID = int64
+
 // InstanceID defines model for InstanceID.
 type InstanceID = int64
 
@@ -1566,6 +1651,9 @@ type Forbidden = Error
 
 // InstanceConflict defines model for InstanceConflict.
 type InstanceConflict = Error
+
+// InstanceGroupConflict defines model for InstanceGroupConflict.
+type InstanceGroupConflict = Error
 
 // InvalidOrRejected defines model for InvalidOrRejected.
 type InvalidOrRejected = Error
@@ -1666,6 +1754,12 @@ type LoginJSONRequestBody = LoginRequest
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = PasswordChange
 
+// CreateInstanceGroupJSONRequestBody defines body for CreateInstanceGroup for application/json ContentType.
+type CreateInstanceGroupJSONRequestBody = InstanceGroupInput
+
+// UpdateInstanceGroupJSONRequestBody defines body for UpdateInstanceGroup for application/json ContentType.
+type UpdateInstanceGroupJSONRequestBody = InstanceGroupInput
+
 // CreateInstanceJSONRequestBody defines body for CreateInstance for application/json ContentType.
 type CreateInstanceJSONRequestBody = InstanceInput
 
@@ -1749,6 +1843,21 @@ type ServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(w http.ResponseWriter, r *http.Request)
+	// ListInstanceGroups List the instance groups
+	// (GET /api/v1/instance-groups)
+	ListInstanceGroups(w http.ResponseWriter, r *http.Request)
+	// CreateInstanceGroup Add an instance group
+	// (POST /api/v1/instance-groups)
+	CreateInstanceGroup(w http.ResponseWriter, r *http.Request)
+	// DeleteInstanceGroup Delete an instance group
+	// (DELETE /api/v1/instance-groups/{id})
+	DeleteInstanceGroup(w http.ResponseWriter, r *http.Request, id GroupID)
+	// GetInstanceGroup One instance group
+	// (GET /api/v1/instance-groups/{id})
+	GetInstanceGroup(w http.ResponseWriter, r *http.Request, id GroupID)
+	// UpdateInstanceGroup Change an instance group
+	// (PUT /api/v1/instance-groups/{id})
+	UpdateInstanceGroup(w http.ResponseWriter, r *http.Request, id GroupID)
 	// ListInstances List the Pi-hole instances
 	// (GET /api/v1/instances)
 	ListInstances(w http.ResponseWriter, r *http.Request)
@@ -2000,6 +2109,112 @@ func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListInstanceGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListInstanceGroups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListInstanceGroups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateInstanceGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateInstanceGroup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateInstanceGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteInstanceGroup operation middleware
+func (siw *ServerInterfaceWrapper) DeleteInstanceGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GroupID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteInstanceGroup(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInstanceGroup operation middleware
+func (siw *ServerInterfaceWrapper) GetInstanceGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GroupID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInstanceGroup(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateInstanceGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateInstanceGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GroupID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateInstanceGroup(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3492,6 +3707,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/test", wrapper.TestInstance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/enable", wrapper.EnableInstance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances/{id}/disable", wrapper.DisableInstance)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instance-groups", wrapper.ListInstanceGroups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instance-groups", wrapper.CreateInstanceGroup)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/instance-groups/{id}", wrapper.DeleteInstanceGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instance-groups/{id}", wrapper.GetInstanceGroup)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/instance-groups/{id}", wrapper.UpdateInstanceGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles", wrapper.ListRoles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/roles", wrapper.CreateRole)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles/catalogue", wrapper.GetRoleCatalogue)
@@ -3541,6 +3761,8 @@ type ConflictJSONResponse Error
 type ForbiddenJSONResponse Error
 
 type InstanceConflictJSONResponse Error
+
+type InstanceGroupConflictJSONResponse Error
 
 type InvalidOrRejectedJSONResponse Error
 
@@ -3942,6 +4164,468 @@ func (response GetSession401JSONResponse) VisitGetSessionResponse(w http.Respons
 type GetSession503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response GetSession503JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstanceGroupsRequestObject struct {
+}
+
+type ListInstanceGroupsResponseObject interface {
+	VisitListInstanceGroupsResponse(w http.ResponseWriter) error
+}
+
+type ListInstanceGroups200JSONResponse InstanceGroupList
+
+func (response ListInstanceGroups200JSONResponse) VisitListInstanceGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstanceGroups401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListInstanceGroups401JSONResponse) VisitListInstanceGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstanceGroups403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListInstanceGroups403JSONResponse) VisitListInstanceGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstanceGroups503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListInstanceGroups503JSONResponse) VisitListInstanceGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceGroupRequestObject struct {
+	Body *CreateInstanceGroupJSONRequestBody
+}
+
+type CreateInstanceGroupResponseObject interface {
+	VisitCreateInstanceGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateInstanceGroup201JSONResponse InstanceGroup
+
+func (response CreateInstanceGroup201JSONResponse) VisitCreateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceGroup400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response CreateInstanceGroup400JSONResponse) VisitCreateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateInstanceGroup401JSONResponse) VisitCreateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateInstanceGroup403JSONResponse) VisitCreateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceGroup409JSONResponse struct {
+	InstanceGroupConflictJSONResponse
+}
+
+func (response CreateInstanceGroup409JSONResponse) VisitCreateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceGroup415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response CreateInstanceGroup415JSONResponse) VisitCreateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInstanceGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response CreateInstanceGroup503JSONResponse) VisitCreateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstanceGroupRequestObject struct {
+	Id GroupID `json:"id"`
+}
+
+type DeleteInstanceGroupResponseObject interface {
+	VisitDeleteInstanceGroupResponse(w http.ResponseWriter) error
+}
+
+type DeleteInstanceGroup204Response struct {
+}
+
+func (response DeleteInstanceGroup204Response) VisitDeleteInstanceGroupResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteInstanceGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteInstanceGroup401JSONResponse) VisitDeleteInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstanceGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteInstanceGroup403JSONResponse) VisitDeleteInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstanceGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteInstanceGroup404JSONResponse) VisitDeleteInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstanceGroup409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteInstanceGroup409JSONResponse) VisitDeleteInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstanceGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteInstanceGroup503JSONResponse) VisitDeleteInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstanceGroupRequestObject struct {
+	Id GroupID `json:"id"`
+}
+
+type GetInstanceGroupResponseObject interface {
+	VisitGetInstanceGroupResponse(w http.ResponseWriter) error
+}
+
+type GetInstanceGroup200JSONResponse InstanceGroup
+
+func (response GetInstanceGroup200JSONResponse) VisitGetInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstanceGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetInstanceGroup401JSONResponse) VisitGetInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstanceGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetInstanceGroup403JSONResponse) VisitGetInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstanceGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetInstanceGroup404JSONResponse) VisitGetInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstanceGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetInstanceGroup503JSONResponse) VisitGetInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroupRequestObject struct {
+	Id   GroupID `json:"id"`
+	Body *UpdateInstanceGroupJSONRequestBody
+}
+
+type UpdateInstanceGroupResponseObject interface {
+	VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdateInstanceGroup200JSONResponse InstanceGroup
+
+func (response UpdateInstanceGroup200JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroup400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response UpdateInstanceGroup400JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateInstanceGroup401JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateInstanceGroup403JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateInstanceGroup404JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroup409JSONResponse struct {
+	InstanceGroupConflictJSONResponse
+}
+
+func (response UpdateInstanceGroup409JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroup415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateInstanceGroup415JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInstanceGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateInstanceGroup503JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -9326,6 +10010,21 @@ type StrictServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+	// ListInstanceGroups List the instance groups
+	// (GET /api/v1/instance-groups)
+	ListInstanceGroups(ctx context.Context, request ListInstanceGroupsRequestObject) (ListInstanceGroupsResponseObject, error)
+	// CreateInstanceGroup Add an instance group
+	// (POST /api/v1/instance-groups)
+	CreateInstanceGroup(ctx context.Context, request CreateInstanceGroupRequestObject) (CreateInstanceGroupResponseObject, error)
+	// DeleteInstanceGroup Delete an instance group
+	// (DELETE /api/v1/instance-groups/{id})
+	DeleteInstanceGroup(ctx context.Context, request DeleteInstanceGroupRequestObject) (DeleteInstanceGroupResponseObject, error)
+	// GetInstanceGroup One instance group
+	// (GET /api/v1/instance-groups/{id})
+	GetInstanceGroup(ctx context.Context, request GetInstanceGroupRequestObject) (GetInstanceGroupResponseObject, error)
+	// UpdateInstanceGroup Change an instance group
+	// (PUT /api/v1/instance-groups/{id})
+	UpdateInstanceGroup(ctx context.Context, request UpdateInstanceGroupRequestObject) (UpdateInstanceGroupResponseObject, error)
 	// ListInstances List the Pi-hole instances
 	// (GET /api/v1/instances)
 	ListInstances(ctx context.Context, request ListInstancesRequestObject) (ListInstancesResponseObject, error)
@@ -9683,6 +10382,146 @@ func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSessionResponseObject); ok {
 		if err := validResponse.VisitGetSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListInstanceGroups operation middleware
+func (sh *strictHandler) ListInstanceGroups(w http.ResponseWriter, r *http.Request) {
+	var request ListInstanceGroupsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListInstanceGroups(ctx, request.(ListInstanceGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListInstanceGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListInstanceGroupsResponseObject); ok {
+		if err := validResponse.VisitListInstanceGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateInstanceGroup operation middleware
+func (sh *strictHandler) CreateInstanceGroup(w http.ResponseWriter, r *http.Request) {
+	var request CreateInstanceGroupRequestObject
+
+	var body CreateInstanceGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateInstanceGroup(ctx, request.(CreateInstanceGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateInstanceGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateInstanceGroupResponseObject); ok {
+		if err := validResponse.VisitCreateInstanceGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteInstanceGroup operation middleware
+func (sh *strictHandler) DeleteInstanceGroup(w http.ResponseWriter, r *http.Request, id GroupID) {
+	var request DeleteInstanceGroupRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteInstanceGroup(ctx, request.(DeleteInstanceGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteInstanceGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteInstanceGroupResponseObject); ok {
+		if err := validResponse.VisitDeleteInstanceGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInstanceGroup operation middleware
+func (sh *strictHandler) GetInstanceGroup(w http.ResponseWriter, r *http.Request, id GroupID) {
+	var request GetInstanceGroupRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInstanceGroup(ctx, request.(GetInstanceGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInstanceGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInstanceGroupResponseObject); ok {
+		if err := validResponse.VisitGetInstanceGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateInstanceGroup operation middleware
+func (sh *strictHandler) UpdateInstanceGroup(w http.ResponseWriter, r *http.Request, id GroupID) {
+	var request UpdateInstanceGroupRequestObject
+
+	request.Id = id
+
+	var body UpdateInstanceGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateInstanceGroup(ctx, request.(UpdateInstanceGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateInstanceGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateInstanceGroupResponseObject); ok {
+		if err := validResponse.VisitUpdateInstanceGroupResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

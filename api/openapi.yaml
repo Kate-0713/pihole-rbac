@@ -576,6 +576,143 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/instance-groups:
+    get:
+      summary: List the instance groups
+      description: >-
+        Every instance group, by name, with its mode, its members (by name, with whether each is enabled) and, for a
+        mirrored group, its primary.
+      operationId: listInstanceGroups
+      x-permission: instances.manage
+      responses:
+        "200":
+          description: The groups.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceGroupList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add an instance group
+      description: >-
+        An independent group is a label for organising instances and scoping grants: a grant on it covers each current
+        member. A mirrored group treats its members as one Pi-hole: it is a target (`g-<id>`), reads come from its
+        primary and writes go to every enabled member. A mirrored group needs a primary, which must be a member; an
+        independent group has none. An instance can be in at most one mirrored group. Audited as group_create.
+      operationId: createInstanceGroup
+      x-permission: instances.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceGroupInput"
+      responses:
+        "201":
+          description: The new group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceGroup"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/InstanceGroupConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/instance-groups/{id}:
+    parameters:
+      - $ref: "#/components/parameters/GroupID"
+    get:
+      summary: One instance group
+      operationId: getInstanceGroup
+      x-permission: instances.manage
+      responses:
+        "200":
+          description: The group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceGroup"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Change an instance group
+      description: >-
+        Replaces the group's name, mode, members and primary, under the same rules as adding one. A mirrored group
+        can't become independent while a role holds a mirrored-group permission (drift.view, drift.reconcile) on it
+        (code invariant_violated, with `details.roles`). Members added to an independent group are covered by its
+        grants at once, and members removed lose them. Audited as group_update, with the fields that changed and the
+        members added and removed.
+      operationId: updateInstanceGroup
+      x-permission: instances.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceGroupInput"
+      responses:
+        "200":
+          description: The group as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceGroup"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InstanceGroupConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete an instance group
+      description: >-
+        Removes the group and its memberships; the instances themselves are untouched. Refused with 409 conflict while
+        a role grant or a client-reset target refers to the group; the message lists them, and `details` has `roles`
+        and `client_reset_targets`. Audited as group_delete.
+      operationId: deleteInstanceGroup
+      x-permission: instances.manage
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/roles:
     get:
       summary: List the roles
@@ -1892,6 +2029,16 @@ components:
         format: int64
         minimum: 1
 
+    GroupID:
+      name: id
+      in: path
+      required: true
+      description: The instance group's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
     RoleID:
       name: id
       in: path
@@ -2001,6 +2148,16 @@ components:
         The change conflicts with existing data or with a change made at the same time (code conflict), or the
         connection test couldn't run: the password variable isn't set (code instance_password_missing) or the settings
         can't be used (code instance_misconfigured). `details.instance` names the instance for the last two.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InstanceGroupConflict:
+      description: >-
+        The change conflicts with existing data (code conflict): the name is taken, or an instance is already in
+        another mirrored group (`details.field` members, `details.instance` and `details.group` name them); or a
+        mirrored group would become independent while roles hold mirrored-group permissions on it (code
+        invariant_violated, with `details.roles`).
       content:
         application/json:
           schema:
@@ -2465,6 +2622,86 @@ components:
         detail:
           type: string
           description: The underlying error, such as a TLS or connection error. Never contains the password.
+
+    InstanceGroupInput:
+      type: object
+      additionalProperties: false
+      required: [name, mode, members]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Unique, ignoring case.
+        mode:
+          type: string
+          enum: [independent, mirrored]
+        members:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: integer
+            format: int64
+            minimum: 1
+          description: The member instances' IDs. A mirrored group needs at least its primary.
+        primary_instance_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            Required for a mirrored group, and must be one of its members: the reference for reads and drift checks.
+            Must be absent for an independent group.
+
+    InstanceGroup:
+      type: object
+      additionalProperties: false
+      required: [id, name, mode, members, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        mode:
+          type: string
+          enum: [independent, mirrored]
+        primary_instance_id:
+          type: integer
+          format: int64
+          description: The primary, for a mirrored group. Absent for an independent group.
+        members:
+          type: array
+          description: By name.
+          items:
+            $ref: "#/components/schemas/InstanceGroupMember"
+        created_at:
+          type: string
+          format: date-time
+
+    InstanceGroupMember:
+      type: object
+      additionalProperties: false
+      required: [id, name, enabled]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        enabled:
+          type: boolean
+          description: A disabled member is left out of everything done through a mirrored group.
+
+    InstanceGroupList:
+      type: object
+      additionalProperties: false
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstanceGroup"
 
     Grant:
       type: object

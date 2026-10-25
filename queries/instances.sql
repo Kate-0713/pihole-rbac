@@ -64,3 +64,29 @@ SELECT env_name FROM instances WHERE env_name IS NOT NULL ORDER BY env_name;
 
 -- name: ListInstanceGroups :many
 SELECT * FROM instance_groups ORDER BY name COLLATE NOCASE, id;
+
+-- name: GetInstanceGroup :one
+SELECT * FROM instance_groups WHERE id = ?;
+
+-- name: ListInstanceGroupMembers :many
+SELECT instance_id FROM instance_group_members WHERE group_id = ? ORDER BY instance_id;
+
+-- The mode and primary change together, as the table's CHECK requires; a new mode reaches the members' group_mode
+-- through the composite foreign key's ON UPDATE CASCADE.
+-- name: UpdateInstanceGroup :exec
+UPDATE instance_groups SET name = ?, mode = ?, primary_instance_id = ? WHERE id = ?;
+
+-- name: RemoveInstanceGroupMember :exec
+DELETE FROM instance_group_members WHERE group_id = ? AND instance_id = ?;
+
+-- name: DeleteInstanceGroup :exec
+DELETE FROM instance_groups WHERE id = ?;
+
+-- What still refers to a group, so a refused delete can say where it is used.
+-- name: ListRolesWithAnyGrantOnGroup :many
+SELECT DISTINCT r.name FROM role_grants g JOIN roles r ON r.id = g.role_id
+WHERE g.group_id = ?
+ORDER BY r.name;
+
+-- name: CountClientResetTargetsForGroup :one
+SELECT COUNT(*) FROM client_reset_targets WHERE group_id = ?;
