@@ -8,8 +8,9 @@
 //   - seeded: setup done, with the users, roles and instances of e2e.NewFixture (one instance points at a port
 //     nothing listens on, so it shows as down).
 //
-// A control address answers GET /state with the URLs, the fresh server's setup token and the fixture, once both
-// servers are up; Playwright waits for it before running any test. Everything is removed on exit (SIGINT or
+// It also starts a fake LDAP directory and a fake Matrix homeserver. A control address answers GET /state with the
+// URLs, the fresh server's setup token and the fixture, once both servers are up (Playwright waits for it before
+// running any test), and GET /matrix with what the homeserver has received. Everything is removed on exit (SIGINT or
 // SIGTERM, or Ctrl+C); after a hard kill, the next run removes what was left.
 //
 // It runs the binary rather than the server code in-process, so the tests cover what ships: the embedded frontend,
@@ -96,6 +97,9 @@ func run() error {
 	}
 	defer directory.Close()
 	ldapFixture := ldaptest.Example(directory)
+	// A Matrix homeserver for the notifications page's tests: channels reach it over plain HTTP on the loopback.
+	homeserver := e2e.StartHomeserver()
+	defer homeserver.Close()
 	down, err := unusedAddr()
 	if err != nil {
 		return err
@@ -115,6 +119,7 @@ func run() error {
 
 	fixture := e2e.NewFixture(ph1.URL, ph2.URL, "http://"+down)
 	fixture.LDAP = &ldapFixture
+	fixture.Matrix = homeserver.Fixture()
 	if err := os.MkdirAll(seededDir, 0o700); err != nil {
 		return err
 	}
@@ -165,6 +170,10 @@ func run() error {
 	mux.HandleFunc("GET /state", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(st)
+	})
+	mux.HandleFunc("GET /matrix", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(homeserver.Messages(r.URL.Query().Get("room")))
 	})
 	ln, err := net.Listen("tcp", *control)
 	if err != nil {

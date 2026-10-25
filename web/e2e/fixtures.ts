@@ -34,6 +34,7 @@ export type State = {
 			spare_env_name: string;
 			pihole_password: string;
 			ldap: Directory;
+			matrix: { homeserver: string; token: string };
 		};
 	};
 };

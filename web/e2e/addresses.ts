@@ -8,3 +8,6 @@ export const fresh = '127.0.0.1:18081';
 export const seeded = '127.0.0.1:18082';
 
 export const stateURL = `http://${control}/state`;
+
+// What the e2e server's fake Matrix homeserver has received, for the notifications tests; ?room=<room ID> narrows it.
+export const matrixURL = `http://${control}/matrix`;

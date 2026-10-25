@@ -67,6 +67,9 @@ type Fixture struct {
 	// that saves LDAP settings and turns LDAP login on turns it off again. Its users' passwords are their username
 	// followed by "-ldap-password".
 	LDAP *ldaptest.Fixture `json:"ldap,omitempty"`
+	// Matrix is the fake homeserver the e2e server starts, for the notifications page's tests. What it received is on
+	// the control address at GET /matrix?room=<room ID>.
+	Matrix *MatrixFixture `json:"matrix,omitempty"`
 }
 
 // NewFixture returns the standard fixture for instances at the given base URLs, named pihole1, pihole2 and so on.
