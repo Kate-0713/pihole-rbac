@@ -21,6 +21,8 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
+	"github.com/Kate-0713/pihole-rbac/internal/notifications"
+	"github.com/Kate-0713/pihole-rbac/internal/notify"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
@@ -153,11 +155,23 @@ func serve() error {
 	drift := &instances.Drift{Service: instanceService, Logger: logger}
 	go drift.Run(ctx)
 
+	// Notification channels: every audit entry reaches the notifier once its transaction has committed, and it sends
+	// to the channels that want it in the background. A guard message that can't be delivered is audited.
+	notifier := &notify.Notifier{Logger: logger}
+	channels := &notifications.Service{Store: st, Audit: auditLog, Secrets: sec, Notifier: notifier, Logger: logger}
+	notifier.Failed = channels.GuardFailed
+	if err := channels.Reload(ctx); err != nil {
+		return err
+	}
+	auditLog.SetSink(notifier.Notify)
+	go notifier.Run(ctx)
+
 	server := api.New(api.Options{
 		Store:          st,
 		Sessions:       sessions,
 		Auth:           login.Authenticator(),
 		LoginSettings:  login,
+		Notifications:  channels,
 		Audit:          auditLog,
 		Secrets:        sec,
 		Instances:      instanceService,
@@ -242,6 +256,6 @@ func logSecrets(logger *slog.Logger, sec *secrets.Manager) {
 	}
 	logger.Info("secrets loaded", attrs...)
 	if sec.Cipher() == nil {
-		logger.Warn("PIHOLE_RBAC_SECRET_KEY is not set: notification credentials can't be stored until it is")
+		logger.Warn("PIHOLE_RBAC_SECRET_KEY is not set: Pi-hole passwords, the LDAP bind password and notification secrets can't be stored until it is")
 	}
 }

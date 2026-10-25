@@ -62,6 +62,12 @@ func (s *Server) ReloadSecrets(ctx context.Context, _ gen.ReloadSecretsRequestOb
 	if s.Instances != nil {
 		rebuilt = s.Instances.Pool.ReloadPasswords()
 	}
+	// A channel's variable, or the master key its stored secret is read with, may have changed.
+	if s.Notifications != nil {
+		if err := s.Notifications.Reload(ctx); err != nil {
+			s.Logger.Error("rebuilding notification routes after a reload", "err", err)
+		}
+	}
 
 	out := gen.ReloadResult{
 		Changed:      append([]string{}, res.Changed...),

@@ -23,6 +23,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
+	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
@@ -57,6 +58,7 @@ type Options struct {
 	Drift          *instances.Drift       // mirrored groups' drift reports; nil in tests that don't need them
 	Roles          *rbac.Manager          // changes to roles, grants, user roles, LDAP mappings and users
 	LoginSettings  *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
+	Notifications  *notifications.Service // notification channels; nil in tests that don't need them
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables

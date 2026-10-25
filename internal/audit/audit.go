@@ -98,6 +98,15 @@ const (
 
 	// System.
 	ActionConfigReload = "config_reload" // secrets were reloaded; the detail lists the names that changed or failed
+	// Notification channels. The detail lists what changed; a secret shows as stored or confirmed, never its value.
+	ActionChannelCreate = "channel_create"
+	ActionChannelUpdate = "channel_update"
+	ActionChannelSecret = "channel_secret"
+	ActionChannelDelete = "channel_delete"
+	// A warning to a channel's old destination (that it was changed, disabled or deleted) still failed after its
+	// retries. Written by the app, as SystemUser, with who made the change.
+	ActionNotificationFailed = "notification_failed"
+
 	// Audit rows older than the retention were deleted; the detail has how many and the cutoff. Written only when
 	// something was deleted.
 	ActionAuditPrune = "audit_prune"

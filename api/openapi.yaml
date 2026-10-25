@@ -1608,6 +1608,226 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/notifications/channels:
+    get:
+      summary: List the notification channels
+      description: Every channel, by name, with its events and where its secret comes from; never the secret.
+      operationId: listChannels
+      x-permission: notifications.manage
+      responses:
+        "200":
+          description: The channels.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add a notification channel
+      description: >-
+        A Discord channel's secret is its webhook URL, which must be https://discord.com/api/webhooks/<id>/<token>
+        (or discordapp.com). A Matrix channel's secret is the access token of the account that posts, and `matrix`
+        gives the homeserver and room. The secret is stored, encrypted under the master key, from `secret`, or read
+        from PIHOLE_RBAC_NOTIFY_<env_name>_SECRET (or _FILE), which overrides a stored one; if that variable is
+        already set, `secret` is required and must match it. A channel without a secret can't send until it has one.
+        Audited as channel_create.
+      operationId: createChannel
+      x-permission: notifications.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelInput"
+      responses:
+        "201":
+          description: The new channel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/notifications/channels/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelID"
+    get:
+      summary: One notification channel
+      operationId: getChannel
+      x-permission: notifications.manage
+      responses:
+        "200":
+          description: The channel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Change a notification channel
+      description: >-
+        Replaces the channel's settings and events; its kind can't change. A Matrix channel with a token needs
+        `secret` again when its homeserver or `allow_http` changes, and any channel needs it when it starts using a
+        variable that is set (400 validation_failed with details.field secret otherwise). When the destination or
+        secret changes, the channel is disabled, or events are taken away from an enabled channel, a warning goes
+        to the old destination with the old secret. Audited as channel_update.
+      operationId: updateChannel
+      x-permission: notifications.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelInput"
+      responses:
+        "200":
+          description: The channel as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a notification channel
+      description: Deletes the channel and its events. An enabled channel is told first. Audited as channel_delete.
+      operationId: deleteChannel
+      x-permission: notifications.manage
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/notifications/channels/{id}/secret:
+    parameters:
+      - $ref: "#/components/parameters/ChannelID"
+    put:
+      summary: Store a new secret for a notification channel
+      description: >-
+        Stores a new webhook URL or access token, encrypted under the master key, and tells the old destination.
+        Refused with 409 conflict when the channel's variable is set (it overrides a stored secret) or when no
+        master key is set. Audited as channel_secret. The secret is never returned.
+      operationId: setChannelSecret
+      x-permission: notifications.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSecret"
+      responses:
+        "200":
+          description: The channel, with its new secret.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/notifications/channels/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/ChannelID"
+    post:
+      summary: Send a test message
+      description: >-
+        Posts a test message to the channel's saved destination and waits for the answer, enabled or not. A
+        destination that refuses it is a 200 with ok false, the status and, for Matrix, the errcode; never the
+        destination's answer. 409 conflict when the channel has no secret it can use. Not audited.
+      operationId: testChannel
+      x-permission: notifications.manage
+      responses:
+        "200":
+          description: How it went.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelTestResult"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/notifications/events:
+    get:
+      summary: The events a channel can receive
+      description: Every audit action, grouped, plus protected_group_add.
+      operationId: listNotificationEvents
+      x-permission: notifications.manage
+      responses:
+        "200":
+          description: The events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationEventList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/audit:
     get:
       summary: Read the audit log
@@ -2295,6 +2515,16 @@ components:
       schema:
         type: string
         format: date-time
+
+    ChannelID:
+      name: id
+      in: path
+      required: true
+      description: The notification channel's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
 
     InstanceID:
       name: id
@@ -3969,6 +4199,168 @@ components:
         next_cursor:
           type: string
           description: Pass as `cursor` for the next page. Absent on the last page.
+
+    ChannelKind:
+      type: string
+      enum: [discord, matrix]
+
+    ChannelMatrix:
+      type: object
+      additionalProperties: false
+      required: [homeserver, room_id]
+      properties:
+        homeserver:
+          type: string
+          maxLength: 2048
+          description: >-
+            The homeserver's base URL. It may be on the local network; it must be https unless allow_http is on.
+        room_id:
+          type: string
+          maxLength: 255
+          description: The room's internal ID, like !abcdefg:example.org (not an alias).
+        allow_http:
+          type: boolean
+          default: false
+          description: Allow a plain http:// homeserver, so the token crosses the network unencrypted.
+
+    ChannelInput:
+      type: object
+      additionalProperties: false
+      required: [kind, name, enabled, events]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ChannelKind"
+        name:
+          type: string
+          maxLength: 64
+        env_name:
+          type: string
+          maxLength: 64
+          description: >-
+            Optional. A secret in PIHOLE_RBAC_NOTIFY_<env_name>_SECRET (or _FILE) then overrides the stored one.
+            Empty or absent for none.
+        enabled:
+          type: boolean
+        events:
+          type: array
+          maxItems: 200
+          description: The events the channel receives, from GET /notifications/events.
+          items:
+            type: string
+        matrix:
+          $ref: "#/components/schemas/ChannelMatrix"
+        secret:
+          type: string
+          maxLength: 2048
+          writeOnly: true
+          description: >-
+            Write-only. The Discord webhook URL or the Matrix access token. See createChannel and updateChannel for
+            when it is required.
+
+    ChannelSecret:
+      type: object
+      additionalProperties: false
+      required: [secret]
+      properties:
+        secret:
+          type: string
+          maxLength: 2048
+          writeOnly: true
+
+    Channel:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, enabled, events, secret_source, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        kind:
+          $ref: "#/components/schemas/ChannelKind"
+        name:
+          type: string
+        env_name:
+          type: string
+        enabled:
+          type: boolean
+        events:
+          type: array
+          items:
+            type: string
+        webhook_id:
+          type: string
+          description: Discord only, once it has a webhook URL. The webhook's ID, which isn't secret.
+        matrix:
+          $ref: "#/components/schemas/ChannelMatrix"
+        secret_source:
+          type: string
+          enum: [environment, stored, none]
+        secret_variable:
+          type: string
+          description: The variable that overrides the stored secret, when the channel has an env name.
+        secret_updated_at:
+          type: string
+          format: date-time
+          description: When the stored secret was set. Absent without one.
+        secret_updated_by:
+          type: string
+        secret_problem:
+          type: string
+          description: Why the channel can't send, when it can't (no secret, or one that can't be read).
+        created_at:
+          type: string
+          format: date-time
+
+    ChannelList:
+      type: object
+      additionalProperties: false
+      required: [channels, can_store_secrets]
+      properties:
+        can_store_secrets:
+          type: boolean
+          description: Whether a master key is set, without which secrets can't be stored.
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/Channel"
+
+    ChannelTestResult:
+      type: object
+      additionalProperties: false
+      required: [ok, message]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: integer
+          description: The destination's HTTP status. Absent when it didn't answer.
+        errcode:
+          type: string
+          description: Matrix's errcode, such as M_FORBIDDEN, when it sent one.
+        message:
+          type: string
+
+    NotificationEvent:
+      type: object
+      additionalProperties: false
+      required: [name, group, description]
+      properties:
+        name:
+          type: string
+        group:
+          type: string
+        description:
+          type: string
+
+    NotificationEventList:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationEvent"
 
     AuditList:
       type: object

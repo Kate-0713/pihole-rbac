@@ -924,6 +924,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the notification channels
+         * @description Every channel, by name, with its events and where its secret comes from; never the secret.
+         */
+        get: operations["listChannels"];
+        put?: never;
+        /**
+         * Add a notification channel
+         * @description A Discord channel's secret is its webhook URL, which must be https://discord.com/api/webhooks/<id>/<token> (or discordapp.com). A Matrix channel's secret is the access token of the account that posts, and `matrix` gives the homeserver and room. The secret is stored, encrypted under the master key, from `secret`, or read from PIHOLE_RBAC_NOTIFY_<env_name>_SECRET (or _FILE), which overrides a stored one; if that variable is already set, `secret` is required and must match it. A channel without a secret can't send until it has one. Audited as channel_create.
+         */
+        post: operations["createChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        /** One notification channel */
+        get: operations["getChannel"];
+        /**
+         * Change a notification channel
+         * @description Replaces the channel's settings and events; its kind can't change. A Matrix channel with a token needs `secret` again when its homeserver or `allow_http` changes, and any channel needs it when it starts using a variable that is set (400 validation_failed with details.field secret otherwise). When the destination or secret changes, the channel is disabled, or events are taken away from an enabled channel, a warning goes to the old destination with the old secret. Audited as channel_update.
+         */
+        put: operations["updateChannel"];
+        post?: never;
+        /**
+         * Delete a notification channel
+         * @description Deletes the channel and its events. An enabled channel is told first. Audited as channel_delete.
+         */
+        delete: operations["deleteChannel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/channels/{id}/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Store a new secret for a notification channel
+         * @description Stores a new webhook URL or access token, encrypted under the master key, and tells the old destination. Refused with 409 conflict when the channel's variable is set (it overrides a stored secret) or when no master key is set. Audited as channel_secret. The secret is never returned.
+         */
+        put: operations["setChannelSecret"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/channels/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test message
+         * @description Posts a test message to the channel's saved destination and waits for the answer, enabled or not. A destination that refuses it is a 200 with ok false, the status and, for Matrix, the errcode; never the destination's answer. 409 conflict when the channel has no secret it can use. Not audited.
+         */
+        post: operations["testChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The events a channel can receive
+         * @description Every audit action, grouped, plus protected_group_add.
+         */
+        get: operations["listNotificationEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -1874,6 +1992,81 @@ export interface components {
             /** @description Pass as `cursor` for the next page. Absent on the last page. */
             next_cursor?: string;
         };
+        /** @enum {string} */
+        ChannelKind: "discord" | "matrix";
+        ChannelMatrix: {
+            /** @description The homeserver's base URL. It may be on the local network; it must be https unless allow_http is on. */
+            homeserver: string;
+            /** @description The room's internal ID, like !abcdefg:example.org (not an alias). */
+            room_id: string;
+            /**
+             * @description Allow a plain http:// homeserver, so the token crosses the network unencrypted.
+             * @default false
+             */
+            allow_http: boolean;
+        };
+        ChannelInput: {
+            kind: components["schemas"]["ChannelKind"];
+            name: string;
+            /** @description Optional. A secret in PIHOLE_RBAC_NOTIFY_<env_name>_SECRET (or _FILE) then overrides the stored one. Empty or absent for none. */
+            env_name?: string;
+            enabled: boolean;
+            /** @description The events the channel receives, from GET /notifications/events. */
+            events: string[];
+            matrix?: components["schemas"]["ChannelMatrix"];
+            /** @description Write-only. The Discord webhook URL or the Matrix access token. See createChannel and updateChannel for when it is required. */
+            secret?: string;
+        };
+        ChannelSecret: {
+            secret: string;
+        };
+        Channel: {
+            /** Format: int64 */
+            id: number;
+            kind: components["schemas"]["ChannelKind"];
+            name: string;
+            env_name?: string;
+            enabled: boolean;
+            events: string[];
+            /** @description Discord only, once it has a webhook URL. The webhook's ID, which isn't secret. */
+            webhook_id?: string;
+            matrix?: components["schemas"]["ChannelMatrix"];
+            /** @enum {string} */
+            secret_source: "environment" | "stored" | "none";
+            /** @description The variable that overrides the stored secret, when the channel has an env name. */
+            secret_variable?: string;
+            /**
+             * Format: date-time
+             * @description When the stored secret was set. Absent without one.
+             */
+            secret_updated_at?: string;
+            secret_updated_by?: string;
+            /** @description Why the channel can't send, when it can't (no secret, or one that can't be read). */
+            secret_problem?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ChannelList: {
+            /** @description Whether a master key is set, without which secrets can't be stored. */
+            can_store_secrets: boolean;
+            channels: components["schemas"]["Channel"][];
+        };
+        ChannelTestResult: {
+            ok: boolean;
+            /** @description The destination's HTTP status. Absent when it didn't answer. */
+            status?: number;
+            /** @description Matrix's errcode, such as M_FORBIDDEN, when it sent one. */
+            errcode?: string;
+            message: string;
+        };
+        NotificationEvent: {
+            name: string;
+            group: string;
+            description: string;
+        };
+        NotificationEventList: {
+            events: components["schemas"]["NotificationEvent"][];
+        };
         AuditList: {
             entries: components["schemas"]["AuditEntry"][];
             /** @description Pass as `cursor` for the next page. Absent on the last page. */
@@ -2370,6 +2563,8 @@ export interface components {
         AuditFrom: string;
         /** @description Only entries before this time. Must be after `from` when both are given. */
         AuditTo: string;
+        /** @description The notification channel's ID. */
+        ChannelID: number;
         /** @description The instance's ID. */
         InstanceID: number;
         /** @description The instance group's ID. */
@@ -3958,6 +4153,230 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listChannels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The channels. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    createChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelInput"];
+            };
+        };
+        responses: {
+            /** @description The new channel. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The channel. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelInput"];
+            };
+        };
+        responses: {
+            /** @description The channel as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setChannelSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelSecret"];
+            };
+        };
+        responses: {
+            /** @description The channel, with its new secret. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    testChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification channel's ID. */
+                id: components["parameters"]["ChannelID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How it went. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelTestResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listNotificationEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The events. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationEventList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             503: components["responses"]["SetupRequired"];
         };
     };

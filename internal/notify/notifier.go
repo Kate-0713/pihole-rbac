@@ -35,6 +35,7 @@ type Job struct {
 	Message     *Message
 	Event       string // what it's about, for logs: an event name, or "test" or "guard"
 	Guard       bool   // a final failure is passed to Notifier.Failed
+	By          string // for a guard, who made the change it warns about
 	attempt     int
 }
 
