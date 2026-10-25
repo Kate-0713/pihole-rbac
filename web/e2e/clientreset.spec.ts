@@ -75,3 +75,57 @@ test('the page needs settings.manage', async ({ page, state }) => {
 	await expect(page.getByText('You need the settings.manage permission to manage client reset.')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Edit rules' })).toHaveCount(0);
 });
+
+// The dashboard's card: a preview before running, the results afterwards, and the last run on the card.
+test('running client reset from the dashboard, after a preview', async ({ page, state }) => {
+	await openAs(page, state.seeded.fixture.admin, '/dashboard?target=i-1');
+	await apiWrite(page, 'PUT', '/api/v1/client-reset/rules', {
+		rules: [{ scope: 'instance', id: 1, comment_prefix: 'lab ', group_match: 'names', pihole_groups: ['kids'] }]
+	});
+	try {
+		await page.reload();
+		const card = page.locator('[data-slot="card"]', { has: page.getByText('Client reset', { exact: true }) });
+		await expect(card).toContainText('1 rule · change them');
+		// The test above ran pihole1 already, so the card shows that run until this one replaces it.
+
+		await card.getByRole('button', { name: 'Run now…' }).click();
+		const dialog = page.getByRole('dialog');
+		await expect(dialog).toContainText('Would reset 1 client on pihole1.');
+		const pihole1 = dialog.getByRole('region', { name: 'pihole1' });
+		await expect(pihole1).toContainText('Would reset:');
+		await expect(pihole1).toContainText('10.0.0.0/24');
+		await expect(pihole1).toContainText('Default → kids');
+		await dialog.getByRole('button', { name: 'Run now' }).click();
+		await expect(dialog.getByRole('heading', { name: 'Client reset done' })).toBeVisible();
+		await expect(dialog).toContainText('On pihole1: 1 client reset.');
+		await expect(dialog.getByRole('region', { name: 'pihole1' })).toContainText('Reset:');
+		await expect(page.getByText('Client reset on pihole1: 1 client reset.')).toBeVisible();
+		await dialog.getByRole('button', { name: 'OK' }).click();
+
+		const last = card.getByLabel('Last run');
+		await expect(last).toContainText('by admin:');
+		await expect(last).toContainText('1 client reset');
+		await expect(last).toContainText('Done');
+
+		// Run again: the preview says there's nothing to do now.
+		await card.getByRole('button', { name: 'Run now…' }).click();
+		await expect(dialog).toContainText('Nothing to reset: every matching client is already in its groups.');
+		await expect(dialog).toContainText('1 matching client was already in its groups.');
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
+	} finally {
+		await apiWrite(page, 'PATCH', '/api/v1/targets/i-1/clients', { client: '10.0.0.0/24', comment: 'lab subnet', groups: [0] });
+		await apiWrite(page, 'PUT', '/api/v1/client-reset/rules', { rules: [] });
+	}
+});
+
+test("the card says when there are no rules, and isn't shown without clientreset.run", async ({ page, state }) => {
+	await openAs(page, state.seeded.fixture.admin, '/dashboard?target=i-2');
+	await expect(page.getByText("No client reset rules are set here, so there's nothing to run.")).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Add rules' })).toHaveAttribute('href', '/admin/client-reset');
+	await expect(page.getByRole('button', { name: 'Run now…' })).toHaveCount(0);
+
+	await page.context().clearCookies();
+	await openAs(page, state.seeded.fixture.one_instance, '/dashboard?target=i-1');
+	await expect(page.getByText('Blocking', { exact: true })).toBeVisible();
+	await expect(page.getByText('Client reset', { exact: true })).toHaveCount(0);
+});

@@ -5,6 +5,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import BlockingControl from '#lib/components/app/blocking-control.svelte';
+	import ClientResetCard from '#lib/components/app/client-reset-card.svelte';
 	import DnsRestart from '#lib/components/app/dns-restart.svelte';
 	import HealthDot from '#lib/components/app/health-dot.svelte';
 	import MemberStatus from '#lib/components/app/member-status.svelte';
@@ -155,6 +156,18 @@
 				</dl>
 			</Card.Content>
 		</Card.Root>
+	{/if}
+
+	<!-- Last, as it's used less often than the rest; shown whether or not the Pi-holes answer, as its data comes from
+	     the app's own database. -->
+	{#if data.resets}
+		<ClientResetCard
+			target={data.target}
+			name={target.name}
+			runs={data.resets}
+			canManage={can('settings.manage')}
+			onchange={refresh}
+		/>
 	{/if}
 {:else}
 	<p class="text-muted-foreground text-sm">
