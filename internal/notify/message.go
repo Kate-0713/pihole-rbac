@@ -135,7 +135,7 @@ func (m *Message) HTML() string {
 
 // itemKeys are the detail keys that name what an action was about, in the order tried. Only these are copied into a
 // message: the rest of a detail can be long, and none of it is needed to know what happened.
-var itemKeys = []string{"domain", "client", "username", "name"}
+var itemKeys = []string{"domain", "client", "username", "name", "summary"}
 
 // ForEntry describes an audit entry in one line: who did what, to what, on which instance, and how it went. A failure
 // gives its error code, never the error's text, which can name internal addresses; the message goes to a third party.
@@ -180,8 +180,13 @@ func ProtectedGroups(e audit.Entry) []string {
 	if e.Action != audit.ActionClientUpdate || e.Err != nil {
 		return nil
 	}
+	return stringList(e.Detail["protected_added"])
+}
+
+// stringList reads a list of strings from an audit detail value, as built in Go or as read back from JSON.
+func stringList(v any) []string {
 	var out []string
-	switch v := e.Detail["protected_added"].(type) {
+	switch v := v.(type) {
 	case []string:
 		out = v
 	case []any:
@@ -194,11 +199,62 @@ func ProtectedGroups(e audit.Entry) []string {
 	return out
 }
 
-// ForProtectedGroup is the alert for a client added to protected groups.
+// ProtectedAlert is one client added to protected Pi-hole groups.
+type ProtectedAlert struct {
+	Client string
+	Groups []string
+}
+
+// ProtectedClient is how a client_reset row lists a client its run put in protected groups, under "protected".
+type ProtectedClient struct {
+	Client string   `json:"client"`
+	Groups []string `json:"groups"`
+}
+
+// ProtectedAlerts returns an alert for each client an entry added to protected Pi-hole groups: the client of a
+// successful client_update, or each client a client_reset put in one. A reset that failed for some clients still
+// reset the others, and lists only those.
+func ProtectedAlerts(e audit.Entry) []ProtectedAlert {
+	switch e.Action {
+	case audit.ActionClientUpdate:
+		if groups := ProtectedGroups(e); len(groups) > 0 {
+			client, _ := e.Detail["client"].(string)
+			return []ProtectedAlert{{Client: client, Groups: groups}}
+		}
+	case audit.ActionClientReset:
+		var out []ProtectedAlert
+		switch v := e.Detail["protected"].(type) {
+		case []ProtectedClient:
+			for _, p := range v {
+				if len(p.Groups) > 0 {
+					out = append(out, ProtectedAlert{Client: p.Client, Groups: p.Groups})
+				}
+			}
+		case []any:
+			for _, item := range v {
+				m, _ := item.(map[string]any)
+				client, _ := m["client"].(string)
+				if groups := stringList(m["groups"]); len(groups) > 0 {
+					out = append(out, ProtectedAlert{Client: client, Groups: groups})
+				}
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// ForProtectedGroup is the alert for a client_update that added its client to protected groups.
 func ForProtectedGroup(e audit.Entry, groups []string) *Message {
+	client, _ := e.Detail["client"].(string)
+	return ForProtectedAlert(e, ProtectedAlert{Client: client, Groups: groups})
+}
+
+// ForProtectedAlert is the alert for one client added to protected groups.
+func ForProtectedAlert(e audit.Entry, a ProtectedAlert) *Message {
 	m := &Message{}
 	m.Text("🚨 ").Bold(e.Username).Text(" added client ")
-	client, _ := e.Detail["client"].(string)
+	client, groups := a.Client, a.Groups
 	m.Code(client).Text(" to protected group")
 	if len(groups) > 1 {
 		m.Text("s")

@@ -308,16 +308,30 @@ CREATE INDEX audit_log_user ON audit_log (user_id);
 CREATE INDEX audit_log_action ON audit_log (action);
 CREATE INDEX audit_log_instance ON audit_log (instance_id);
 
+-- Client reset rules: on an instance or a mirrored group, clients whose comment starts with comment_prefix
+-- (case-sensitive) are put in exactly the Pi-hole groups target_groups names. group_match says whether those are
+-- exact group names or name prefixes, matched on each instance when the rule runs.
 CREATE TABLE client_reset_targets (
     id             INTEGER PRIMARY KEY,
     instance_id    INTEGER REFERENCES instances (id),
     group_id       INTEGER REFERENCES instance_groups (id),
-    comment_prefix TEXT    NOT NULL DEFAULT '',
-    target_groups  TEXT    NOT NULL DEFAULT '[]'
-                   CHECK (json_valid(target_groups) AND json_type(target_groups) = 'array'),
+    comment_prefix TEXT    NOT NULL CHECK (comment_prefix <> ''),
+    group_match    TEXT    NOT NULL DEFAULT 'names' CHECK (group_match IN ('names', 'prefixes')),
+    target_groups  TEXT    NOT NULL
+                   CHECK (json_valid(target_groups) AND json_type(target_groups) = 'array'
+                          AND json_array_length(target_groups) > 0),
     CHECK ((instance_id IS NULL) <> (group_id IS NULL))
 );
 
+-- One rule per comment prefix on each instance or group. UNIQUE treats NULLs as distinct, hence two indexes.
+CREATE UNIQUE INDEX client_reset_targets_instance
+    ON client_reset_targets (instance_id, comment_prefix) WHERE instance_id IS NOT NULL;
+CREATE UNIQUE INDEX client_reset_targets_group
+    ON client_reset_targets (group_id, comment_prefix) WHERE group_id IS NOT NULL;
+
+-- One row per run of one target (an instance or a mirrored group, as the API target "i-<id>" or "g-<id>"). A
+-- scheduled pass runs each target with rules in turn, each as its own row. The target's name is copied, so history
+-- survives the instance or group being deleted.
 CREATE TABLE client_reset_runs (
     id          INTEGER PRIMARY KEY,
     started_at  INTEGER NOT NULL,
@@ -325,14 +339,20 @@ CREATE TABLE client_reset_runs (
     trigger     TEXT    NOT NULL CHECK (trigger IN ('schedule', 'manual')),
     user_id     INTEGER REFERENCES users (id) ON DELETE SET NULL,
     username    TEXT    NOT NULL DEFAULT '',
+    target      TEXT    NOT NULL CHECK (target GLOB '[ig]-[1-9]*'),
+    instance_id INTEGER REFERENCES instances (id) ON DELETE SET NULL,
+    group_id    INTEGER REFERENCES instance_groups (id) ON DELETE SET NULL,
+    target_name TEXT    NOT NULL DEFAULT '',
     status      TEXT    NOT NULL CHECK (status IN ('running', 'ok', 'partial', 'failed')),
     summary     TEXT    NOT NULL DEFAULT '{}' CHECK (json_valid(summary)),
-    CHECK ((status = 'running') = (finished_at IS NULL))
+    CHECK ((status = 'running') = (finished_at IS NULL)),
+    CHECK (instance_id IS NULL OR group_id IS NULL)
 );
 
 -- Serialises runs: at most one row can be 'running'.
 CREATE UNIQUE INDEX client_reset_runs_one_running ON client_reset_runs (status) WHERE status = 'running';
 CREATE INDEX client_reset_runs_started ON client_reset_runs (started_at);
+CREATE INDEX client_reset_runs_target ON client_reset_runs (target, id);
 
 -- The GLOB is a backstop. The app validates target_version against ^v\d+\.\d+\.\d+$.
 CREATE TABLE update_requests (

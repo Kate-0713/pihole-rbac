@@ -40,6 +40,7 @@ var actions = []ActionInfo{
 	{ActionDomainUpdate, GroupPihole, "A domain's groups or comment changed"},
 	{ActionDomainDelete, GroupPihole, "A domain removed"},
 	{ActionClientUpdate, GroupPihole, "A client's groups or comment changed"},
+	{ActionClientReset, GroupPihole, "Clients put back in their groups by a client reset, or a reset that failed"},
 	{ActionGroupReconcile, GroupPihole, "A mirrored group's member made to match the primary"},
 
 	{ActionInstanceCreate, GroupInstances, "An instance added"},
@@ -70,6 +71,7 @@ var actions = []ActionInfo{
 	{ActionConfigReload, GroupSettings, "Secrets reloaded"},
 	{ActionRotateKey, GroupSettings, "The master key was rotated on the command line"},
 	{ActionAuditPrune, GroupSettings, "Old audit entries deleted"},
+	{ActionClientResetRules, GroupSettings, "The client reset rules changed"},
 
 	{ActionChannelCreate, GroupNotifications, "A notification channel added"},
 	{ActionChannelUpdate, GroupNotifications, "A notification channel changed, enabled or disabled"},

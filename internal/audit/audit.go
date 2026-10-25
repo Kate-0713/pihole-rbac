@@ -89,6 +89,12 @@ const (
 	ActionDomainDelete = "domain_delete"
 	ActionClientUpdate = "client_update"
 
+	// Client reset: one row per instance a run changed or failed on (a run that found nothing to change writes none),
+	// listing the clients reset and those that failed, with Pi-hole groups by name. A scheduled run is SystemUser's.
+	ActionClientReset = "client_reset"
+	// The client reset rules were replaced; the detail lists the rules added and removed.
+	ActionClientResetRules = "client_reset_rules"
+
 	// Sessions.
 	ActionLDAPRecheck   = "ldap_recheck"   // an LDAP user's session roles changed, or their sessions ended, at a recheck
 	ActionSessionRevoke = "session_revoke" // a session was ended from the sessions page, by its user or an admin

@@ -389,7 +389,7 @@ func TestConstraints(t *testing.T) {
 			[]string{`INSERT INTO role_grants (role_id, permission, scope_type, group_id) VALUES (2, 'domains.view', 'group', 2)`},
 			`DELETE FROM instance_groups WHERE id = 2`, ForeignKey},
 		{"group referenced by a client reset target",
-			[]string{`INSERT INTO client_reset_targets (group_id) VALUES (2)`},
+			[]string{`INSERT INTO client_reset_targets (group_id, comment_prefix, target_groups) VALUES (2, 'TEST-', '["x"]')`},
 			`DELETE FROM instance_groups WHERE id = 2`, ForeignKey},
 		{"unreferenced group deletes with its members", nil, `DELETE FROM instance_groups WHERE id = 2`, NotConstraint},
 		{"role held by a user", nil, `DELETE FROM roles WHERE id = 2`, ForeignKey},
@@ -439,9 +439,23 @@ func TestConstraints(t *testing.T) {
 		// Everything else
 		{"one setup_state row", nil, `INSERT INTO setup_state (id) VALUES (2)`, Check},
 		{"one running client reset", nil,
-			`INSERT INTO client_reset_runs (started_at, trigger, status) VALUES (0, 'manual', 'running'), (1, 'schedule', 'running')`, Unique},
+			`INSERT INTO client_reset_runs (started_at, trigger, target, status) VALUES (0, 'manual', 'i-1', 'running'), (1, 'schedule', 'g-2', 'running')`, Unique},
 		{"client reset target is an instance or a group", nil,
-			`INSERT INTO client_reset_targets (instance_id, group_id) VALUES (1, 2)`, Check},
+			`INSERT INTO client_reset_targets (instance_id, group_id, comment_prefix, target_groups) VALUES (1, 2, 'TEST-', '["x"]')`, Check},
+		{"client reset rule has a prefix", nil,
+			`INSERT INTO client_reset_targets (instance_id, comment_prefix, target_groups) VALUES (1, '', '["x"]')`, Check},
+		{"client reset rule names a group", nil,
+			`INSERT INTO client_reset_targets (instance_id, comment_prefix, target_groups) VALUES (1, 'TEST-', '[]')`, Check},
+		{"client reset rule matches names or prefixes", nil,
+			`INSERT INTO client_reset_targets (instance_id, comment_prefix, group_match, target_groups) VALUES (1, 'TEST-', 'regex', '["x"]')`, Check},
+		{"one client reset rule per prefix on an instance",
+			[]string{`INSERT INTO client_reset_targets (instance_id, comment_prefix, target_groups) VALUES (1, 'TEST-', '["x"]')`},
+			`INSERT INTO client_reset_targets (instance_id, comment_prefix, target_groups) VALUES (1, 'TEST-', '["y"]')`, Unique},
+		{"one client reset rule per prefix on a group",
+			[]string{`INSERT INTO client_reset_targets (group_id, comment_prefix, target_groups) VALUES (2, 'TEST-', '["x"]')`},
+			`INSERT INTO client_reset_targets (group_id, comment_prefix, target_groups) VALUES (2, 'TEST-', '["y"]')`, Unique},
+		{"client reset run names its target", nil,
+			`INSERT INTO client_reset_runs (started_at, finished_at, trigger, target, status) VALUES (0, 1, 'manual', 'x-1', 'ok')`, Check},
 		{"settings value is JSON", nil, `INSERT INTO settings (key, value, updated_at) VALUES ('k', '{nope', 0)`, Check},
 		{"session hash is 32 bytes", nil,
 			`INSERT INTO sessions (id_hash, public_id, user_id, created_at, expires_at, last_seen_at, roles_checked_at)
@@ -487,7 +501,8 @@ func TestHistorySurvivesDeletion(t *testing.T) {
 		fixture,
 		`INSERT INTO audit_log (id, at, user_id, username, action, instance_id, instance_name, result)
 		 VALUES (1, 0, 1, 'kate', 'domains.add', 3, 'pihole3', 'ok')`,
-		`INSERT INTO client_reset_runs (started_at, finished_at, trigger, user_id, username, status) VALUES (0, 1, 'manual', 1, 'kate', 'ok')`,
+		`INSERT INTO client_reset_runs (started_at, finished_at, trigger, user_id, username, target, instance_id, target_name, status)
+		 VALUES (0, 1, 'manual', 1, 'kate', 'i-3', 3, 'pihole3', 'ok')`,
 		`INSERT INTO update_requests (requested_at, requested_by, requested_by_name) VALUES (0, 1, 'kate')`,
 		`DELETE FROM role_grants WHERE instance_id = 3`,
 		`DELETE FROM users WHERE id = 1`,
@@ -508,7 +523,7 @@ func TestHistorySurvivesDeletion(t *testing.T) {
 		t.Errorf("audit row = user %v %q, instance %v %q, want NULL ids and the names kept", userID, username, instanceID, instanceName)
 	}
 	for _, q := range []string{
-		`SELECT count(*) FROM client_reset_runs WHERE user_id IS NULL AND username = 'kate'`,
+		`SELECT count(*) FROM client_reset_runs WHERE user_id IS NULL AND username = 'kate' AND instance_id IS NULL AND target_name = 'pihole3'`,
 		`SELECT count(*) FROM update_requests WHERE requested_by IS NULL AND requested_by_name = 'kate'`,
 	} {
 		var n int

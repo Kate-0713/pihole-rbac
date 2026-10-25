@@ -29,6 +29,10 @@ type ClientResetRun struct {
 	Trigger    string
 	UserID     sql.NullInt64
 	Username   string
+	Target     string
+	InstanceID sql.NullInt64
+	GroupID    sql.NullInt64
+	TargetName string
 	Status     string
 	Summary    string
 }
@@ -38,6 +42,7 @@ type ClientResetTarget struct {
 	InstanceID    sql.NullInt64
 	GroupID       sql.NullInt64
 	CommentPrefix string
+	GroupMatch    string
 	TargetGroups  string
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
+	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
@@ -171,6 +172,15 @@ func serve() error {
 	}
 	auditLog.SetSink(notifier.Notify)
 	go notifier.Run(ctx)
+
+	// Client reset. A run the app was in the middle of when it last stopped is marked failed first, since only one
+	// run can be in progress at a time and nothing is running that one any more.
+	resets := &clientreset.Service{
+		Store: st, Audit: auditLog, Instances: instanceService, Protected: channels.ProtectedFor, Logger: logger,
+	}
+	if _, err := resets.FailInterrupted(ctx); err != nil {
+		return err
+	}
 
 	server := api.New(api.Options{
 		Store:          st,

@@ -96,13 +96,15 @@ func (n *Notifier) Notify(e audit.Entry) {
 	if rp == nil {
 		return
 	}
-	protected := ProtectedGroups(e)
+	alerts := ProtectedAlerts(e)
 	for _, r := range *rp {
 		if r.Events[e.Action] {
 			n.Enqueue(Job{Destination: r.Destination, Message: ForEntry(e), Event: e.Action})
 		}
-		if len(protected) > 0 && r.Events[EventProtectedGroupAdd] {
-			n.Enqueue(Job{Destination: r.Destination, Message: ForProtectedGroup(e, protected), Event: EventProtectedGroupAdd})
+		if r.Events[EventProtectedGroupAdd] {
+			for _, a := range alerts {
+				n.Enqueue(Job{Destination: r.Destination, Message: ForProtectedAlert(e, a), Event: EventProtectedGroupAdd})
+			}
 		}
 	}
 }

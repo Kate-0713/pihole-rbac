@@ -196,6 +196,40 @@ func TestProtectedGroups(t *testing.T) {
 	}
 }
 
+func TestProtectedAlerts(t *testing.T) {
+	update := audit.Entry{Username: "alice", Action: audit.ActionClientUpdate, InstanceName: "pihole1",
+		Detail: map[string]any{"client": "10.0.0.9", "protected_added": []string{"Kids"}}}
+	if a := ProtectedAlerts(update); len(a) != 1 || a[0].Client != "10.0.0.9" || a[0].Groups[0] != "Kids" {
+		t.Errorf("client_update: %+v", a)
+	}
+
+	// A client reset lists every client it put in a protected group; it alerts for each, even when other clients
+	// failed.
+	reset := audit.Entry{Username: audit.SystemUser, Action: audit.ActionClientReset, InstanceName: "pihole2",
+		Err: errors.New("1 client reset, 1 failed"),
+		Detail: map[string]any{"protected": []ProtectedClient{
+			{Client: "10.0.0.1", Groups: []string{"Kids"}}, {Client: "10.0.0.2", Groups: []string{"Kids", "Guests"}}, {Client: "x"},
+		}}}
+	alerts := ProtectedAlerts(reset)
+	if len(alerts) != 2 || alerts[1].Client != "10.0.0.2" || len(alerts[1].Groups) != 2 {
+		t.Fatalf("client_reset: %+v", alerts)
+	}
+	if m := ForProtectedAlert(reset, alerts[0]).Plain(); m != "🚨 (system) added client 10.0.0.1 to protected group Kids on pihole2" {
+		t.Errorf("alert: %s", m)
+	}
+	// As read back from JSON.
+	var d map[string]any
+	_ = json.Unmarshal([]byte(`{"protected":[{"client":"10.0.0.1","groups":["Kids"]},{"client":"bad","groups":"Kids"}]}`), &d)
+	reset.Detail = d
+	if a := ProtectedAlerts(reset); len(a) != 1 || a[0].Client != "10.0.0.1" || a[0].Groups[0] != "Kids" {
+		t.Errorf("from JSON: %+v", a)
+	}
+	reset.Action = audit.ActionDomainAdd
+	if ProtectedAlerts(reset) != nil {
+		t.Error("another action raises an alert")
+	}
+}
+
 // fake is an HTTPS server that every request is sent to, whatever its host, recording what arrived.
 type fake struct {
 	srv     *httptest.Server
