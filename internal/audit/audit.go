@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/store"
@@ -165,9 +166,20 @@ func Insert(ctx context.Context, q *db.Queries, e Entry) (int64, error) {
 	})
 }
 
-// Logger writes AUDIT lines.
+// Logger writes AUDIT lines, and hands each entry to its sink (the notifier) once it is logged.
 type Logger struct {
-	l *log.Logger
+	l    *log.Logger
+	sink atomic.Pointer[func(Entry)]
+}
+
+// SetSink sets a function that receives every entry Log writes, after its transaction has committed. It must not
+// block: the notifier only queues. nil removes it.
+func (l *Logger) SetSink(f func(Entry)) {
+	if f == nil {
+		l.sink.Store(nil)
+		return
+	}
+	l.sink.Store(&f)
 }
 
 // NewLogger writes AUDIT lines to w, each prefixed with the UTC date and time.
@@ -185,6 +197,9 @@ func (l *Logger) Log(e Entry) {
 		l.l.Printf("AUDIT user=%q action=%s target=%q result=failure error=%q", e.Username, e.Action, e.Target, e.Err.Error())
 	} else {
 		l.l.Printf("AUDIT user=%q action=%s target=%q result=success", e.Username, e.Action, e.Target)
+	}
+	if f := l.sink.Load(); f != nil {
+		(*f)(e)
 	}
 }
 
