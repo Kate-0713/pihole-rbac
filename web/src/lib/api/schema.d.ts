@@ -1311,6 +1311,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/client-reset/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The client reset rules
+         * @description Every client reset rule, instances first, then by name and comment prefix, with the instances and mirrored groups a rule can be set on.
+         */
+        get: operations["getClientResetRules"];
+        /**
+         * Replace the client reset rules
+         * @description Replaces them all. A rule is set on an instance or a mirrored group (not an independent group); its comment prefix is used once per instance or group. Audited as client_reset_rules, with the rules added and removed; a save that changes nothing isn't.
+         */
+        put: operations["setClientResetRules"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/client-reset/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every target's client reset runs
+         * @description Runs of every target, newest first, paged with `limit` and `cursor`.
+         */
+        get: operations["listClientResetRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/client-reset/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * What running the target's client reset rules would change
+         * @description Reads every enabled instance of the target and says, per instance, which clients a run would reset and which it couldn't, without changing anything. An instance that can't be read is listed with its code.
+         */
+        get: operations["previewClientReset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/client-reset/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run the target's client reset rules now
+         * @description Runs the rules on every enabled instance of the target and answers with the run as recorded, whatever its status: a run that failed on some or every instance is still a 200, with each instance's result. Only one run happens at a time, across every target. A run carries on, and is recorded, if the request goes away. Audited as client_reset, one row per instance it changed or failed on.
+         */
+        post: operations["runClientReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/client-reset/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The target's client reset runs
+         * @description The target's runs, newest first, paged with `limit` and `cursor`, with how many rules the target has, so a page can tell whether there is anything to run.
+         */
+        get: operations["listTargetClientResetRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2431,6 +2544,130 @@ export interface components {
             /** @description Absent when Pi-hole didn't report a DNSSEC status. */
             dnssec?: string;
         };
+        /** @enum {string} */
+        ClientResetScope: "instance" | "group";
+        /**
+         * @description How a rule's Pi-hole groups are found on each instance: `names`, each is a group's exact name, and every instance must have them all; `prefixes`, every group whose name starts with one of them, and at least one must.
+         * @enum {string}
+         */
+        ClientResetMatch: "names" | "prefixes";
+        ClientResetChoice: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        ClientResetRule: {
+            scope: components["schemas"]["ClientResetScope"];
+            /** Format: int64 */
+            id: number;
+            /** @description The instance's or mirrored group's name. */
+            name: string;
+            /** @description Clients whose comment starts with this (case-sensitive) are reset; the longest matching prefix wins. */
+            comment_prefix: string;
+            group_match: components["schemas"]["ClientResetMatch"];
+            pihole_groups: string[];
+        };
+        ClientResetRules: {
+            rules: components["schemas"]["ClientResetRule"][];
+            /** @description Every instance, as a rule can name it. */
+            instances: components["schemas"]["ClientResetChoice"][];
+            /** @description Every mirrored group, as a rule can name it. */
+            groups: components["schemas"]["ClientResetChoice"][];
+        };
+        ClientResetRulesInput: {
+            rules: {
+                scope: components["schemas"]["ClientResetScope"];
+                /** Format: int64 */
+                id: number;
+                comment_prefix: string;
+                group_match: components["schemas"]["ClientResetMatch"];
+                pihole_groups: string[];
+            }[];
+        };
+        /** @description A client reset (or, in a preview, that would be), with its Pi-hole groups by name. */
+        ClientResetChange: {
+            client: string;
+            comment: string;
+            /** @description The comment prefix of the rule that matched it. */
+            prefix: string;
+            groups_before: string[];
+            groups_after: string[];
+        };
+        ClientResetFailure: {
+            client: string;
+            comment: string;
+            prefix: string;
+            /** @description Why it wasn't reset: pihole_group_missing or no_target_groups (its rule's groups aren't on the instance), or a Pi-hole or instance code. */
+            code: string;
+        };
+        /** @description A rule that can't run on the instance, whether or not a client matches it yet. */
+        ClientResetProblem: {
+            prefix: string;
+            /** @enum {string} */
+            code: "pihole_group_missing" | "no_target_groups";
+            /** @description The group names the instance doesn't have, for pihole_group_missing. */
+            missing?: string[];
+        };
+        ClientResetInstanceResult: {
+            /** Format: int64 */
+            instance_id: number;
+            instance: string;
+            /** @description Whether this is the mirrored group's primary. */
+            primary: boolean;
+            /**
+             * @description ok when nothing failed; failed when nothing that needed resetting was reset, or the instance couldn't be read (with `code`); partial otherwise; skipped when it wasn't contacted (down, or missing its password).
+             * @enum {string}
+             */
+            status: "ok" | "partial" | "failed" | "skipped";
+            /** @description Why the instance couldn't be read or changed at all, when it couldn't. */
+            code?: string;
+            /** @description In a run, the clients reset; in a preview, those a run would reset. */
+            reset: components["schemas"]["ClientResetChange"][];
+            failed: components["schemas"]["ClientResetFailure"][];
+            /** @description Matching clients already in exactly their rule's groups. */
+            unchanged: number;
+            problems: components["schemas"]["ClientResetProblem"][];
+        };
+        ClientResetPreview: {
+            target: string;
+            target_name: string;
+            /** @description How many rules the target has. */
+            rules: number;
+            instances: components["schemas"]["ClientResetInstanceResult"][];
+        };
+        ClientResetRun: {
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description Absent while running.
+             */
+            finished_at?: string;
+            /** @enum {string} */
+            trigger: "manual" | "schedule";
+            /** @description Who ran it; (system) for a scheduled run. Kept when the user is deleted. */
+            username: string;
+            /** @description The target run, i-<id> or g-<id>. */
+            target: string;
+            /** @description The instance's or group's name when it ran; kept when it is deleted. */
+            target_name: string;
+            /** @enum {string} */
+            status: "running" | "ok" | "partial" | "failed";
+            /** @description How many rules ran. */
+            rules: number;
+            instances: components["schemas"]["ClientResetInstanceResult"][];
+            /** @description Why a run that couldn't finish didn't, such as being interrupted by the app stopping. */
+            error?: string;
+        };
+        ClientResetRunList: {
+            runs: components["schemas"]["ClientResetRun"][];
+            /** @description Pass as `cursor` for the next page. Absent on the last page. */
+            next_cursor?: string;
+            /** @description For one target's runs, how many rules the target has now. */
+            rules?: number;
+        };
         Error: {
             error: components["schemas"]["ErrorBody"];
         };
@@ -2590,6 +2827,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The target has no client reset rules, or (for a run) another client reset is running (code conflict); the message says which. */
+        ClientResetConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Too many failed attempts (code rate_limited). Retry after the given number of seconds. */
         RateLimited: {
             headers: {
@@ -2603,6 +2849,10 @@ export interface components {
         };
     };
     parameters: {
+        /** @description How many runs to return, 1 to 200. */
+        RunLimit: number;
+        /** @description The `next_cursor` of the previous page. */
+        RunCursor: string;
         /** @description Only entries by this username (exact). Names are copied into each entry, so deleted users still match. */
         AuditUser: string;
         /** @description Only entries with one of these actions. Repeat for several. */
@@ -5083,6 +5333,177 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["TargetUnavailable"];
             502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getClientResetRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rules. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientResetRules"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setClientResetRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientResetRulesInput"];
+            };
+        };
+        responses: {
+            /** @description The rules as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientResetRules"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listClientResetRuns: {
+        parameters: {
+            query?: {
+                /** @description How many runs to return, 1 to 200. */
+                limit?: components["parameters"]["RunLimit"];
+                /** @description The `next_cursor` of the previous page. */
+                cursor?: components["parameters"]["RunCursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The runs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientResetRunList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    previewClientReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientResetPreview"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["ClientResetConflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    runClientReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientResetRun"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["ClientResetConflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listTargetClientResetRuns: {
+        parameters: {
+            query?: {
+                /** @description How many runs to return, 1 to 200. */
+                limit?: components["parameters"]["RunLimit"];
+                /** @description The `next_cursor` of the previous page. */
+                cursor?: components["parameters"]["RunCursor"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The runs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientResetRunList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             503: components["responses"]["SetupRequired"];
         };
     };

@@ -21,6 +21,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
@@ -59,6 +60,7 @@ type Options struct {
 	Roles          *rbac.Manager          // changes to roles, grants, user roles, LDAP mappings and users
 	LoginSettings  *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
 	Notifications  *notifications.Service // notification channels; nil in tests that don't need them
+	ClientReset    *clientreset.Service   // client reset rules and runs; nil in tests that don't need them
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
@@ -212,6 +214,10 @@ func (s *Server) gate(next http.Handler) http.Handler {
 				s.responseError(w, r, err)
 				return
 			}
+		}
+		if longRoutes[r.Pattern] {
+			// Not every ResponseWriter supports deadlines (a test recorder doesn't); the server's own does.
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(clientreset.RunTimeout + time.Minute))
 		}
 		next.ServeHTTP(w, r)
 	})

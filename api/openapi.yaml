@@ -2507,8 +2507,197 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/client-reset/rules:
+    get:
+      summary: The client reset rules
+      description: >-
+        Every client reset rule, instances first, then by name and comment prefix, with the instances and mirrored
+        groups a rule can be set on.
+      operationId: getClientResetRules
+      x-permission: settings.manage
+      responses:
+        "200":
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientResetRules"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Replace the client reset rules
+      description: >-
+        Replaces them all. A rule is set on an instance or a mirrored group (not an independent group); its comment
+        prefix is used once per instance or group. Audited as client_reset_rules, with the rules added and removed; a
+        save that changes nothing isn't.
+      operationId: setClientResetRules
+      x-permission: settings.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientResetRulesInput"
+      responses:
+        "200":
+          description: The rules as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientResetRules"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/client-reset/runs:
+    get:
+      summary: Every target's client reset runs
+      description: Runs of every target, newest first, paged with `limit` and `cursor`.
+      operationId: listClientResetRuns
+      x-permission: settings.manage
+      parameters:
+        - $ref: "#/components/parameters/RunLimit"
+        - $ref: "#/components/parameters/RunCursor"
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientResetRunList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/client-reset/preview:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: What running the target's client reset rules would change
+      description: >-
+        Reads every enabled instance of the target and says, per instance, which clients a run would reset and which
+        it couldn't, without changing anything. An instance that can't be read is listed with its code.
+      operationId: previewClientReset
+      x-permission: target:clientreset.run
+      responses:
+        "200":
+          description: The preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientResetPreview"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ClientResetConflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/client-reset/run:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    post:
+      summary: Run the target's client reset rules now
+      description: >-
+        Runs the rules on every enabled instance of the target and answers with the run as recorded, whatever its
+        status: a run that failed on some or every instance is still a 200, with each instance's result. Only one run
+        happens at a time, across every target. A run carries on, and is recorded, if the request goes away. Audited as
+        client_reset, one row per instance it changed or failed on.
+      operationId: runClientReset
+      x-permission: target:clientreset.run
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientResetRun"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ClientResetConflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/client-reset/runs:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: The target's client reset runs
+      description: >-
+        The target's runs, newest first, paged with `limit` and `cursor`, with how many rules the target has, so a page
+        can tell whether there is anything to run.
+      operationId: listTargetClientResetRuns
+      x-permission: target:clientreset.run
+      parameters:
+        - $ref: "#/components/parameters/RunLimit"
+        - $ref: "#/components/parameters/RunCursor"
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientResetRunList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
 components:
   parameters:
+    RunLimit:
+      name: limit
+      in: query
+      required: false
+      description: How many runs to return, 1 to 200.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+    RunCursor:
+      name: cursor
+      in: query
+      required: false
+      description: The `next_cursor` of the previous page.
+      schema:
+        type: string
+        maxLength: 128
+
     AuditUser:
       name: user
       in: query
@@ -2808,6 +2997,14 @@ components:
         mirrored group's primary, `details.group` names the group and `details.primary` is true: reads of domains,
         clients and Pi-hole groups come from the primary alone. The underlying error goes to the server log only. On a write, this answer means no instance
         succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ClientResetConflict:
+      description: >-
+        The target has no client reset rules, or (for a run) another client reset is running (code conflict); the
+        message says which.
       content:
         application/json:
           schema:
@@ -5145,6 +5342,270 @@ components:
         dnssec:
           type: string
           description: Absent when Pi-hole didn't report a DNSSEC status.
+
+    ClientResetScope:
+      type: string
+      enum: [instance, group]
+
+    ClientResetMatch:
+      type: string
+      enum: [names, prefixes]
+      description: >-
+        How a rule's Pi-hole groups are found on each instance: `names`, each is a group's exact name, and every
+        instance must have them all; `prefixes`, every group whose name starts with one of them, and at least one must.
+
+    ClientResetChoice:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+
+    ClientResetRule:
+      type: object
+      additionalProperties: false
+      required: [scope, id, name, comment_prefix, group_match, pihole_groups]
+      properties:
+        scope:
+          $ref: "#/components/schemas/ClientResetScope"
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: The instance's or mirrored group's name.
+        comment_prefix:
+          type: string
+          description: Clients whose comment starts with this (case-sensitive) are reset; the longest matching prefix wins.
+        group_match:
+          $ref: "#/components/schemas/ClientResetMatch"
+        pihole_groups:
+          type: array
+          items:
+            type: string
+
+    ClientResetRules:
+      type: object
+      additionalProperties: false
+      required: [rules, instances, groups]
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientResetRule"
+        instances:
+          type: array
+          description: Every instance, as a rule can name it.
+          items:
+            $ref: "#/components/schemas/ClientResetChoice"
+        groups:
+          type: array
+          description: Every mirrored group, as a rule can name it.
+          items:
+            $ref: "#/components/schemas/ClientResetChoice"
+
+    ClientResetRulesInput:
+      type: object
+      additionalProperties: false
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [scope, id, comment_prefix, group_match, pihole_groups]
+            properties:
+              scope:
+                $ref: "#/components/schemas/ClientResetScope"
+              id:
+                type: integer
+                format: int64
+              comment_prefix:
+                type: string
+                maxLength: 1024
+              group_match:
+                $ref: "#/components/schemas/ClientResetMatch"
+              pihole_groups:
+                type: array
+                maxItems: 50
+                items:
+                  type: string
+                  maxLength: 1024
+
+    ClientResetChange:
+      type: object
+      additionalProperties: false
+      required: [client, comment, prefix, groups_before, groups_after]
+      description: A client reset (or, in a preview, that would be), with its Pi-hole groups by name.
+      properties:
+        client:
+          type: string
+        comment:
+          type: string
+        prefix:
+          type: string
+          description: The comment prefix of the rule that matched it.
+        groups_before:
+          type: array
+          items:
+            type: string
+        groups_after:
+          type: array
+          items:
+            type: string
+
+    ClientResetFailure:
+      type: object
+      additionalProperties: false
+      required: [client, comment, prefix, code]
+      properties:
+        client:
+          type: string
+        comment:
+          type: string
+        prefix:
+          type: string
+        code:
+          type: string
+          description: >-
+            Why it wasn't reset: pihole_group_missing or no_target_groups (its rule's groups aren't on the instance), or
+            a Pi-hole or instance code.
+
+    ClientResetProblem:
+      type: object
+      additionalProperties: false
+      required: [prefix, code]
+      description: A rule that can't run on the instance, whether or not a client matches it yet.
+      properties:
+        prefix:
+          type: string
+        code:
+          type: string
+          enum: [pihole_group_missing, no_target_groups]
+        missing:
+          type: array
+          description: The group names the instance doesn't have, for pihole_group_missing.
+          items:
+            type: string
+
+    ClientResetInstanceResult:
+      type: object
+      additionalProperties: false
+      required: [instance_id, instance, primary, status, reset, failed, unchanged, problems]
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+        instance:
+          type: string
+        primary:
+          type: boolean
+          description: Whether this is the mirrored group's primary.
+        status:
+          type: string
+          enum: [ok, partial, failed, skipped]
+          description: >-
+            ok when nothing failed; failed when nothing that needed resetting was reset, or the instance couldn't be
+            read (with `code`); partial otherwise; skipped when it wasn't contacted (down, or missing its password).
+        code:
+          type: string
+          description: Why the instance couldn't be read or changed at all, when it couldn't.
+        reset:
+          type: array
+          description: In a run, the clients reset; in a preview, those a run would reset.
+          items:
+            $ref: "#/components/schemas/ClientResetChange"
+        failed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientResetFailure"
+        unchanged:
+          type: integer
+          description: Matching clients already in exactly their rule's groups.
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientResetProblem"
+
+    ClientResetPreview:
+      type: object
+      additionalProperties: false
+      required: [target, target_name, rules, instances]
+      properties:
+        target:
+          type: string
+        target_name:
+          type: string
+        rules:
+          type: integer
+          description: How many rules the target has.
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientResetInstanceResult"
+
+    ClientResetRun:
+      type: object
+      additionalProperties: false
+      required: [id, started_at, trigger, username, target, target_name, status, rules, instances]
+      properties:
+        id:
+          type: integer
+          format: int64
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          description: Absent while running.
+        trigger:
+          type: string
+          enum: [manual, schedule]
+        username:
+          type: string
+          description: Who ran it; (system) for a scheduled run. Kept when the user is deleted.
+        target:
+          type: string
+          description: The target run, i-<id> or g-<id>.
+        target_name:
+          type: string
+          description: The instance's or group's name when it ran; kept when it is deleted.
+        status:
+          type: string
+          enum: [running, ok, partial, failed]
+        rules:
+          type: integer
+          description: How many rules ran.
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientResetInstanceResult"
+        error:
+          type: string
+          description: Why a run that couldn't finish didn't, such as being interrupted by the app stopping.
+
+    ClientResetRunList:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientResetRun"
+        next_cursor:
+          type: string
+          description: Pass as `cursor` for the next page. Absent on the last page.
+        rules:
+          type: integer
+          description: For one target's runs, how many rules the target has now.
 
     # The standard error envelope returned by every /api/v1 endpoint on failure.
     Error:

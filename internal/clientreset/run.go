@@ -86,8 +86,8 @@ type Preview struct {
 	Instances  []InstanceResult
 }
 
-// runTimeout bounds a whole run: every instance's reads and writes.
-const runTimeout = 10 * time.Minute
+// RunTimeout bounds a whole run: every instance's reads and writes.
+const RunTimeout = 10 * time.Minute
 
 // member is an instance a run acts on.
 type member struct {
@@ -170,6 +170,12 @@ func (s *Service) rulesFor(ctx context.Context, t rbac.Target) ([]Rule, error) {
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+// RuleCount returns how many rules a target has.
+func (s *Service) RuleCount(ctx context.Context, t rbac.Target) (int, error) {
+	rules, err := s.rulesFor(ctx, t)
+	return len(rules), err
 }
 
 // prepare finds a target's rules and instances. A target without rules is a conflict: there is nothing to run.
@@ -306,7 +312,7 @@ func overall(results []InstanceResult) string {
 // scheduled run. Only one run happens at a time, across every target: while another is running, Run is a conflict.
 // A run carries on if the request that started it goes away, so it is always recorded.
 func (s *Service) Run(ctx context.Context, a rbac.Actor, trigger Trigger, t rbac.Target) (Run, error) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), runTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), RunTimeout)
 	defer cancel()
 	rules, r, err := s.prepare(ctx, t)
 	if err != nil {

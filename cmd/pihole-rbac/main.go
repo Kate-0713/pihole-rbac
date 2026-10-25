@@ -188,6 +188,7 @@ func serve() error {
 		Auth:           login.Authenticator(),
 		LoginSettings:  login,
 		Notifications:  channels,
+		ClientReset:    resets,
 		Audit:          auditLog,
 		Secrets:        sec,
 		Instances:      instanceService,

@@ -102,6 +102,126 @@ func (e ChannelKind) Valid() bool {
 	}
 }
 
+// Defines values for ClientResetInstanceResultStatus.
+const (
+	ClientResetInstanceResultStatusFailed  ClientResetInstanceResultStatus = "failed"
+	ClientResetInstanceResultStatusOk      ClientResetInstanceResultStatus = "ok"
+	ClientResetInstanceResultStatusPartial ClientResetInstanceResultStatus = "partial"
+	ClientResetInstanceResultStatusSkipped ClientResetInstanceResultStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the ClientResetInstanceResultStatus enum.
+func (e ClientResetInstanceResultStatus) Valid() bool {
+	switch e {
+	case ClientResetInstanceResultStatusFailed:
+		return true
+	case ClientResetInstanceResultStatusOk:
+		return true
+	case ClientResetInstanceResultStatusPartial:
+		return true
+	case ClientResetInstanceResultStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientResetMatch.
+const (
+	Names    ClientResetMatch = "names"
+	Prefixes ClientResetMatch = "prefixes"
+)
+
+// Valid indicates whether the value is a known member of the ClientResetMatch enum.
+func (e ClientResetMatch) Valid() bool {
+	switch e {
+	case Names:
+		return true
+	case Prefixes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientResetProblemCode.
+const (
+	NoTargetGroups     ClientResetProblemCode = "no_target_groups"
+	PiholeGroupMissing ClientResetProblemCode = "pihole_group_missing"
+)
+
+// Valid indicates whether the value is a known member of the ClientResetProblemCode enum.
+func (e ClientResetProblemCode) Valid() bool {
+	switch e {
+	case NoTargetGroups:
+		return true
+	case PiholeGroupMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientResetRunStatus.
+const (
+	ClientResetRunStatusFailed  ClientResetRunStatus = "failed"
+	ClientResetRunStatusOk      ClientResetRunStatus = "ok"
+	ClientResetRunStatusPartial ClientResetRunStatus = "partial"
+	ClientResetRunStatusRunning ClientResetRunStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the ClientResetRunStatus enum.
+func (e ClientResetRunStatus) Valid() bool {
+	switch e {
+	case ClientResetRunStatusFailed:
+		return true
+	case ClientResetRunStatusOk:
+		return true
+	case ClientResetRunStatusPartial:
+		return true
+	case ClientResetRunStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientResetRunTrigger.
+const (
+	Manual   ClientResetRunTrigger = "manual"
+	Schedule ClientResetRunTrigger = "schedule"
+)
+
+// Valid indicates whether the value is a known member of the ClientResetRunTrigger enum.
+func (e ClientResetRunTrigger) Valid() bool {
+	switch e {
+	case Manual:
+		return true
+	case Schedule:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientResetScope.
+const (
+	ClientResetScopeGroup    ClientResetScope = "group"
+	ClientResetScopeInstance ClientResetScope = "instance"
+)
+
+// Valid indicates whether the value is a known member of the ClientResetScope enum.
+func (e ClientResetScope) Valid() bool {
+	switch e {
+	case ClientResetScopeGroup:
+		return true
+	case ClientResetScopeInstance:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DomainKind.
 const (
 	DomainKindExact DomainKind = "exact"
@@ -1157,6 +1277,166 @@ type ClientList struct {
 	// Drifted For a mirrored group: whether its members' clients differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them.
 	Drifted *bool `json:"drifted,omitempty"`
 }
+
+// ClientResetChange A client reset (or, in a preview, that would be), with its Pi-hole groups by name.
+type ClientResetChange struct {
+	Client       string   `json:"client"`
+	Comment      string   `json:"comment"`
+	GroupsAfter  []string `json:"groups_after"`
+	GroupsBefore []string `json:"groups_before"`
+
+	// Prefix The comment prefix of the rule that matched it.
+	Prefix string `json:"prefix"`
+}
+
+// ClientResetChoice defines model for ClientResetChoice.
+type ClientResetChoice struct {
+	Id   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// ClientResetFailure defines model for ClientResetFailure.
+type ClientResetFailure struct {
+	Client string `json:"client"`
+
+	// Code Why it wasn't reset: pihole_group_missing or no_target_groups (its rule's groups aren't on the instance), or a Pi-hole or instance code.
+	Code    string `json:"code"`
+	Comment string `json:"comment"`
+	Prefix  string `json:"prefix"`
+}
+
+// ClientResetInstanceResult defines model for ClientResetInstanceResult.
+type ClientResetInstanceResult struct {
+	// Code Why the instance couldn't be read or changed at all, when it couldn't.
+	Code       *string              `json:"code,omitempty"`
+	Failed     []ClientResetFailure `json:"failed"`
+	Instance   string               `json:"instance"`
+	InstanceId int64                `json:"instance_id"`
+
+	// Primary Whether this is the mirrored group's primary.
+	Primary  bool                 `json:"primary"`
+	Problems []ClientResetProblem `json:"problems"`
+
+	// Reset In a run, the clients reset; in a preview, those a run would reset.
+	Reset []ClientResetChange `json:"reset"`
+
+	// Status ok when nothing failed; failed when nothing that needed resetting was reset, or the instance couldn't be read (with `code`); partial otherwise; skipped when it wasn't contacted (down, or missing its password).
+	Status ClientResetInstanceResultStatus `json:"status"`
+
+	// Unchanged Matching clients already in exactly their rule's groups.
+	Unchanged int `json:"unchanged"`
+}
+
+// ClientResetInstanceResultStatus ok when nothing failed; failed when nothing that needed resetting was reset, or the instance couldn't be read (with `code`); partial otherwise; skipped when it wasn't contacted (down, or missing its password).
+type ClientResetInstanceResultStatus string
+
+// ClientResetMatch How a rule's Pi-hole groups are found on each instance: `names`, each is a group's exact name, and every instance must have them all; `prefixes`, every group whose name starts with one of them, and at least one must.
+type ClientResetMatch string
+
+// ClientResetPreview defines model for ClientResetPreview.
+type ClientResetPreview struct {
+	Instances []ClientResetInstanceResult `json:"instances"`
+
+	// Rules How many rules the target has.
+	Rules      int    `json:"rules"`
+	Target     string `json:"target"`
+	TargetName string `json:"target_name"`
+}
+
+// ClientResetProblem A rule that can't run on the instance, whether or not a client matches it yet.
+type ClientResetProblem struct {
+	Code ClientResetProblemCode `json:"code"`
+
+	// Missing The group names the instance doesn't have, for pihole_group_missing.
+	Missing *[]string `json:"missing,omitempty"`
+	Prefix  string    `json:"prefix"`
+}
+
+// ClientResetProblemCode defines model for ClientResetProblem.Code.
+type ClientResetProblemCode string
+
+// ClientResetRule defines model for ClientResetRule.
+type ClientResetRule struct {
+	// CommentPrefix Clients whose comment starts with this (case-sensitive) are reset; the longest matching prefix wins.
+	CommentPrefix string `json:"comment_prefix"`
+
+	// GroupMatch How a rule's Pi-hole groups are found on each instance: `names`, each is a group's exact name, and every instance must have them all; `prefixes`, every group whose name starts with one of them, and at least one must.
+	GroupMatch ClientResetMatch `json:"group_match"`
+	Id         int64            `json:"id"`
+
+	// Name The instance's or mirrored group's name.
+	Name         string           `json:"name"`
+	PiholeGroups []string         `json:"pihole_groups"`
+	Scope        ClientResetScope `json:"scope"`
+}
+
+// ClientResetRules defines model for ClientResetRules.
+type ClientResetRules struct {
+	// Groups Every mirrored group, as a rule can name it.
+	Groups []ClientResetChoice `json:"groups"`
+
+	// Instances Every instance, as a rule can name it.
+	Instances []ClientResetChoice `json:"instances"`
+	Rules     []ClientResetRule   `json:"rules"`
+}
+
+// ClientResetRulesInput defines model for ClientResetRulesInput.
+type ClientResetRulesInput struct {
+	Rules []struct {
+		CommentPrefix string `json:"comment_prefix"`
+
+		// GroupMatch How a rule's Pi-hole groups are found on each instance: `names`, each is a group's exact name, and every instance must have them all; `prefixes`, every group whose name starts with one of them, and at least one must.
+		GroupMatch   ClientResetMatch `json:"group_match"`
+		Id           int64            `json:"id"`
+		PiholeGroups []string         `json:"pihole_groups"`
+		Scope        ClientResetScope `json:"scope"`
+	} `json:"rules"`
+}
+
+// ClientResetRun defines model for ClientResetRun.
+type ClientResetRun struct {
+	// Error Why a run that couldn't finish didn't, such as being interrupted by the app stopping.
+	Error *string `json:"error,omitempty"`
+
+	// FinishedAt Absent while running.
+	FinishedAt *time.Time                  `json:"finished_at,omitempty"`
+	Id         int64                       `json:"id"`
+	Instances  []ClientResetInstanceResult `json:"instances"`
+
+	// Rules How many rules ran.
+	Rules     int                  `json:"rules"`
+	StartedAt time.Time            `json:"started_at"`
+	Status    ClientResetRunStatus `json:"status"`
+
+	// Target The target run, i-<id> or g-<id>.
+	Target string `json:"target"`
+
+	// TargetName The instance's or group's name when it ran; kept when it is deleted.
+	TargetName string                `json:"target_name"`
+	Trigger    ClientResetRunTrigger `json:"trigger"`
+
+	// Username Who ran it; (system) for a scheduled run. Kept when the user is deleted.
+	Username string `json:"username"`
+}
+
+// ClientResetRunStatus defines model for ClientResetRun.Status.
+type ClientResetRunStatus string
+
+// ClientResetRunTrigger defines model for ClientResetRun.Trigger.
+type ClientResetRunTrigger string
+
+// ClientResetRunList defines model for ClientResetRunList.
+type ClientResetRunList struct {
+	// NextCursor Pass as `cursor` for the next page. Absent on the last page.
+	NextCursor *string `json:"next_cursor,omitempty"`
+
+	// Rules For one target's runs, how many rules the target has now.
+	Rules *int             `json:"rules,omitempty"`
+	Runs  []ClientResetRun `json:"runs"`
+}
+
+// ClientResetScope defines model for ClientResetScope.
+type ClientResetScope string
 
 // ClientUpdate Names the client and gives at least one of comment and groups.
 type ClientUpdate struct {
@@ -2466,11 +2746,20 @@ type Members = []int64
 // RoleID defines model for RoleID.
 type RoleID = int64
 
+// RunCursor defines model for RunCursor.
+type RunCursor = string
+
+// RunLimit defines model for RunLimit.
+type RunLimit = int
+
 // TargetID Examples: i-1
 type TargetID = string
 
 // UserID defines model for UserID.
 type UserID = int64
+
+// ClientResetConflict defines model for ClientResetConflict.
+type ClientResetConflict = Error
 
 // Conflict defines model for Conflict.
 type Conflict = Error
@@ -2583,6 +2872,15 @@ type ExportAuditParams struct {
 // ExportAuditParamsResult defines parameters for ExportAudit.
 type ExportAuditParamsResult string
 
+// ListClientResetRunsParams defines parameters for ListClientResetRuns.
+type ListClientResetRunsParams struct {
+	// Limit How many runs to return, 1 to 200.
+	Limit *RunLimit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page.
+	Cursor *RunCursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // SetRoleGrantsParams defines parameters for SetRoleGrants.
 type SetRoleGrantsParams struct {
 	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
@@ -2611,6 +2909,15 @@ type ListSessionsParams struct {
 type SetBlockingParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// ListTargetClientResetRunsParams defines parameters for ListTargetClientResetRuns.
+type ListTargetClientResetRunsParams struct {
+	// Limit How many runs to return, 1 to 200.
+	Limit *RunLimit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page.
+	Cursor *RunCursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // UpdateClientParams defines parameters for UpdateClient.
@@ -2678,6 +2985,9 @@ type LoginJSONRequestBody = LoginRequest
 
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = PasswordChange
+
+// SetClientResetRulesJSONRequestBody defines body for SetClientResetRules for application/json ContentType.
+type SetClientResetRulesJSONRequestBody = ClientResetRulesInput
 
 // CreateInstanceGroupJSONRequestBody defines body for CreateInstanceGroup for application/json ContentType.
 type CreateInstanceGroupJSONRequestBody = InstanceGroupInput
@@ -2789,6 +3099,15 @@ type ServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(w http.ResponseWriter, r *http.Request)
+	// GetClientResetRules The client reset rules
+	// (GET /api/v1/client-reset/rules)
+	GetClientResetRules(w http.ResponseWriter, r *http.Request)
+	// SetClientResetRules Replace the client reset rules
+	// (PUT /api/v1/client-reset/rules)
+	SetClientResetRules(w http.ResponseWriter, r *http.Request)
+	// ListClientResetRuns Every target's client reset runs
+	// (GET /api/v1/client-reset/runs)
+	ListClientResetRuns(w http.ResponseWriter, r *http.Request, params ListClientResetRunsParams)
 	// ListInstanceGroups List the instance groups
 	// (GET /api/v1/instance-groups)
 	ListInstanceGroups(w http.ResponseWriter, r *http.Request)
@@ -2951,6 +3270,15 @@ type ServerInterface interface {
 	// SetBlocking Turn blocking on or off
 	// (PUT /api/v1/targets/{target}/blocking)
 	SetBlocking(w http.ResponseWriter, r *http.Request, target TargetID, params SetBlockingParams)
+	// PreviewClientReset What running the target's client reset rules would change
+	// (GET /api/v1/targets/{target}/client-reset/preview)
+	PreviewClientReset(w http.ResponseWriter, r *http.Request, target TargetID)
+	// RunClientReset Run the target's client reset rules now
+	// (POST /api/v1/targets/{target}/client-reset/run)
+	RunClientReset(w http.ResponseWriter, r *http.Request, target TargetID)
+	// ListTargetClientResetRuns The target's client reset runs
+	// (GET /api/v1/targets/{target}/client-reset/runs)
+	ListTargetClientResetRuns(w http.ResponseWriter, r *http.Request, target TargetID, params ListTargetClientResetRunsParams)
 	// ListClients The configured clients
 	// (GET /api/v1/targets/{target}/clients)
 	ListClients(w http.ResponseWriter, r *http.Request, target TargetID)
@@ -3342,6 +3670,80 @@ func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetClientResetRules operation middleware
+func (siw *ServerInterfaceWrapper) GetClientResetRules(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetClientResetRules(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetClientResetRules operation middleware
+func (siw *ServerInterfaceWrapper) SetClientResetRules(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetClientResetRules(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListClientResetRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListClientResetRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListClientResetRunsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListClientResetRuns(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4545,6 +4947,113 @@ func (siw *ServerInterfaceWrapper) SetBlocking(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// PreviewClientReset operation middleware
+func (siw *ServerInterfaceWrapper) PreviewClientReset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewClientReset(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunClientReset operation middleware
+func (siw *ServerInterfaceWrapper) RunClientReset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunClientReset(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTargetClientResetRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListTargetClientResetRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTargetClientResetRunsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTargetClientResetRuns(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListClients operation middleware
 func (siw *ServerInterfaceWrapper) ListClients(w http.ResponseWriter, r *http.Request) {
 
@@ -5374,9 +5883,17 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/clients", wrapper.UpdateClient)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.ListPiholeGroups)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/queries", wrapper.ListQueries)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.GetClientResetRules)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.SetClientResetRules)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/client-reset/runs", wrapper.ListClientResetRuns)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/client-reset/preview", wrapper.PreviewClientReset)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/client-reset/run", wrapper.RunClientReset)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/client-reset/runs", wrapper.ListTargetClientResetRuns)
 
 	return m
 }
+
+type ClientResetConflictJSONResponse Error
 
 type ConflictJSONResponse Error
 
@@ -5956,6 +6473,241 @@ func (response GetSession401JSONResponse) VisitGetSessionResponse(w http.Respons
 type GetSession503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response GetSession503JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetClientResetRulesRequestObject struct {
+}
+
+type GetClientResetRulesResponseObject interface {
+	VisitGetClientResetRulesResponse(w http.ResponseWriter) error
+}
+
+type GetClientResetRules200JSONResponse ClientResetRules
+
+func (response GetClientResetRules200JSONResponse) VisitGetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetClientResetRules401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetClientResetRules401JSONResponse) VisitGetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetClientResetRules403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetClientResetRules403JSONResponse) VisitGetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetClientResetRules503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetClientResetRules503JSONResponse) VisitGetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetClientResetRulesRequestObject struct {
+	Body *SetClientResetRulesJSONRequestBody
+}
+
+type SetClientResetRulesResponseObject interface {
+	VisitSetClientResetRulesResponse(w http.ResponseWriter) error
+}
+
+type SetClientResetRules200JSONResponse ClientResetRules
+
+func (response SetClientResetRules200JSONResponse) VisitSetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetClientResetRules400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetClientResetRules400JSONResponse) VisitSetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetClientResetRules401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetClientResetRules401JSONResponse) VisitSetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetClientResetRules403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetClientResetRules403JSONResponse) VisitSetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetClientResetRules415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetClientResetRules415JSONResponse) VisitSetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetClientResetRules503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetClientResetRules503JSONResponse) VisitSetClientResetRulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClientResetRunsRequestObject struct {
+	Params ListClientResetRunsParams
+}
+
+type ListClientResetRunsResponseObject interface {
+	VisitListClientResetRunsResponse(w http.ResponseWriter) error
+}
+
+type ListClientResetRuns200JSONResponse ClientResetRunList
+
+func (response ListClientResetRuns200JSONResponse) VisitListClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClientResetRuns400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListClientResetRuns400JSONResponse) VisitListClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClientResetRuns401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListClientResetRuns401JSONResponse) VisitListClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClientResetRuns403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListClientResetRuns403JSONResponse) VisitListClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListClientResetRuns503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListClientResetRuns503JSONResponse) VisitListClientResetRunsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -10892,6 +11644,301 @@ func (response SetBlocking503JSONResponse) VisitSetBlockingResponse(w http.Respo
 	return err
 }
 
+type PreviewClientResetRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type PreviewClientResetResponseObject interface {
+	VisitPreviewClientResetResponse(w http.ResponseWriter) error
+}
+
+type PreviewClientReset200JSONResponse ClientResetPreview
+
+func (response PreviewClientReset200JSONResponse) VisitPreviewClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewClientReset400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response PreviewClientReset400JSONResponse) VisitPreviewClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewClientReset401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response PreviewClientReset401JSONResponse) VisitPreviewClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewClientReset403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response PreviewClientReset403JSONResponse) VisitPreviewClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewClientReset404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PreviewClientReset404JSONResponse) VisitPreviewClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewClientReset409JSONResponse struct {
+	ClientResetConflictJSONResponse
+}
+
+func (response PreviewClientReset409JSONResponse) VisitPreviewClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewClientReset503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response PreviewClientReset503JSONResponse) VisitPreviewClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunClientResetRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type RunClientResetResponseObject interface {
+	VisitRunClientResetResponse(w http.ResponseWriter) error
+}
+
+type RunClientReset200JSONResponse ClientResetRun
+
+func (response RunClientReset200JSONResponse) VisitRunClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunClientReset400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response RunClientReset400JSONResponse) VisitRunClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunClientReset401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RunClientReset401JSONResponse) VisitRunClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunClientReset403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RunClientReset403JSONResponse) VisitRunClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunClientReset404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RunClientReset404JSONResponse) VisitRunClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunClientReset409JSONResponse struct {
+	ClientResetConflictJSONResponse
+}
+
+func (response RunClientReset409JSONResponse) VisitRunClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RunClientReset503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RunClientReset503JSONResponse) VisitRunClientResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTargetClientResetRunsRequestObject struct {
+	Target TargetID `json:"target"`
+	Params ListTargetClientResetRunsParams
+}
+
+type ListTargetClientResetRunsResponseObject interface {
+	VisitListTargetClientResetRunsResponse(w http.ResponseWriter) error
+}
+
+type ListTargetClientResetRuns200JSONResponse ClientResetRunList
+
+func (response ListTargetClientResetRuns200JSONResponse) VisitListTargetClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTargetClientResetRuns400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListTargetClientResetRuns400JSONResponse) VisitListTargetClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTargetClientResetRuns401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListTargetClientResetRuns401JSONResponse) VisitListTargetClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTargetClientResetRuns403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListTargetClientResetRuns403JSONResponse) VisitListTargetClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTargetClientResetRuns503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListTargetClientResetRuns503JSONResponse) VisitListTargetClientResetRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListClientsRequestObject struct {
 	Target TargetID `json:"target"`
 }
@@ -13014,6 +14061,15 @@ type StrictServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+	// GetClientResetRules The client reset rules
+	// (GET /api/v1/client-reset/rules)
+	GetClientResetRules(ctx context.Context, request GetClientResetRulesRequestObject) (GetClientResetRulesResponseObject, error)
+	// SetClientResetRules Replace the client reset rules
+	// (PUT /api/v1/client-reset/rules)
+	SetClientResetRules(ctx context.Context, request SetClientResetRulesRequestObject) (SetClientResetRulesResponseObject, error)
+	// ListClientResetRuns Every target's client reset runs
+	// (GET /api/v1/client-reset/runs)
+	ListClientResetRuns(ctx context.Context, request ListClientResetRunsRequestObject) (ListClientResetRunsResponseObject, error)
 	// ListInstanceGroups List the instance groups
 	// (GET /api/v1/instance-groups)
 	ListInstanceGroups(ctx context.Context, request ListInstanceGroupsRequestObject) (ListInstanceGroupsResponseObject, error)
@@ -13176,6 +14232,15 @@ type StrictServerInterface interface {
 	// SetBlocking Turn blocking on or off
 	// (PUT /api/v1/targets/{target}/blocking)
 	SetBlocking(ctx context.Context, request SetBlockingRequestObject) (SetBlockingResponseObject, error)
+	// PreviewClientReset What running the target's client reset rules would change
+	// (GET /api/v1/targets/{target}/client-reset/preview)
+	PreviewClientReset(ctx context.Context, request PreviewClientResetRequestObject) (PreviewClientResetResponseObject, error)
+	// RunClientReset Run the target's client reset rules now
+	// (POST /api/v1/targets/{target}/client-reset/run)
+	RunClientReset(ctx context.Context, request RunClientResetRequestObject) (RunClientResetResponseObject, error)
+	// ListTargetClientResetRuns The target's client reset runs
+	// (GET /api/v1/targets/{target}/client-reset/runs)
+	ListTargetClientResetRuns(ctx context.Context, request ListTargetClientResetRunsRequestObject) (ListTargetClientResetRunsResponseObject, error)
 	// ListClients The configured clients
 	// (GET /api/v1/targets/{target}/clients)
 	ListClients(ctx context.Context, request ListClientsRequestObject) (ListClientsResponseObject, error)
@@ -13477,6 +14542,87 @@ func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSessionResponseObject); ok {
 		if err := validResponse.VisitGetSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetClientResetRules operation middleware
+func (sh *strictHandler) GetClientResetRules(w http.ResponseWriter, r *http.Request) {
+	var request GetClientResetRulesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetClientResetRules(ctx, request.(GetClientResetRulesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetClientResetRules")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetClientResetRulesResponseObject); ok {
+		if err := validResponse.VisitGetClientResetRulesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetClientResetRules operation middleware
+func (sh *strictHandler) SetClientResetRules(w http.ResponseWriter, r *http.Request) {
+	var request SetClientResetRulesRequestObject
+
+	var body SetClientResetRulesJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetClientResetRules(ctx, request.(SetClientResetRulesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetClientResetRules")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetClientResetRulesResponseObject); ok {
+		if err := validResponse.VisitSetClientResetRulesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListClientResetRuns operation middleware
+func (sh *strictHandler) ListClientResetRuns(w http.ResponseWriter, r *http.Request, params ListClientResetRunsParams) {
+	var request ListClientResetRunsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListClientResetRuns(ctx, request.(ListClientResetRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListClientResetRuns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListClientResetRunsResponseObject); ok {
+		if err := validResponse.VisitListClientResetRunsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -14982,6 +16128,85 @@ func (sh *strictHandler) SetBlocking(w http.ResponseWriter, r *http.Request, tar
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetBlockingResponseObject); ok {
 		if err := validResponse.VisitSetBlockingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewClientReset operation middleware
+func (sh *strictHandler) PreviewClientReset(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request PreviewClientResetRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewClientReset(ctx, request.(PreviewClientResetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewClientReset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreviewClientResetResponseObject); ok {
+		if err := validResponse.VisitPreviewClientResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RunClientReset operation middleware
+func (sh *strictHandler) RunClientReset(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request RunClientResetRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RunClientReset(ctx, request.(RunClientResetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RunClientReset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RunClientResetResponseObject); ok {
+		if err := validResponse.VisitRunClientResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTargetClientResetRuns operation middleware
+func (sh *strictHandler) ListTargetClientResetRuns(w http.ResponseWriter, r *http.Request, target TargetID, params ListTargetClientResetRunsParams) {
+	var request ListTargetClientResetRunsRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTargetClientResetRuns(ctx, request.(ListTargetClientResetRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTargetClientResetRuns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTargetClientResetRunsResponseObject); ok {
+		if err := validResponse.VisitListTargetClientResetRunsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

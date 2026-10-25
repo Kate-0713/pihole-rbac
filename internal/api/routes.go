@@ -94,6 +94,10 @@ var routePermission = map[string]string{
 	"GET /api/v1/sessions":                accessSession,
 	"DELETE /api/v1/sessions/{public_id}": accessSession,
 
+	"GET /api/v1/client-reset/rules": string(rbac.SettingsManage),
+	"PUT /api/v1/client-reset/rules": string(rbac.SettingsManage),
+	"GET /api/v1/client-reset/runs":  string(rbac.SettingsManage),
+
 	"GET /api/v1/settings/general": string(rbac.SettingsManage),
 	"PUT /api/v1/settings/general": string(rbac.SettingsManage),
 	"GET /api/v1/settings/auth":    string(rbac.SettingsManage),
@@ -122,6 +126,17 @@ var routePermission = map[string]string{
 	"PATCH /api/v1/targets/{target}/clients":    targetPrefix + string(rbac.ClientsEdit),
 	"GET /api/v1/targets/{target}/groups":       accessTargetAny,
 	"GET /api/v1/targets/{target}/queries":      targetPrefix + string(rbac.QueryLogView),
+
+	"GET /api/v1/targets/{target}/client-reset/preview": targetPrefix + string(rbac.ClientResetRun),
+	"POST /api/v1/targets/{target}/client-reset/run":    targetPrefix + string(rbac.ClientResetRun),
+	"GET /api/v1/targets/{target}/client-reset/runs":    targetPrefix + string(rbac.ClientResetRun),
+}
+
+// longRoutes may take longer than the server's write timeout: a client reset reads, and for a run changes, every
+// client on every instance of its target. The gate gives them their own write deadline, a little over a run's limit.
+var longRoutes = map[string]bool{
+	"GET /api/v1/targets/{target}/client-reset/preview": true,
+	"POST /api/v1/targets/{target}/client-reset/run":    true,
 }
 
 // anyOf is the routePermission value for an operation that any one of several global permissions allows, written
