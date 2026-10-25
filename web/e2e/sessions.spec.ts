@@ -98,16 +98,18 @@ test('the session settings', async ({ page, state }) => {
 	const idle = page.getByLabel('Idle timeout (minutes)');
 	await expect(lifetime).toHaveValue('480');
 	await expect(page.getByText('8 hours from login.')).toBeVisible();
+	// The settings page has a card per group of settings, each with its own Save.
+	const save = page.locator('[data-slot="card"]').filter({ has: lifetime }).getByRole('button', { name: 'Save' });
 
 	// The rules show as you type, and the button waits for them.
 	await idle.fill('600');
 	await expect(page.getByText("The idle timeout can't be longer than the session lifetime.")).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+	await expect(save).toBeDisabled();
 
 	await lifetime.fill('720');
 	await idle.fill('45');
 	await expect(page.getByText('12 hours from login.')).toBeVisible();
-	await page.getByRole('button', { name: 'Save' }).click();
+	await save.click();
 	await expect(page.getByText('Session settings saved.')).toBeVisible();
 	await page.reload();
 	await expect(idle).toHaveValue('45');
@@ -116,7 +118,7 @@ test('the session settings', async ({ page, state }) => {
 	// Put the defaults back for the other tests.
 	await lifetime.fill('480');
 	await idle.fill('60');
-	await page.getByRole('button', { name: 'Save' }).click();
+	await save.click();
 	await expect(page.getByText('Session settings saved.')).toBeVisible();
 });
 

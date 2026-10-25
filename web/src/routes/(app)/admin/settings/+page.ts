@@ -10,7 +10,7 @@ export const _settingsKey = 'app:settings';
 
 type Data = { general: GeneralSettings | null; error: string | null; allowed: boolean };
 
-// The general settings. Audit retention and the client-reset schedule join them in later milestones.
+// The general settings: session lifetimes and audit retention. The client-reset schedule joins them later.
 export const load: PageLoad = async ({ parent, fetch, depends }): Promise<Data> => {
 	depends(_settingsKey);
 	await parent(); // the session must be known before can() is asked (see the instances page)
