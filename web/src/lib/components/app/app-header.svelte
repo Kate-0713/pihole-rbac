@@ -41,6 +41,7 @@
 			{ href: '/admin/sessions', label: 'Sessions', show: can('sessions.manage') },
 			{ href: '/admin/notifications', label: 'Notifications', show: can('notifications.manage') },
 			{ href: '/admin/audit', label: 'Audit log', show: can('audit.view') },
+			{ href: '/admin/client-reset', label: 'Client reset', show: can('settings.manage') },
 			{ href: '/admin/settings', label: 'Settings', show: can('settings.manage') },
 			{ href: '/admin/system', label: 'System', show: canAnyGlobal('config.reload', 'app.update') }
 		].filter((p) => p.show)
