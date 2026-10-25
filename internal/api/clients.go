@@ -28,6 +28,10 @@ func (s *Server) ListClients(ctx context.Context, req gen.ListClientsRequestObje
 		return nil, err
 	}
 	out := gen.ClientList{Clients: make([]gen.PiholeClient, 0, len(list))}
+	if rep, ok := s.Drift.Report(tg.t.ID); tg.isGroup() && ok && rep.PrimaryOK {
+		drifted := rep.ClientsDrifted()
+		out.Drifted = &drifted
+	}
 	for _, ce := range list {
 		out.Clients = append(out.Clients, clientJSON(ce))
 	}
@@ -131,6 +135,7 @@ func (s *Server) UpdateClient(ctx context.Context, req gen.UpdateClientRequestOb
 			s.auditPihole(ctx, m, audit.ActionClientUpdate, outs[i].callErr, details[i])
 		}
 	}
+	s.pokeDrift(ctx, tg)
 	if err != nil {
 		return nil, err
 	}

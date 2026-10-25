@@ -8,6 +8,7 @@
 	import DeleteDomainDialog from '#lib/components/app/delete-domain-dialog.svelte';
 	import DomainFormDialog from '#lib/components/app/domain-form-dialog.svelte';
 	import DomainTable from '#lib/components/app/domain-table.svelte';
+	import DriftBadge from '#lib/components/app/drift-badge.svelte';
 	import MirroredMemberNote from '#lib/components/app/mirrored-member-note.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -47,7 +48,10 @@
 </svelte:head>
 
 <div class="flex flex-wrap items-center justify-between gap-2">
-	<h1 class="text-xl font-semibold">Domains</h1>
+	<div class="flex items-center gap-2">
+		<h1 class="text-xl font-semibold">Domains</h1>
+		{#if data.target && !data.error}<DriftBadge target={data.target} drifted={data.drifted} />{/if}
+	</div>
 	{#if canEdit && data.target && !data.error}
 		<Button size="sm" onclick={add}><PlusIcon /> Add a domain</Button>
 	{/if}

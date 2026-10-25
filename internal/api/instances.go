@@ -91,9 +91,12 @@ func (s *Server) ListTargets(ctx context.Context, _ gen.ListTargetsRequestObject
 		}
 		slices.SortFunc(others, func(a, b gen.TargetMember) int { return cmp.Compare(a.Name, b.Name) })
 		members = append(members, others...)
-		out.Targets = append(out.Targets, gen.Target{
-			Id: t.String(), Kind: gen.TargetKindGroup, Name: g.Name, Members: &members, Health: groupHealth(members),
-		})
+		tj := gen.Target{Id: t.String(), Kind: gen.TargetKindGroup, Name: g.Name, Members: &members, Health: groupHealth(members)}
+		if rep, ok := s.Drift.Report(g.ID); ok && rep.PrimaryOK {
+			drifted := rep.Drifted()
+			tj.Drifted = &drifted
+		}
+		out.Targets = append(out.Targets, tj)
 	}
 	return gen.ListTargets200JSONResponse(out), nil
 }
@@ -207,6 +210,8 @@ func (s *Server) EnableInstance(ctx context.Context, req gen.EnableInstanceReque
 	if err != nil {
 		return nil, err
 	}
+	// A mirrored group's members changed: check it again.
+	s.pokeDrift(ctx, target{t: rbac.InstanceTarget(inst.ID)})
 	return gen.EnableInstance200JSONResponse(s.instanceJSON(inst)), nil
 }
 
@@ -218,6 +223,8 @@ func (s *Server) DisableInstance(ctx context.Context, req gen.DisableInstanceReq
 	if err != nil {
 		return nil, err
 	}
+	// A mirrored group's members changed: check it again.
+	s.pokeDrift(ctx, target{t: rbac.InstanceTarget(inst.ID)})
 	return gen.DisableInstance200JSONResponse(s.instanceJSON(inst)), nil
 }
 

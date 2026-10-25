@@ -54,6 +54,7 @@ type Options struct {
 	Audit          *audit.Logger
 	Secrets        *secrets.Manager
 	Instances      *instances.Service     // instance changes, and the client pool for health and secret reloads
+	Drift          *instances.Drift       // mirrored groups' drift reports; nil in tests that don't need them
 	Roles          *rbac.Manager          // changes to roles, grants, user roles, LDAP mappings and users
 	LoginSettings  *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
 	TrustedProxies []netip.Prefix

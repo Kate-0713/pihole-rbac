@@ -67,7 +67,9 @@
 								<HealthDot health={t.health} />
 								<!-- No whitespace after the name: an instance's option reads exactly "<health> <name>". -->
 								<span class="truncate">{t.name}</span>{#if t.members}<span class="text-muted-foreground ml-auto text-xs"
-										>{t.members.length === 1 ? '1 member' : `${t.members.length} members`}</span
+										>{t.members.length === 1 ? '1 member' : `${t.members.length} members`}{t.drifted
+											? ' · drifted'
+											: ''}</span
 									>{/if}
 							</Select.Item>
 						{/each}

@@ -6,6 +6,7 @@
 	import { invalidate } from '$app/navigation';
 	import ClientFormDialog from '#lib/components/app/client-form-dialog.svelte';
 	import ClientTable from '#lib/components/app/client-table.svelte';
+	import DriftBadge from '#lib/components/app/drift-badge.svelte';
 	import MirroredMemberNote from '#lib/components/app/mirrored-member-note.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -33,7 +34,10 @@
 </svelte:head>
 
 <div class="grid gap-1">
-	<h1 class="text-xl font-semibold">Clients</h1>
+	<div class="flex items-center gap-2">
+		<h1 class="text-xl font-semibold">Clients</h1>
+		{#if data.target && !data.error}<DriftBadge target={data.target} drifted={data.drifted} />{/if}
+	</div>
 	<p class="text-muted-foreground text-sm">
 		The devices and networks set up on this Pi-hole, and the groups whose lists apply to them.
 	</p>

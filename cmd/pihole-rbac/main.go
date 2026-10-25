@@ -149,6 +149,9 @@ func serve() error {
 		return err
 	}
 	go pool.Run(ctx)
+	// Mirrored groups are compared at startup, every few minutes, and soon after a write through them.
+	drift := &instances.Drift{Service: instanceService, Logger: logger}
+	go drift.Run(ctx)
 
 	server := api.New(api.Options{
 		Store:          st,
@@ -158,6 +161,7 @@ func serve() error {
 		Audit:          auditLog,
 		Secrets:        sec,
 		Instances:      instanceService,
+		Drift:          drift,
 		Roles:          &rbac.Manager{Store: st, Audit: auditLog},
 		TrustedProxies: cfg.TrustedProxies,
 		LoginByIP:      byIP,

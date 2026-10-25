@@ -35,6 +35,10 @@ func (s *Server) ListDomains(ctx context.Context, req gen.ListDomainsRequestObje
 		return nil, err
 	}
 	out := gen.DomainList{Domains: make([]gen.Domain, 0, len(list))}
+	if rep, ok := s.Drift.Report(tg.t.ID); tg.isGroup() && ok && rep.PrimaryOK {
+		drifted := rep.DomainsDrifted()
+		out.Drifted = &drifted
+	}
 	for _, d := range list {
 		out.Domains = append(out.Domains, domainJSON(d))
 	}
@@ -99,6 +103,7 @@ func (s *Server) AddDomain(ctx context.Context, req gen.AddDomainRequestObject) 
 			})
 		}
 	}
+	s.pokeDrift(ctx, tg)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +209,7 @@ func (s *Server) UpdateDomain(ctx context.Context, req gen.UpdateDomainRequestOb
 			s.auditPihole(ctx, m, audit.ActionDomainUpdate, outs[i].callErr, details[i])
 		}
 	}
+	s.pokeDrift(ctx, tg)
 	if err != nil {
 		return nil, err
 	}
@@ -277,6 +283,7 @@ func (s *Server) DeleteDomain(ctx context.Context, req gen.DeleteDomainRequestOb
 			s.auditPihole(ctx, m, audit.ActionDomainDelete, outs[i].callErr, details[i])
 		}
 	}
+	s.pokeDrift(ctx, tg)
 	if err != nil {
 		return nil, err
 	}

@@ -80,6 +80,42 @@ func (e DomainType) Valid() bool {
 	}
 }
 
+// Defines values for DomainDriftKind.
+const (
+	DomainDriftKindExact DomainDriftKind = "exact"
+	DomainDriftKindRegex DomainDriftKind = "regex"
+)
+
+// Valid indicates whether the value is a known member of the DomainDriftKind enum.
+func (e DomainDriftKind) Valid() bool {
+	switch e {
+	case DomainDriftKindExact:
+		return true
+	case DomainDriftKindRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainDriftType.
+const (
+	DomainDriftTypeAllow DomainDriftType = "allow"
+	DomainDriftTypeDeny  DomainDriftType = "deny"
+)
+
+// Valid indicates whether the value is a known member of the DomainDriftType enum.
+func (e DomainDriftType) Valid() bool {
+	switch e {
+	case DomainDriftTypeAllow:
+		return true
+	case DomainDriftTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DomainInputKind.
 const (
 	DomainInputKindExact DomainInputKind = "exact"
@@ -182,6 +218,48 @@ func (e DomainUpdateType) Valid() bool {
 	case DomainUpdateTypeAllow:
 		return true
 	case DomainUpdateTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DriftDifference.
+const (
+	Changed DriftDifference = "changed"
+	Extra   DriftDifference = "extra"
+	Missing DriftDifference = "missing"
+)
+
+// Valid indicates whether the value is a known member of the DriftDifference enum.
+func (e DriftDifference) Valid() bool {
+	switch e {
+	case Changed:
+		return true
+	case Extra:
+		return true
+	case Missing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DriftReportState.
+const (
+	Checked            DriftReportState = "checked"
+	NotChecked         DriftReportState = "not_checked"
+	PrimaryUnavailable DriftReportState = "primary_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the DriftReportState enum.
+func (e DriftReportState) Valid() bool {
+	switch e {
+	case Checked:
+		return true
+	case NotChecked:
+		return true
+	case PrimaryUnavailable:
 		return true
 	default:
 		return false
@@ -671,9 +749,24 @@ type CSRFToken struct {
 	CsrfToken string `json:"csrf_token"`
 }
 
+// ClientDrift defines model for ClientDrift.
+type ClientDrift struct {
+	Client string `json:"client"`
+
+	// Difference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
+	Difference DriftDifference   `json:"difference"`
+	Instance   string            `json:"instance"`
+	InstanceId int64             `json:"instance_id"`
+	Member     *DriftClientState `json:"member,omitempty"`
+	Primary    *DriftClientState `json:"primary,omitempty"`
+}
+
 // ClientList defines model for ClientList.
 type ClientList struct {
 	Clients []PiholeClient `json:"clients"`
+
+	// Drifted For a mirrored group: whether its members' clients differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them.
+	Drifted *bool `json:"drifted,omitempty"`
 }
 
 // ClientUpdate Names the client and gives at least one of comment and groups.
@@ -794,6 +887,29 @@ type DomainKind string
 // DomainType defines model for Domain.Type.
 type DomainType string
 
+// DomainDrift defines model for DomainDrift.
+type DomainDrift struct {
+	// Difference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
+	Difference DriftDifference `json:"difference"`
+	Domain     string          `json:"domain"`
+	Instance   string          `json:"instance"`
+	InstanceId int64           `json:"instance_id"`
+	Kind       DomainDriftKind `json:"kind"`
+
+	// Member The entry's settings on the primary or on the member; absent where the entry is missing.
+	Member *DriftDomainState `json:"member,omitempty"`
+
+	// Primary The entry's settings on the primary or on the member; absent where the entry is missing.
+	Primary *DriftDomainState `json:"primary,omitempty"`
+	Type    DomainDriftType   `json:"type"`
+}
+
+// DomainDriftKind defines model for DomainDrift.Kind.
+type DomainDriftKind string
+
+// DomainDriftType defines model for DomainDrift.Type.
+type DomainDriftType string
+
 // DomainInput defines model for DomainInput.
 type DomainInput struct {
 	Comment *string `json:"comment,omitempty"`
@@ -827,6 +943,9 @@ type DomainKeyType string
 // DomainList defines model for DomainList.
 type DomainList struct {
 	Domains []Domain `json:"domains"`
+
+	// Drifted For a mirrored group: whether its members' domain lists differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them.
+	Drifted *bool `json:"drifted,omitempty"`
 }
 
 // DomainUpdate Names the entry and gives at least one of comment and groups.
@@ -866,6 +985,67 @@ type DomainWriteResult struct {
 type DomainWriteResults struct {
 	Results []DomainWriteResult `json:"results"`
 }
+
+// DriftClientState defines model for DriftClientState.
+type DriftClientState struct {
+	Comment string   `json:"comment"`
+	Groups  []string `json:"groups"`
+}
+
+// DriftCounts defines model for DriftCounts.
+type DriftCounts struct {
+	Clients int `json:"clients"`
+	Domains int `json:"domains"`
+	Groups  int `json:"groups"`
+}
+
+// DriftDifference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
+type DriftDifference string
+
+// DriftDomainState The entry's settings on the primary or on the member; absent where the entry is missing.
+type DriftDomainState struct {
+	Comment string `json:"comment"`
+	Enabled bool   `json:"enabled"`
+
+	// Groups The Pi-hole groups by name, sorted.
+	Groups []string `json:"groups"`
+}
+
+// DriftGroupState defines model for DriftGroupState.
+type DriftGroupState struct {
+	Comment string `json:"comment"`
+	Enabled bool   `json:"enabled"`
+}
+
+// DriftReport defines model for DriftReport.
+type DriftReport struct {
+	// CheckedAt When the check ran. Absent when not_checked.
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+
+	// Clients Absent without clients.view on the group.
+	Clients *[]ClientDrift `json:"clients,omitempty"`
+	Counts  DriftCounts    `json:"counts"`
+
+	// Domains Absent without domains.view on the group.
+	Domains *[]DomainDrift `json:"domains,omitempty"`
+
+	// Drifted Whether any member was found to differ from the primary, in any of the three lists.
+	Drifted bool `json:"drifted"`
+
+	// Group The group's name.
+	Group   string              `json:"group"`
+	GroupId int64               `json:"group_id"`
+	Groups  *[]PiholeGroupDrift `json:"groups,omitempty"`
+
+	// Members The enabled members as of the check, the primary first. Empty when not_checked.
+	Members []MemberRead `json:"members"`
+
+	// State not_checked: no check since the server started. checked: the primary answered, so the members that answered were compared with it. primary_unavailable: the primary didn't answer or is disabled, so nothing could be compared.
+	State DriftReportState `json:"state"`
+}
+
+// DriftReportState not_checked: no check since the server started. checked: the primary answered, so the members that answered were compared with it. primary_unavailable: the primary didn't answer or is disabled, so nothing could be compared.
+type DriftReportState string
 
 // Error defines model for Error.
 type Error struct {
@@ -1355,6 +1535,17 @@ type PiholeGroup struct {
 	Name string `json:"name"`
 }
 
+// PiholeGroupDrift defines model for PiholeGroupDrift.
+type PiholeGroupDrift struct {
+	// Difference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
+	Difference DriftDifference  `json:"difference"`
+	Instance   string           `json:"instance"`
+	InstanceId int64            `json:"instance_id"`
+	Member     *DriftGroupState `json:"member,omitempty"`
+	Name       string           `json:"name"`
+	Primary    *DriftGroupState `json:"primary,omitempty"`
+}
+
 // PiholeGroupList defines model for PiholeGroupList.
 type PiholeGroupList struct {
 	Groups []PiholeGroup `json:"groups"`
@@ -1562,6 +1753,9 @@ type SetupStatus struct {
 
 // Target defines model for Target.
 type Target struct {
+	// Drifted For a mirrored group: whether its members differed from the primary at the last drift check. Absent until a check has compared them (see GET /instance-groups/{id}/drift).
+	Drifted *bool `json:"drifted,omitempty"`
+
 	// Health An instance's health (see InstanceHealth), or a mirrored group's overall state, worked out from its enabled members: up when all are up, down when all are down, unknown when none has been checked yet, and degraded otherwise. A group's health has no times or error; its members carry their own.
 	Health *TargetHealth `json:"health,omitempty"`
 
@@ -1981,6 +2175,12 @@ type ServerInterface interface {
 	// UpdateInstanceGroup Change an instance group
 	// (PUT /api/v1/instance-groups/{id})
 	UpdateInstanceGroup(w http.ResponseWriter, r *http.Request, id GroupID)
+	// GetGroupDrift What differs between a mirrored group's members
+	// (GET /api/v1/instance-groups/{id}/drift)
+	GetGroupDrift(w http.ResponseWriter, r *http.Request, id GroupID)
+	// CheckGroupDrift Check a mirrored group for drift now
+	// (POST /api/v1/instance-groups/{id}/drift/check)
+	CheckGroupDrift(w http.ResponseWriter, r *http.Request, id GroupID)
 	// ListInstances List the Pi-hole instances
 	// (GET /api/v1/instances)
 	ListInstances(w http.ResponseWriter, r *http.Request)
@@ -2338,6 +2538,58 @@ func (siw *ServerInterfaceWrapper) UpdateInstanceGroup(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateInstanceGroup(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGroupDrift operation middleware
+func (siw *ServerInterfaceWrapper) GetGroupDrift(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GroupID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGroupDrift(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CheckGroupDrift operation middleware
+func (siw *ServerInterfaceWrapper) CheckGroupDrift(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GroupID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckGroupDrift(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3931,6 +4183,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/instance-groups/{id}", wrapper.DeleteInstanceGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instance-groups/{id}", wrapper.GetInstanceGroup)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/instance-groups/{id}", wrapper.UpdateInstanceGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instance-groups/{id}/drift", wrapper.GetGroupDrift)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instance-groups/{id}/drift/check", wrapper.CheckGroupDrift)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles", wrapper.ListRoles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/roles", wrapper.CreateRole)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles/catalogue", wrapper.GetRoleCatalogue)
@@ -4845,6 +5099,176 @@ func (response UpdateInstanceGroup415JSONResponse) VisitUpdateInstanceGroupRespo
 type UpdateInstanceGroup503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response UpdateInstanceGroup503JSONResponse) VisitUpdateInstanceGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupDriftRequestObject struct {
+	Id GroupID `json:"id"`
+}
+
+type GetGroupDriftResponseObject interface {
+	VisitGetGroupDriftResponse(w http.ResponseWriter) error
+}
+
+type GetGroupDrift200JSONResponse DriftReport
+
+func (response GetGroupDrift200JSONResponse) VisitGetGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupDrift400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetGroupDrift400JSONResponse) VisitGetGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupDrift401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetGroupDrift401JSONResponse) VisitGetGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupDrift403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetGroupDrift403JSONResponse) VisitGetGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupDrift503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetGroupDrift503JSONResponse) VisitGetGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckGroupDriftRequestObject struct {
+	Id GroupID `json:"id"`
+}
+
+type CheckGroupDriftResponseObject interface {
+	VisitCheckGroupDriftResponse(w http.ResponseWriter) error
+}
+
+type CheckGroupDrift200JSONResponse DriftReport
+
+func (response CheckGroupDrift200JSONResponse) VisitCheckGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckGroupDrift400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response CheckGroupDrift400JSONResponse) VisitCheckGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckGroupDrift401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CheckGroupDrift401JSONResponse) VisitCheckGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckGroupDrift403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CheckGroupDrift403JSONResponse) VisitCheckGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckGroupDrift404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CheckGroupDrift404JSONResponse) VisitCheckGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckGroupDrift503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response CheckGroupDrift503JSONResponse) VisitCheckGroupDriftResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -10250,6 +10674,12 @@ type StrictServerInterface interface {
 	// UpdateInstanceGroup Change an instance group
 	// (PUT /api/v1/instance-groups/{id})
 	UpdateInstanceGroup(ctx context.Context, request UpdateInstanceGroupRequestObject) (UpdateInstanceGroupResponseObject, error)
+	// GetGroupDrift What differs between a mirrored group's members
+	// (GET /api/v1/instance-groups/{id}/drift)
+	GetGroupDrift(ctx context.Context, request GetGroupDriftRequestObject) (GetGroupDriftResponseObject, error)
+	// CheckGroupDrift Check a mirrored group for drift now
+	// (POST /api/v1/instance-groups/{id}/drift/check)
+	CheckGroupDrift(ctx context.Context, request CheckGroupDriftRequestObject) (CheckGroupDriftResponseObject, error)
 	// ListInstances List the Pi-hole instances
 	// (GET /api/v1/instances)
 	ListInstances(ctx context.Context, request ListInstancesRequestObject) (ListInstancesResponseObject, error)
@@ -10747,6 +11177,58 @@ func (sh *strictHandler) UpdateInstanceGroup(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateInstanceGroupResponseObject); ok {
 		if err := validResponse.VisitUpdateInstanceGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGroupDrift operation middleware
+func (sh *strictHandler) GetGroupDrift(w http.ResponseWriter, r *http.Request, id GroupID) {
+	var request GetGroupDriftRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGroupDrift(ctx, request.(GetGroupDriftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGroupDrift")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGroupDriftResponseObject); ok {
+		if err := validResponse.VisitGetGroupDriftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CheckGroupDrift operation middleware
+func (sh *strictHandler) CheckGroupDrift(w http.ResponseWriter, r *http.Request, id GroupID) {
+	var request CheckGroupDriftRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CheckGroupDrift(ctx, request.(CheckGroupDriftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CheckGroupDrift")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CheckGroupDriftResponseObject); ok {
+		if err := validResponse.VisitCheckGroupDriftResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

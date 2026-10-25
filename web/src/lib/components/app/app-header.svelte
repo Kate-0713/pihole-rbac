@@ -25,7 +25,9 @@
 			{ href: '/dashboard', label: 'Dashboard', show: canAny(target) },
 			{ href: '/domains', label: 'Domains', show: can('domains.view', target) },
 			{ href: '/clients', label: 'Clients', show: can('clients.view', target) },
-			{ href: '/querylog', label: 'Query log', show: can('querylog.view', target) }
+			{ href: '/querylog', label: 'Query log', show: can('querylog.view', target) },
+			// Only a mirrored group has drift.
+			{ href: '/drift', label: 'Drift', show: !!target?.startsWith('g-') && can('drift.view', target) }
 		].filter((p) => p.show)
 	);
 

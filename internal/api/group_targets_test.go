@@ -531,7 +531,7 @@ func TestGroupRetryMembers(t *testing.T) {
 	}
 
 	for name, path := range map[string]string{
-		"an instance target": ge.instPath("beta", "/blocking?members=" + strconv.FormatInt(ge.ids["beta"], 10)),
+		"an instance target": ge.instPath("beta", "/blocking?members="+strconv.FormatInt(ge.ids["beta"], 10)),
 		"not a member":       ge.path("/blocking?members=999"),
 	} {
 		if res := ge.admin.do(http.MethodPut, path, gen.BlockingInput{Enabled: true}); res.Code != http.StatusBadRequest || errorDetails(t, res)["field"] != "members" {

@@ -19,6 +19,8 @@ type Data = {
 	allowed: boolean;
 	// Set when the target is a mirrored group whose primary couldn't be read: its lists come from the primary alone.
 	primaryDown?: boolean;
+	// For a mirrored group: whether its members' lists differed from the primary's at the last drift check.
+	drifted?: boolean;
 };
 
 export const load: PageLoad = async ({ parent, fetch, depends }): Promise<Data> => {
@@ -36,7 +38,7 @@ export const load: PageLoad = async ({ parent, fetch, depends }): Promise<Data> 
 			unwrap(api.GET('/api/v1/targets/{target}/domains', params)),
 			unwrap(api.GET('/api/v1/targets/{target}/groups', params))
 		]);
-		return { domains: list.domains, groups: groups.groups, error: null, allowed: true };
+		return { domains: list.domains, groups: groups.groups, error: null, allowed: true, drifted: list.drifted };
 	} catch (e) {
 		// A Pi-hole that is down is shown on the page, as on the dashboard.
 		if (e instanceof ApiError) return { ...empty, error: e.message, allowed: true, primaryDown: e.details.primary === true };

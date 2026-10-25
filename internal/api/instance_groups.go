@@ -51,6 +51,7 @@ func (s *Server) CreateInstanceGroup(ctx context.Context, req gen.CreateInstance
 	if err != nil {
 		return nil, err
 	}
+	s.Drift.Poke(g.ID)
 	return gen.CreateInstanceGroup201JSONResponse(s.groupResponse(ctx, g)), nil
 }
 
@@ -62,6 +63,9 @@ func (s *Server) UpdateInstanceGroup(ctx context.Context, req gen.UpdateInstance
 	if err != nil {
 		return nil, err
 	}
+	// The old report may describe other members or the old primary.
+	s.Drift.Forget(g.ID)
+	s.Drift.Poke(g.ID)
 	return gen.UpdateInstanceGroup200JSONResponse(s.groupResponse(ctx, g)), nil
 }
 
@@ -72,6 +76,7 @@ func (s *Server) DeleteInstanceGroup(ctx context.Context, req gen.DeleteInstance
 	if err := s.Instances.DeleteGroup(ctx, actor(ctx), req.Id); err != nil {
 		return nil, err
 	}
+	s.Drift.Forget(req.Id)
 	return gen.DeleteInstanceGroup204Response{}, nil
 }
 

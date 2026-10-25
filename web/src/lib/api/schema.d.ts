@@ -440,6 +440,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instance-groups/{id}/drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * What differs between a mirrored group's members
+         * @description The group's latest drift check: each enabled member compared with the primary, by natural key (domain, type and kind; client identifier; Pi-hole group name), with group memberships compared by name. Checks run at startup, every 5 minutes, and soon after a write through the group or to one of its members; the result is held in memory, so `state` is not_checked until the first check after a restart. Needs drift.view on the group. Without domains.view on the group the domain differences are left out, and without clients.view the client differences; the counts are always given. A member that didn't answer is listed with its error, and its differences are unknown rather than reported.
+         */
+        get: operations["getGroupDrift"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instance-groups/{id}/drift/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a mirrored group for drift now
+         * @description Reads every enabled member now and answers with the new report, as GET /instance-groups/{id}/drift does. Needs drift.view on the group. It only reads, so it isn't audited.
+         */
+        post: operations["checkGroupDrift"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -1181,6 +1227,8 @@ export interface components {
             /** @description For a mirrored group: its enabled members, the primary first, then by name. Absent for an instance. */
             members?: components["schemas"]["TargetMember"][];
             mirrored_group?: components["schemas"]["MirroredGroupRef"];
+            /** @description For a mirrored group: whether its members differed from the primary at the last drift check. Absent until a check has compared them (see GET /instance-groups/{id}/drift). */
+            drifted?: boolean;
         };
         /** @description An instance's health (see InstanceHealth), or a mirrored group's overall state, worked out from its enabled members: up when all are up, down when all are down, unknown when none has been checked yet, and degraded otherwise. A group's health has no times or error; its members carry their own. */
         TargetHealth: {
@@ -1349,6 +1397,88 @@ export interface components {
         };
         InstanceGroupList: {
             groups: components["schemas"]["InstanceGroup"][];
+        };
+        DriftReport: {
+            /** Format: int64 */
+            group_id: number;
+            /** @description The group's name. */
+            group: string;
+            /**
+             * @description not_checked: no check since the server started. checked: the primary answered, so the members that answered were compared with it. primary_unavailable: the primary didn't answer or is disabled, so nothing could be compared.
+             * @enum {string}
+             */
+            state: "not_checked" | "checked" | "primary_unavailable";
+            /**
+             * Format: date-time
+             * @description When the check ran. Absent when not_checked.
+             */
+            checked_at?: string;
+            /** @description Whether any member was found to differ from the primary, in any of the three lists. */
+            drifted: boolean;
+            /** @description The enabled members as of the check, the primary first. Empty when not_checked. */
+            members: components["schemas"]["MemberRead"][];
+            counts: components["schemas"]["DriftCounts"];
+            /** @description Absent without domains.view on the group. */
+            domains?: components["schemas"]["DomainDrift"][];
+            /** @description Absent without clients.view on the group. */
+            clients?: components["schemas"]["ClientDrift"][];
+            groups?: components["schemas"]["PiholeGroupDrift"][];
+        };
+        DriftCounts: {
+            domains: number;
+            clients: number;
+            groups: number;
+        };
+        /**
+         * @description missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
+         * @enum {string}
+         */
+        DriftDifference: "missing" | "extra" | "changed";
+        DomainDrift: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            domain: string;
+            /** @enum {string} */
+            type: "allow" | "deny";
+            /** @enum {string} */
+            kind: "exact" | "regex";
+            difference: components["schemas"]["DriftDifference"];
+            primary?: components["schemas"]["DriftDomainState"];
+            member?: components["schemas"]["DriftDomainState"];
+        };
+        /** @description The entry's settings on the primary or on the member; absent where the entry is missing. */
+        DriftDomainState: {
+            comment: string;
+            /** @description The Pi-hole groups by name, sorted. */
+            groups: string[];
+            enabled: boolean;
+        };
+        ClientDrift: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            client: string;
+            difference: components["schemas"]["DriftDifference"];
+            primary?: components["schemas"]["DriftClientState"];
+            member?: components["schemas"]["DriftClientState"];
+        };
+        DriftClientState: {
+            comment: string;
+            groups: string[];
+        };
+        PiholeGroupDrift: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            name: string;
+            difference: components["schemas"]["DriftDifference"];
+            primary?: components["schemas"]["DriftGroupState"];
+            member?: components["schemas"]["DriftGroupState"];
+        };
+        DriftGroupState: {
+            comment: string;
+            enabled: boolean;
         };
         /** @description One permission within one scope. */
         Grant: {
@@ -1776,6 +1906,8 @@ export interface components {
             error?: components["schemas"]["WriteError"];
         };
         DomainList: {
+            /** @description For a mirrored group: whether its members' domain lists differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them. */
+            drifted?: boolean;
             domains: components["schemas"]["Domain"][];
         };
         Domain: {
@@ -1830,6 +1962,8 @@ export interface components {
             groups?: number[];
         };
         ClientList: {
+            /** @description For a mirrored group: whether its members' clients differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them. */
+            drifted?: boolean;
             clients: components["schemas"]["PiholeClient"][];
         };
         PiholeClient: {
@@ -2802,6 +2936,61 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getGroupDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The latest report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriftReport"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    checkGroupDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriftReport"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             503: components["responses"]["SetupRequired"];
         };
     };
