@@ -924,6 +924,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the audit log
+         * @description Audit entries, newest first, matching every filter given. Paged with `limit` and `cursor`: pass the previous answer's `next_cursor` to get the next page; it is absent on the last page. Reading isn't audited.
+         */
+        get: operations["listAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export the audit log as CSV
+         * @description The entries matching the same filters as the list, newest first, as a CSV download: at most the newest 50,000. Columns: id, time, user, action, target, instance_id, instance, result, ip, detail (JSON). A cell that starts with =, +, -, @, a tab or a carriage return gets a leading apostrophe, so a spreadsheet shows it as text rather than running it as a formula. Reading isn't audited.
+         */
+        get: operations["exportAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/general": {
         parameters: {
             query?: never;
@@ -933,12 +973,12 @@ export interface paths {
         };
         /**
          * The general settings
-         * @description How long sessions last. Defaults until saved.
+         * @description How long sessions last and how long audit entries are kept. Defaults until saved.
          */
         get: operations["getGeneralSettings"];
         /**
          * Change the general settings
-         * @description A new session lifetime applies to sessions started from now on; a new idle timeout applies to every session at once. Audited as settings_update.
+         * @description A new session lifetime applies to sessions started from now on; a new idle timeout applies to every session at once; a new audit retention applies at a prune a few seconds later. Audited as settings_update.
          */
         put: operations["setGeneralSettings"];
         post?: never;
@@ -1834,15 +1874,55 @@ export interface components {
             /** @description Pass as `cursor` for the next page. Absent on the last page. */
             next_cursor?: string;
         };
+        AuditList: {
+            entries: components["schemas"]["AuditEntry"][];
+            /** @description Pass as `cursor` for the next page. Absent on the last page. */
+            next_cursor?: string;
+        };
+        AuditEntry: {
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            at: string;
+            /**
+             * Format: int64
+             * @description The acting user's ID. Absent when there was no user row (a failed login with an unknown name, the CLI or the app itself) or the user has since been deleted.
+             */
+            user_id?: number;
+            /** @description The acting user, the name typed into a failed login, `(cli)` for the command line or `(system)` for the app itself. */
+            username: string;
+            action: string;
+            /** @description What the action was performed against, or empty. */
+            target: string;
+            /**
+             * Format: int64
+             * @description The Pi-hole instance, for actions about one. Absent otherwise, or once the instance is deleted.
+             */
+            instance_id?: number;
+            /** @description The instance's name at the time, kept after it is deleted; empty when there is none. */
+            instance_name: string;
+            /** @enum {string} */
+            result: "success" | "failure";
+            /** @description What the action changed, per action; `error` on a failure. Never secret values. */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** @description The client address, or empty for the CLI and the app itself. */
+            ip: string;
+        };
         GeneralSettingsInput: {
             /** @description How long a session lasts at most, from login. 15 minutes to 30 days. */
             session_lifetime_minutes: number;
             /** @description How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime. */
             idle_timeout_minutes: number;
+            /** @description How many days audit entries are kept, 30 to 3650. Absent leaves it as it is. */
+            audit_retention_days?: number;
         };
         GeneralSettings: {
             session_lifetime_minutes: number;
             idle_timeout_minutes: number;
+            /** @description How many days audit entries are kept; 365 until saved. */
+            audit_retention_days: number;
             /**
              * Format: date-time
              * @description Absent until the settings are first saved.
@@ -2276,6 +2356,20 @@ export interface components {
         };
     };
     parameters: {
+        /** @description Only entries by this username (exact). Names are copied into each entry, so deleted users still match. */
+        AuditUser: string;
+        /** @description Only entries with one of these actions. Repeat for several. */
+        AuditAction: string[];
+        /** @description Only entries with this target (exact), such as `i-1`, `g-2`, `user:alice` or `settings:general`. */
+        AuditTarget: string;
+        /** @description Only entries about this Pi-hole instance. */
+        AuditInstance: number;
+        /** @description Only successes or only failures. */
+        AuditResult: "success" | "failure";
+        /** @description Only entries at or after this time. */
+        AuditFrom: string;
+        /** @description Only entries before this time. Must be after `from` when both are given. */
+        AuditTo: string;
         /** @description The instance's ID. */
         InstanceID: number;
         /** @description The instance group's ID. */
@@ -3864,6 +3958,90 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listAudit: {
+        parameters: {
+            query?: {
+                /** @description Only entries by this username (exact). Names are copied into each entry, so deleted users still match. */
+                user?: components["parameters"]["AuditUser"];
+                /** @description Only entries with one of these actions. Repeat for several. */
+                action?: components["parameters"]["AuditAction"];
+                /** @description Only entries with this target (exact), such as `i-1`, `g-2`, `user:alice` or `settings:general`. */
+                target?: components["parameters"]["AuditTarget"];
+                /** @description Only entries about this Pi-hole instance. */
+                instance_id?: components["parameters"]["AuditInstance"];
+                /** @description Only successes or only failures. */
+                result?: components["parameters"]["AuditResult"];
+                /** @description Only entries at or after this time. */
+                from?: components["parameters"]["AuditFrom"];
+                /** @description Only entries before this time. Must be after `from` when both are given. */
+                to?: components["parameters"]["AuditTo"];
+                /** @description How many entries to return, 1 to 200. */
+                limit?: number;
+                /** @description The `next_cursor` of the previous page. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    exportAudit: {
+        parameters: {
+            query?: {
+                /** @description Only entries by this username (exact). Names are copied into each entry, so deleted users still match. */
+                user?: components["parameters"]["AuditUser"];
+                /** @description Only entries with one of these actions. Repeat for several. */
+                action?: components["parameters"]["AuditAction"];
+                /** @description Only entries with this target (exact), such as `i-1`, `g-2`, `user:alice` or `settings:general`. */
+                target?: components["parameters"]["AuditTarget"];
+                /** @description Only entries about this Pi-hole instance. */
+                instance_id?: components["parameters"]["AuditInstance"];
+                /** @description Only successes or only failures. */
+                result?: components["parameters"]["AuditResult"];
+                /** @description Only entries at or after this time. */
+                from?: components["parameters"]["AuditFrom"];
+                /** @description Only entries before this time. Must be after `from` when both are given. */
+                to?: components["parameters"]["AuditTo"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The CSV file. */
+            200: {
+                headers: {
+                    /** @description attachment, with a file name holding the time of the export. */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             503: components["responses"]["SetupRequired"];
         };
     };

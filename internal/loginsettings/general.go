@@ -20,10 +20,13 @@ import (
 // GeneralKey is the settings row holding the general settings.
 const GeneralKey = "general"
 
-// General are the general settings: for now, how long sessions last.
+// General are the general settings: how long sessions last, and how long audit rows are kept.
 type General struct {
 	SessionLifetimeMinutes int `json:"session_lifetime_minutes"` // absolute, from login
 	IdleTimeoutMinutes     int `json:"idle_timeout_minutes"`     // since the last request
+	// AuditRetentionDays is how long audit rows are kept. Rows saved before the setting existed have none, which loads
+	// as the default.
+	AuditRetentionDays int `json:"audit_retention_days,omitempty"`
 }
 
 // The allowed ranges, in minutes. The idle timeout can't be longer than the lifetime, since it would never apply.
@@ -32,6 +35,10 @@ const (
 	MaxLifetimeMinutes = 30 * 24 * 60
 	MinIdleMinutes     = 5
 	MaxIdleMinutes     = 24 * 60
+
+	DefaultRetentionDays = 365
+	MinRetentionDays     = 30
+	MaxRetentionDays     = 3650
 )
 
 // Validate checks the ranges. The error is a validation refusal naming the field.
@@ -43,6 +50,8 @@ func (g General) Validate() error {
 		return validation("idle_timeout_minutes", "The idle timeout is %d minutes to %d hours.", MinIdleMinutes, MaxIdleMinutes/60)
 	case g.IdleTimeoutMinutes > g.SessionLifetimeMinutes:
 		return validation("idle_timeout_minutes", "The idle timeout can't be longer than the session lifetime.")
+	case g.AuditRetentionDays < MinRetentionDays || g.AuditRetentionDays > MaxRetentionDays:
+		return validation("audit_retention_days", "Audit entries can be kept for %d to %d days.", MinRetentionDays, MaxRetentionDays)
 	}
 	return nil
 }
@@ -78,17 +87,32 @@ func (s *Service) loadGeneral(ctx context.Context, q *db.Queries) error {
 	if err := json.Unmarshal([]byte(row.Value), &g); err != nil {
 		return fmt.Errorf("settings %q: %w", GeneralKey, err)
 	}
+	if g.AuditRetentionDays == 0 {
+		g.AuditRetentionDays = DefaultRetentionDays
+	}
 	if err := g.Validate(); err != nil {
 		return fmt.Errorf("settings %q: %w", GeneralKey, err)
 	}
 	s.generalAt, s.generalBy = store.FromMillis(row.UpdatedAt), row.UpdatedBy
+	s.retention = g.AuditRetentionDays
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
 	}
 	return nil
 }
 
-// General returns the current general settings: the session store's lifetimes, saved or default.
+// AuditRetentionDays returns how many days audit rows are kept, saved or default.
+func (s *Service) AuditRetentionDays() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.retention == 0 {
+		return DefaultRetentionDays
+	}
+	return s.retention
+}
+
+// General returns the current general settings: the session store's lifetimes and the audit retention, saved or
+// default.
 func (s *Service) General() GeneralView {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -96,14 +120,22 @@ func (s *Service) General() GeneralView {
 	if s.Sessions != nil {
 		lifetime, idle = s.Sessions.Lifetimes()
 	}
+	retention := s.retention
+	if retention == 0 {
+		retention = DefaultRetentionDays
+	}
 	return GeneralView{
-		General:   General{SessionLifetimeMinutes: int(lifetime / time.Minute), IdleTimeoutMinutes: int(idle / time.Minute)},
+		General: General{
+			SessionLifetimeMinutes: int(lifetime / time.Minute), IdleTimeoutMinutes: int(idle / time.Minute),
+			AuditRetentionDays: retention,
+		},
 		UpdatedAt: s.generalAt, UpdatedBy: s.generalBy,
 	}
 }
 
 // SaveGeneral saves the general settings and applies them: a new lifetime to sessions started from now on, a new
-// idle timeout to every session at once. It needs settings.manage, and is audited as settings_update.
+// idle timeout to every session at once, and a new audit retention at the next prune, which RetentionChanged brings
+// forward. It needs settings.manage, and is audited as settings_update.
 func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) error {
 	if err := g.Validate(); err != nil {
 		return err
@@ -118,6 +150,9 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	if before.IdleTimeoutMinutes != g.IdleTimeoutMinutes {
 		changed = append(changed, "idle_timeout_minutes")
 	}
+	if before.AuditRetentionDays != g.AuditRetentionDays {
+		changed = append(changed, "audit_retention_days")
+	}
 	if len(changed) == 0 {
 		return nil
 	}
@@ -127,6 +162,7 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 		t.entry.Detail["changed"] = changed
 		t.entry.Detail["session_lifetime_minutes"] = g.SessionLifetimeMinutes
 		t.entry.Detail["idle_timeout_minutes"] = g.IdleTimeoutMinutes
+		t.entry.Detail["audit_retention_days"] = g.AuditRetentionDays
 		value, err := json.Marshal(g)
 		if err != nil {
 			return err
@@ -139,10 +175,14 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 		return err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.generalAt, s.generalBy = store.FromMillis(store.Millis(now)), a.Username
+	s.retention = g.AuditRetentionDays
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
+	}
+	s.mu.Unlock()
+	if before.AuditRetentionDays != g.AuditRetentionDays && s.RetentionChanged != nil {
+		s.RetentionChanged()
 	}
 	return nil
 }

@@ -97,7 +97,13 @@ const (
 
 	// System.
 	ActionConfigReload = "config_reload" // secrets were reloaded; the detail lists the names that changed or failed
+	// Audit rows older than the retention were deleted; the detail has how many and the cutoff. Written only when
+	// something was deleted.
+	ActionAuditPrune = "audit_prune"
 )
+
+// SystemUser is the username on rows the app writes by itself, with no one acting, such as audit_prune.
+const SystemUser = "(system)"
 
 // Entry is one audit event.
 type Entry struct {

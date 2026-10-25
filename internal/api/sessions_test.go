@@ -17,6 +17,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
+	"github.com/Kate-0713/pihole-rbac/internal/store/db"
 )
 
 func currentSession(t *testing.T, c *client) gen.CurrentSession {
@@ -197,5 +198,68 @@ func TestGeneralSettings(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(e.auditActions(), ","), "settings_update") {
 		t.Errorf("no settings_update row: %v", e.auditActions())
+	}
+}
+
+func TestAuditRetentionSetting(t *testing.T) {
+	var svc *loginsettings.Service
+	pokes := 0
+	e := newTestEnv(t, func(o *Options) {
+		svc = &loginsettings.Service{
+			Store: o.Store, Audit: o.Audit, Secrets: testSecrets{}, Sessions: o.Sessions,
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RetentionChanged: func() { pokes++ },
+		}
+		if err := svc.Load(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		o.LoginSettings = svc
+	})
+	e.addUser("admin", "admin-password-1", true)
+	c := e.loggedIn("admin", "admin-password-1")
+
+	if g := decode[gen.GeneralSettings](t, c.do(http.MethodGet, "/api/v1/settings/general", nil)); g.AuditRetentionDays != 365 {
+		t.Errorf("default retention %d", g.AuditRetentionDays)
+	}
+	for _, days := range []int{0, 29, 3651} {
+		res := c.do(http.MethodPut, "/api/v1/settings/general",
+			gen.GeneralSettingsInput{SessionLifetimeMinutes: 480, IdleTimeoutMinutes: 60, AuditRetentionDays: ptr(days)})
+		if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "audit_retention_days") {
+			t.Errorf("%d days: %d %s", days, res.Code, res.Body)
+		}
+	}
+	res := c.do(http.MethodPut, "/api/v1/settings/general",
+		gen.GeneralSettingsInput{SessionLifetimeMinutes: 480, IdleTimeoutMinutes: 60, AuditRetentionDays: ptr(90)})
+	mustStatus(t, res, http.StatusOK)
+	if g := decode[gen.GeneralSettings](t, res); g.AuditRetentionDays != 90 || svc.AuditRetentionDays() != 90 || pokes != 1 {
+		t.Errorf("saved: %+v, service %d, %d pokes", g, svc.AuditRetentionDays(), pokes)
+	}
+	rows := e.auditRows()
+	if last := rows[len(rows)-1]; last.Action != "settings_update" || !strings.Contains(last.Detail, `"audit_retention_days"`) {
+		t.Errorf("audit row: %+v", last)
+	}
+
+	// Leaving it out keeps it, and changing only the lifetime doesn't prune again.
+	res = c.do(http.MethodPut, "/api/v1/settings/general", gen.GeneralSettingsInput{SessionLifetimeMinutes: 240, IdleTimeoutMinutes: 60})
+	mustStatus(t, res, http.StatusOK)
+	if g := decode[gen.GeneralSettings](t, res); g.AuditRetentionDays != 90 || g.SessionLifetimeMinutes != 240 || pokes != 1 {
+		t.Errorf("without retention: %+v, %d pokes", g, pokes)
+	}
+
+	// It survives a restart; a row saved before the setting existed loads as the default.
+	again := &loginsettings.Service{Store: e.st, Audit: e.srv.Audit, Secrets: testSecrets{}}
+	if err := again.Load(context.Background()); err != nil || again.AuditRetentionDays() != 90 {
+		t.Errorf("after a restart: %d, %v", again.AuditRetentionDays(), err)
+	}
+	ctx := context.Background()
+	if err := e.st.WithTx(ctx, func(q *db.Queries) error {
+		return q.UpsertSetting(ctx, db.UpsertSettingParams{
+			Key: loginsettings.GeneralKey, Value: `{"session_lifetime_minutes":480,"idle_timeout_minutes":60}`, UpdatedAt: 1, UpdatedBy: "admin",
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	old := &loginsettings.Service{Store: e.st, Audit: e.srv.Audit, Secrets: testSecrets{}}
+	if err := old.Load(context.Background()); err != nil || old.AuditRetentionDays() != 365 {
+		t.Errorf("an older row: %d, %v", old.AuditRetentionDays(), err)
 	}
 }

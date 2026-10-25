@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const deleteAuditBefore = `-- name: DeleteAuditBefore :execrows
+DELETE FROM audit_log WHERE at < ?
+`
+
+func (q *Queries) DeleteAuditBefore(ctx context.Context, at int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAuditBefore, at)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getAudit = `-- name: GetAudit :one
 SELECT id, at, user_id, username, "action", target, instance_id, instance_name, result, detail, ip FROM audit_log WHERE id = ?
 `
@@ -71,6 +83,80 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) (int64
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const listAudit = `-- name: ListAudit :many
+SELECT id, at, user_id, username, "action", target, instance_id, instance_name, result, detail, ip FROM audit_log
+WHERE (CAST(?1 AS TEXT) = '' OR username = ?1)
+  AND (CAST(?2 AS TEXT) = '[]'
+       OR action IN (SELECT value FROM json_each(CAST(?2 AS TEXT))))
+  AND (CAST(?3 AS TEXT) = '' OR target = ?3)
+  AND (CAST(?4 AS INTEGER) = 0 OR instance_id = ?4)
+  AND (CAST(?5 AS TEXT) = '' OR result = ?5)
+  AND (CAST(?6 AS INTEGER) = 0 OR at >= ?6)
+  AND (CAST(?7 AS INTEGER) = 0 OR at < ?7)
+  AND (CAST(?8 AS INTEGER) = 0 OR id < ?8)
+ORDER BY id DESC
+LIMIT ?9
+`
+
+type ListAuditParams struct {
+	Username   string
+	Actions    string
+	Target     string
+	InstanceID int64
+	Result     string
+	FromAt     int64
+	ToAt       int64
+	BeforeID   int64
+	RowLimit   int64
+}
+
+// Newest first, filtered; each filter is skipped when empty or zero. actions is a JSON array of action names ('[]'
+// for any). from_at is inclusive and to_at exclusive. before_id pages: rows older than the previous page's last.
+func (q *Queries) ListAudit(ctx context.Context, arg ListAuditParams) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAudit,
+		arg.Username,
+		arg.Actions,
+		arg.Target,
+		arg.InstanceID,
+		arg.Result,
+		arg.FromAt,
+		arg.ToAt,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.At,
+			&i.UserID,
+			&i.Username,
+			&i.Action,
+			&i.Target,
+			&i.InstanceID,
+			&i.InstanceName,
+			&i.Result,
+			&i.Detail,
+			&i.Ip,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listRecentAudit = `-- name: ListRecentAudit :many

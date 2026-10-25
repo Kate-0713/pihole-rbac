@@ -170,6 +170,10 @@ func serve() error {
 		Logger:         logger,
 	})
 	go pruneSessions(ctx, sessions, logger)
+	// Audit rows older than the retention go at startup, daily, and soon after the retention is changed.
+	auditPruner := &audit.Pruner{Store: st, Audit: auditLog, Retention: login.AuditRetentionDays, Logger: logger}
+	login.RetentionChanged = auditPruner.Poke
+	go auditPruner.Run(ctx)
 	rechecker := &auth.Rechecker{
 		Store:     st,
 		Audit:     auditLog,

@@ -1608,10 +1608,97 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/audit:
+    get:
+      summary: Read the audit log
+      description: >-
+        Audit entries, newest first, matching every filter given. Paged with `limit` and `cursor`: pass the previous
+        answer's `next_cursor` to get the next page; it is absent on the last page. Reading isn't audited.
+      operationId: listAudit
+      x-permission: audit.view
+      parameters:
+        - $ref: "#/components/parameters/AuditUser"
+        - $ref: "#/components/parameters/AuditAction"
+        - $ref: "#/components/parameters/AuditTarget"
+        - $ref: "#/components/parameters/AuditInstance"
+        - $ref: "#/components/parameters/AuditResult"
+        - $ref: "#/components/parameters/AuditFrom"
+        - $ref: "#/components/parameters/AuditTo"
+        - name: limit
+          in: query
+          required: false
+          description: How many entries to return, 1 to 200.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: The entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/audit/export:
+    get:
+      summary: Export the audit log as CSV
+      description: >-
+        The entries matching the same filters as the list, newest first, as a CSV download: at most the newest 50,000.
+        Columns: id, time, user, action, target, instance_id, instance, result, ip, detail (JSON). A cell that starts
+        with =, +, -, @, a tab or a carriage return gets a leading apostrophe, so a spreadsheet shows it as text rather
+        than running it as a formula. Reading isn't audited.
+      operationId: exportAudit
+      x-permission: audit.view
+      parameters:
+        - $ref: "#/components/parameters/AuditUser"
+        - $ref: "#/components/parameters/AuditAction"
+        - $ref: "#/components/parameters/AuditTarget"
+        - $ref: "#/components/parameters/AuditInstance"
+        - $ref: "#/components/parameters/AuditResult"
+        - $ref: "#/components/parameters/AuditFrom"
+        - $ref: "#/components/parameters/AuditTo"
+      responses:
+        "200":
+          description: The CSV file.
+          headers:
+            Content-Disposition:
+              description: attachment, with a file name holding the time of the export.
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/settings/general:
     get:
       summary: The general settings
-      description: How long sessions last. Defaults until saved.
+      description: How long sessions last and how long audit entries are kept. Defaults until saved.
       operationId: getGeneralSettings
       x-permission: settings.manage
       responses:
@@ -1631,7 +1718,7 @@ paths:
       summary: Change the general settings
       description: >-
         A new session lifetime applies to sessions started from now on; a new idle timeout applies to every session at
-        once. Audited as settings_update.
+        once; a new audit retention applies at a prune a few seconds later. Audited as settings_update.
       operationId: setGeneralSettings
       x-permission: settings.manage
       requestBody:
@@ -2148,6 +2235,67 @@ paths:
 
 components:
   parameters:
+    AuditUser:
+      name: user
+      in: query
+      required: false
+      description: Only entries by this username (exact). Names are copied into each entry, so deleted users still match.
+      schema:
+        type: string
+        maxLength: 256
+    AuditAction:
+      name: action
+      in: query
+      required: false
+      description: Only entries with one of these actions. Repeat for several.
+      schema:
+        type: array
+        maxItems: 50
+        items:
+          type: string
+          pattern: "^[a-z][a-z_]{0,63}$"
+    AuditTarget:
+      name: target
+      in: query
+      required: false
+      description: Only entries with this target (exact), such as `i-1`, `g-2`, `user:alice` or `settings:general`.
+      schema:
+        type: string
+        maxLength: 512
+    AuditInstance:
+      name: instance_id
+      in: query
+      required: false
+      description: Only entries about this Pi-hole instance.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    AuditResult:
+      name: result
+      in: query
+      required: false
+      description: Only successes or only failures.
+      schema:
+        type: string
+        enum: [success, failure]
+    AuditFrom:
+      name: from
+      in: query
+      required: false
+      description: Only entries at or after this time.
+      schema:
+        type: string
+        format: date-time
+    AuditTo:
+      name: to
+      in: query
+      required: false
+      description: Only entries before this time. Must be after `from` when both are given.
+      schema:
+        type: string
+        format: date-time
+
     InstanceID:
       name: id
       in: path
@@ -3822,6 +3970,64 @@ components:
           type: string
           description: Pass as `cursor` for the next page. Absent on the last page.
 
+    AuditList:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        next_cursor:
+          type: string
+          description: Pass as `cursor` for the next page. Absent on the last page.
+
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, at, username, action, target, instance_name, result, detail, ip]
+      properties:
+        id:
+          type: integer
+          format: int64
+        at:
+          type: string
+          format: date-time
+        user_id:
+          type: integer
+          format: int64
+          description: >-
+            The acting user's ID. Absent when there was no user row (a failed login with an unknown name, the CLI or the
+            app itself) or the user has since been deleted.
+        username:
+          type: string
+          description: >-
+            The acting user, the name typed into a failed login, `(cli)` for the command line or `(system)` for the app
+            itself.
+        action:
+          type: string
+        target:
+          type: string
+          description: What the action was performed against, or empty.
+        instance_id:
+          type: integer
+          format: int64
+          description: The Pi-hole instance, for actions about one. Absent otherwise, or once the instance is deleted.
+        instance_name:
+          type: string
+          description: The instance's name at the time, kept after it is deleted; empty when there is none.
+        result:
+          type: string
+          enum: [success, failure]
+        detail:
+          type: object
+          additionalProperties: true
+          description: What the action changed, per action; `error` on a failure. Never secret values.
+        ip:
+          type: string
+          description: The client address, or empty for the CLI and the app itself.
+
     GeneralSettingsInput:
       type: object
       additionalProperties: false
@@ -3837,16 +4043,24 @@ components:
           minimum: 5
           maximum: 1440
           description: How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime.
+        audit_retention_days:
+          type: integer
+          minimum: 30
+          maximum: 3650
+          description: How many days audit entries are kept, 30 to 3650. Absent leaves it as it is.
 
     GeneralSettings:
       type: object
       additionalProperties: false
-      required: [session_lifetime_minutes, idle_timeout_minutes]
+      required: [session_lifetime_minutes, idle_timeout_minutes, audit_retention_days]
       properties:
         session_lifetime_minutes:
           type: integer
         idle_timeout_minutes:
           type: integer
+        audit_retention_days:
+          type: integer
+          description: How many days audit entries are kept; 365 until saved.
         updated_at:
           type: string
           format: date-time

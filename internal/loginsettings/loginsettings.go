@@ -48,6 +48,9 @@ type Service struct {
 	Now     func() time.Time
 	// Sessions takes the session lifetimes from the general settings; nil in tests that don't need them.
 	Sessions SessionLifetimes
+	// RetentionChanged is called after a save changes the audit retention, so old rows are pruned soon rather than at
+	// the next daily run. Optional.
+	RetentionChanged func()
 
 	auth *auth.SwappableAuthenticator
 
@@ -62,6 +65,7 @@ type Service struct {
 	directory *auth.LDAPAuthenticator // built from the saved LDAP settings, enabled or not; nil without them
 	generalAt time.Time               // when the general settings were last saved, and by whom
 	generalBy string
+	retention int // audit retention in days; 0 means the default
 }
 
 // StoredPassword is the bind password as kept in the database.

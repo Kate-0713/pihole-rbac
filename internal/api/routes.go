@@ -77,6 +77,9 @@ var routePermission = map[string]string{
 	"POST /api/v1/ldap/test-user":                        string(rbac.RolesManage),
 	"POST /api/v1/ldap/check-group":                      string(rbac.RolesManage),
 
+	"GET /api/v1/audit":        string(rbac.AuditView),
+	"GET /api/v1/audit/export": string(rbac.AuditView),
+
 	"GET /api/v1/sessions":                accessSession,
 	"DELETE /api/v1/sessions/{public_id}": accessSession,
 

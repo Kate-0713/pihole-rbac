@@ -162,6 +162,10 @@ func (s *Server) SetGeneralSettings(ctx context.Context, req gen.SetGeneralSetti
 	}
 	g := loginsettings.General{
 		SessionLifetimeMinutes: req.Body.SessionLifetimeMinutes, IdleTimeoutMinutes: req.Body.IdleTimeoutMinutes,
+		AuditRetentionDays: s.LoginSettings.AuditRetentionDays(), // absent leaves it as it is
+	}
+	if req.Body.AuditRetentionDays != nil {
+		g.AuditRetentionDays = *req.Body.AuditRetentionDays
 	}
 	if err := s.LoginSettings.SaveGeneral(ctx, actor(ctx), g); err != nil {
 		return nil, err
@@ -170,7 +174,10 @@ func (s *Server) SetGeneralSettings(ctx context.Context, req gen.SetGeneralSetti
 }
 
 func generalJSON(v loginsettings.GeneralView) gen.GeneralSettings {
-	out := gen.GeneralSettings{SessionLifetimeMinutes: v.SessionLifetimeMinutes, IdleTimeoutMinutes: v.IdleTimeoutMinutes}
+	out := gen.GeneralSettings{
+		SessionLifetimeMinutes: v.SessionLifetimeMinutes, IdleTimeoutMinutes: v.IdleTimeoutMinutes,
+		AuditRetentionDays: v.AuditRetentionDays,
+	}
 	if !v.UpdatedAt.IsZero() {
 		at, by := v.UpdatedAt, v.UpdatedBy
 		out.UpdatedAt, out.UpdatedBy = &at, &by
