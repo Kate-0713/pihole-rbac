@@ -6,6 +6,7 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { invalidate } from '$app/navigation';
 	import { api, unwrap } from '#lib/api/client.js';
+	import ReconcileAllDialog from '#lib/components/app/reconcile-all-dialog.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -17,9 +18,13 @@
 		differenceLabel,
 		domainChanges,
 		groupChanges,
+		reconcileKey,
+		reconcileSummary,
 		summary,
-		type Difference
+		type Difference,
+		type ReconcileResult
 	} from '#lib/drift.js';
+	import { can } from '#lib/permissions.js';
 	import { formatDateTime } from '#lib/format.js';
 	import { whileVisible } from '#lib/poll.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
@@ -52,6 +57,46 @@
 		}
 	}
 
+	// Reconciling needs drift.reconcile on the group; the server checks it again.
+	let canReconcile = $derived(!!data.target && can('drift.reconcile', data.target));
+	let reconcileOpen = $state(false);
+	// The item being fixed ("domain:<member>:<key>"), or "all", while a reconcile runs.
+	let reconciling = $state<string | null>(null);
+
+	type Body = {
+		all?: boolean;
+		domains?: { instance_id: number; domain: string; type: 'allow' | 'deny'; kind: 'exact' | 'regex' }[];
+		clients?: { instance_id: number; client: string }[];
+		groups?: { instance_id: number; name: string }[];
+	};
+
+	// reconcile sends the request, reports what happened (a toast for what worked, an error per item that didn't), and
+	// reads the page again: the answer's report is already stored on the server.
+	async function reconcile(body: Body, key: string) {
+		if (!data.groupId) return;
+		reconciling = key;
+		try {
+			const out: ReconcileResult = await unwrap(
+				api.POST('/api/v1/instance-groups/{id}/reconcile', { params: { path: { id: data.groupId } }, body })
+			);
+			for (const m of out.members) {
+				if (m.error) notices.error(`${m.error.message} It was left as it was.`, `Couldn't reconcile ${m.instance}`);
+			}
+			for (const r of out.results) {
+				if (r.error) notices.error(r.error.message, `Couldn't reconcile ${reconcileKey(r)} on ${r.instance}`);
+			}
+			if (out.results.some((r) => r.status === 'ok' && r.action !== 'none') || out.results.every((r) => r.status === 'ok')) {
+				notices.success(reconcileSummary(out));
+			}
+			reconcileOpen = false;
+		} catch (e) {
+			notices.error(e, "Couldn't reconcile the group");
+		} finally {
+			reconciling = null;
+			await Promise.all([invalidate(driftKey), targets.refresh().catch(() => {})]);
+		}
+	}
+
 	const tone: Record<Difference, 'destructive' | 'secondary' | 'outline'> = {
 		missing: 'destructive',
 		extra: 'outline',
@@ -75,6 +120,18 @@
 	{/if}
 {/snippet}
 
+{#snippet fix(key: string, what: string, body: Body)}
+	<Button
+		variant="outline"
+		size="sm"
+		disabled={reconciling !== null}
+		aria-label="Make {what} match the primary"
+		onclick={() => reconcile(body, key)}
+	>
+		{reconciling === key ? 'Fixing…' : 'Fix'}
+	</Button>
+{/snippet}
+
 {#snippet hidden(what: string, permission: string, n: number)}
 	<p class="text-muted-foreground text-sm">
 		{n === 1 ? `1 ${what} differs` : `${n} ${what}s differ`}. Seeing which needs {permission} on this group.
@@ -89,10 +146,15 @@
 		</p>
 	</div>
 	{#if report}
-		<Button variant="outline" size="sm" onclick={checkNow} disabled={checking}>
-			<RefreshCwIcon class={checking ? 'animate-spin' : ''} />
-			{checking ? 'Checking…' : 'Check now'}
-		</Button>
+		<div class="flex flex-wrap gap-2">
+			<Button variant="outline" size="sm" onclick={checkNow} disabled={checking}>
+				<RefreshCwIcon class={checking ? 'animate-spin' : ''} />
+				{checking ? 'Checking…' : 'Check now'}
+			</Button>
+			{#if canReconcile && report.state === 'checked' && report.drifted}
+				<Button size="sm" onclick={() => (reconcileOpen = true)} disabled={reconciling !== null}>Reconcile all…</Button>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -149,6 +211,7 @@
 									<Table.Head>Member</Table.Head>
 									<Table.Head>Entry</Table.Head>
 									<Table.Head>Difference</Table.Head>
+									{#if canReconcile}<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>{/if}
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
@@ -163,6 +226,16 @@
 											{@render difference(d.difference)}
 											{@render changes(domainChanges(d))}
 										</Table.Cell>
+										{#if canReconcile}
+											{@const key = `domain:${d.instance_id}:${d.type}:${d.kind}:${d.domain}`}
+											<Table.Cell>
+												{@render fix(
+													key,
+													`${d.domain} on ${d.instance}`,
+													{ domains: [{ instance_id: d.instance_id, domain: d.domain, type: d.type, kind: d.kind }] }
+												)}
+											</Table.Cell>
+										{/if}
 									</Table.Row>
 								{/each}
 							</Table.Body>
@@ -185,6 +258,7 @@
 									<Table.Head>Member</Table.Head>
 									<Table.Head>Client</Table.Head>
 									<Table.Head>Difference</Table.Head>
+									{#if canReconcile}<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>{/if}
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
@@ -196,6 +270,13 @@
 											{@render difference(c.difference)}
 											{@render changes(clientChanges(c))}
 										</Table.Cell>
+										{#if canReconcile}
+											<Table.Cell>
+												{@render fix(`client:${c.instance_id}:${c.client}`, `${c.client} on ${c.instance}`, {
+													clients: [{ instance_id: c.instance_id, client: c.client }]
+												})}
+											</Table.Cell>
+										{/if}
 									</Table.Row>
 								{/each}
 							</Table.Body>
@@ -217,6 +298,7 @@
 								<Table.Head>Member</Table.Head>
 								<Table.Head>Group</Table.Head>
 								<Table.Head>Difference</Table.Head>
+								{#if canReconcile}<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>{/if}
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
@@ -228,6 +310,18 @@
 										{@render difference(g.difference)}
 										{@render changes(groupChanges(g))}
 									</Table.Cell>
+									{#if canReconcile}
+										<Table.Cell>
+											<!-- A group only a member has is never deleted, so there is nothing to fix. -->
+											{#if g.difference !== 'extra'}
+												{@render fix(`group:${g.instance_id}:${g.name}`, `the ${g.name} group on ${g.instance}`, {
+													groups: [{ instance_id: g.instance_id, name: g.name }]
+												})}
+											{:else}
+												<span class="text-muted-foreground text-xs">Kept</span>
+											{/if}
+										</Table.Cell>
+									{/if}
 								</Table.Row>
 							{/each}
 						</Table.Body>
@@ -235,5 +329,13 @@
 				</div>
 			</section>
 		{/if}
+	{/if}
+	{#if canReconcile}
+		<ReconcileAllDialog
+			bind:open={reconcileOpen}
+			{report}
+			busy={reconciling === 'all'}
+			onconfirm={() => reconcile({ all: true }, 'all')}
+		/>
 	{/if}
 {/if}

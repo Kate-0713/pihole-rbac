@@ -61,6 +61,7 @@ var routePermission = map[string]string{
 	"DELETE /api/v1/instance-groups/{id}":           string(rbac.InstancesManage),
 	"GET /api/v1/instance-groups/{id}/drift":        targetPrefix + string(rbac.DriftView),
 	"POST /api/v1/instance-groups/{id}/drift/check": targetPrefix + string(rbac.DriftView),
+	"POST /api/v1/instance-groups/{id}/reconcile":   targetPrefix + string(rbac.DriftReconcile),
 
 	"GET /api/v1/roles":             anyOf(rbac.RolesManage, rbac.UsersManage),
 	"POST /api/v1/roles":            string(rbac.RolesManage),

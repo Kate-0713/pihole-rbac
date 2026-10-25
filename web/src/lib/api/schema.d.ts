@@ -486,6 +486,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instance-groups/{id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a mirrored group's members match its primary
+         * @description Reads the primary and the members again, then changes the members to match the primary: what a member is missing is added, what differs is changed to the primary's settings (comment, Pi-hole groups by name, and whether it's enabled), and list entries and clients only a member has are deleted. Pi-hole groups are created and changed by name but never deleted; naming one that only a member has fails with not_reconcilable. A Pi-hole group an entry or client needs that the member doesn't have is created as part of it. `all` covers every difference on every enabled member; otherwise only the items named, on the members they name, are changed, and an item that no longer differs is reported with action none. Needs drift.reconcile on the group (not domains.edit or clients.edit). Members that can't be read are left alone and listed in `members`. The answer is 200 when every item worked and every member was read, and 207 otherwise; it carries the drift report after the reconcile. Audited as group_reconcile, one row per member, listing what was added, changed and deleted.
+         */
+        post: operations["reconcileGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -1479,6 +1502,62 @@ export interface components {
         DriftGroupState: {
             comment: string;
             enabled: boolean;
+        };
+        /** @description Either `all` true, or at least one item (at most 1000 in all). Each item names a member that isn't the primary. */
+        ReconcileInput: {
+            all?: boolean;
+            domains?: components["schemas"]["ReconcileDomain"][];
+            clients?: components["schemas"]["ReconcileClient"][];
+            groups?: components["schemas"]["ReconcileGroup"][];
+        };
+        ReconcileDomain: {
+            /** Format: int64 */
+            instance_id: number;
+            domain: string;
+            /** @enum {string} */
+            type: "allow" | "deny";
+            /** @enum {string} */
+            kind: "exact" | "regex";
+        };
+        ReconcileClient: {
+            /** Format: int64 */
+            instance_id: number;
+            client: string;
+        };
+        ReconcileGroup: {
+            /** Format: int64 */
+            instance_id: number;
+            name: string;
+        };
+        ReconcileResult: {
+            results: components["schemas"]["ReconcileItemResult"][];
+            /** @description The members reconciled, with an error for those that couldn't be read and were left alone. */
+            members: components["schemas"]["MemberRead"][];
+            report: components["schemas"]["DriftReport"];
+        };
+        ReconcileItemResult: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            /** @enum {string} */
+            item: "domain" | "client" | "group";
+            /** @description For a domain list entry, with `type` and `kind`. */
+            domain?: string;
+            /** @enum {string} */
+            type?: "allow" | "deny";
+            /** @enum {string} */
+            kind?: "exact" | "regex";
+            client?: string;
+            /** @description For a Pi-hole group, its name. */
+            group?: string;
+            /**
+             * @description none means the item already matched the primary, or (with an error) wasn't changed.
+             * @enum {string}
+             */
+            action: "add" | "update" | "delete" | "none";
+            /** @enum {string} */
+            status: "ok" | "failed";
+            error?: components["schemas"]["WriteError"];
         };
         /** @description One permission within one scope. */
         Grant: {
@@ -2991,6 +3070,50 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    reconcileGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The instance group's ID. */
+                id: components["parameters"]["GroupID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileInput"];
+            };
+        };
+        responses: {
+            /** @description Every item worked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconcileResult"];
+                };
+            };
+            /** @description Some items failed, or some members couldn't be read. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconcileResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
             503: components["responses"]["SetupRequired"];
         };
     };

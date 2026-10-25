@@ -75,6 +75,9 @@ const (
 	ActionGroupCreate = "group_create"
 	ActionGroupUpdate = "group_update"
 	ActionGroupDelete = "group_delete"
+	// A mirrored group's member made to match the primary: one row per member, listing what was added, changed and
+	// deleted.
+	ActionGroupReconcile = "group_reconcile"
 
 	// Pi-hole writes, recorded after the call with the instance and its result. Target is the API target (i-<id>);
 	// the detail names the item. A write Pi-hole refused is a failure with its message.

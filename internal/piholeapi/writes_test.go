@@ -230,3 +230,51 @@ func TestUpdateDomainKeepsDisabled(t *testing.T) {
 		t.Errorf("second delete: %v, want a 404 StatusError", err)
 	}
 }
+
+// TestCopyCalls covers the calls reconciling a mirrored group uses: an entry added disabled, clients added and
+// deleted, and Pi-hole groups added and updated.
+func TestCopyCalls(t *testing.T) {
+	ctx := context.Background()
+	ph := piholetest.New(t, password)
+	c := newClient(t, ph.URL)
+
+	if _, err := c.AddDomainAs(ctx, piholeapi.DomainEntry{Domain: "off.example", Type: "deny", Kind: "exact", Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	if d := ph.Domains(); len(d) != 1 || d[0].Enabled {
+		t.Errorf("AddDomainAs disabled: %+v", d)
+	}
+
+	if err := c.AddGroup(ctx, piholeapi.Group{Name: "kids", Comment: "after school", Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	var re *piholeapi.RejectedError
+	if err := c.AddGroup(ctx, piholeapi.Group{Name: "kids", Enabled: true}); !errors.As(err, &re) {
+		t.Errorf("adding a group twice: %v", err)
+	}
+	if err := c.UpdateGroup(ctx, piholeapi.Group{Name: "kids", Comment: "", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	groups := ph.Groups()
+	if len(groups) != 2 || groups[1].Name != "kids" || !groups[1].Enabled || groups[1].Comment != "" {
+		t.Errorf("groups %+v", groups)
+	}
+
+	saved, err := c.AddClient(ctx, "10.0.0.0/24", "lab", []int{groups[1].ID})
+	if err != nil || saved == nil || saved.Comment != "lab" {
+		t.Fatalf("AddClient = %+v, %v", saved, err)
+	}
+	if _, err := c.AddClient(ctx, "10.0.0.0/24", "", nil); !errors.As(err, &re) {
+		t.Errorf("adding a client twice: %v", err)
+	}
+	if err := c.DeleteClient(ctx, "10.0.0.0/24"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(ph.Clients()); n != 0 {
+		t.Errorf("%d clients after delete", n)
+	}
+	var se *piholeapi.StatusError
+	if err := c.DeleteClient(ctx, "10.0.0.0/24"); !errors.As(err, &se) || se.Code != http.StatusNotFound {
+		t.Errorf("second delete: %v", err)
+	}
+}

@@ -542,6 +542,141 @@ func (e PermissionInfoClass) Valid() bool {
 	}
 }
 
+// Defines values for ReconcileDomainKind.
+const (
+	ReconcileDomainKindExact ReconcileDomainKind = "exact"
+	ReconcileDomainKindRegex ReconcileDomainKind = "regex"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileDomainKind enum.
+func (e ReconcileDomainKind) Valid() bool {
+	switch e {
+	case ReconcileDomainKindExact:
+		return true
+	case ReconcileDomainKindRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconcileDomainType.
+const (
+	ReconcileDomainTypeAllow ReconcileDomainType = "allow"
+	ReconcileDomainTypeDeny  ReconcileDomainType = "deny"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileDomainType enum.
+func (e ReconcileDomainType) Valid() bool {
+	switch e {
+	case ReconcileDomainTypeAllow:
+		return true
+	case ReconcileDomainTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconcileItemResultAction.
+const (
+	ReconcileItemResultActionAdd    ReconcileItemResultAction = "add"
+	ReconcileItemResultActionDelete ReconcileItemResultAction = "delete"
+	ReconcileItemResultActionNone   ReconcileItemResultAction = "none"
+	ReconcileItemResultActionUpdate ReconcileItemResultAction = "update"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileItemResultAction enum.
+func (e ReconcileItemResultAction) Valid() bool {
+	switch e {
+	case ReconcileItemResultActionAdd:
+		return true
+	case ReconcileItemResultActionDelete:
+		return true
+	case ReconcileItemResultActionNone:
+		return true
+	case ReconcileItemResultActionUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconcileItemResultItem.
+const (
+	ReconcileItemResultItemClient ReconcileItemResultItem = "client"
+	ReconcileItemResultItemDomain ReconcileItemResultItem = "domain"
+	ReconcileItemResultItemGroup  ReconcileItemResultItem = "group"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileItemResultItem enum.
+func (e ReconcileItemResultItem) Valid() bool {
+	switch e {
+	case ReconcileItemResultItemClient:
+		return true
+	case ReconcileItemResultItemDomain:
+		return true
+	case ReconcileItemResultItemGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconcileItemResultKind.
+const (
+	ReconcileItemResultKindExact ReconcileItemResultKind = "exact"
+	ReconcileItemResultKindRegex ReconcileItemResultKind = "regex"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileItemResultKind enum.
+func (e ReconcileItemResultKind) Valid() bool {
+	switch e {
+	case ReconcileItemResultKindExact:
+		return true
+	case ReconcileItemResultKindRegex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconcileItemResultStatus.
+const (
+	ReconcileItemResultStatusFailed ReconcileItemResultStatus = "failed"
+	ReconcileItemResultStatusOk     ReconcileItemResultStatus = "ok"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileItemResultStatus enum.
+func (e ReconcileItemResultStatus) Valid() bool {
+	switch e {
+	case ReconcileItemResultStatusFailed:
+		return true
+	case ReconcileItemResultStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconcileItemResultType.
+const (
+	ReconcileItemResultTypeAllow ReconcileItemResultType = "allow"
+	ReconcileItemResultTypeDeny  ReconcileItemResultType = "deny"
+)
+
+// Valid indicates whether the value is a known member of the ReconcileItemResultType enum.
+func (e ReconcileItemResultType) Valid() bool {
+	switch e {
+	case ReconcileItemResultTypeAllow:
+		return true
+	case ReconcileItemResultTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SecretStatusKind.
 const (
 	SecretStatusKindChannelSecret    SecretStatusKind = "channel_secret"
@@ -1587,6 +1722,85 @@ type QueryLogEntry struct {
 	Upstream *string `json:"upstream,omitempty"`
 }
 
+// ReconcileClient defines model for ReconcileClient.
+type ReconcileClient struct {
+	Client     string `json:"client"`
+	InstanceId int64  `json:"instance_id"`
+}
+
+// ReconcileDomain defines model for ReconcileDomain.
+type ReconcileDomain struct {
+	Domain     string              `json:"domain"`
+	InstanceId int64               `json:"instance_id"`
+	Kind       ReconcileDomainKind `json:"kind"`
+	Type       ReconcileDomainType `json:"type"`
+}
+
+// ReconcileDomainKind defines model for ReconcileDomain.Kind.
+type ReconcileDomainKind string
+
+// ReconcileDomainType defines model for ReconcileDomain.Type.
+type ReconcileDomainType string
+
+// ReconcileGroup defines model for ReconcileGroup.
+type ReconcileGroup struct {
+	InstanceId int64  `json:"instance_id"`
+	Name       string `json:"name"`
+}
+
+// ReconcileInput Either `all` true, or at least one item (at most 1000 in all). Each item names a member that isn't the primary.
+type ReconcileInput struct {
+	All     *bool              `json:"all,omitempty"`
+	Clients *[]ReconcileClient `json:"clients,omitempty"`
+	Domains *[]ReconcileDomain `json:"domains,omitempty"`
+	Groups  *[]ReconcileGroup  `json:"groups,omitempty"`
+}
+
+// ReconcileItemResult defines model for ReconcileItemResult.
+type ReconcileItemResult struct {
+	// Action none means the item already matched the primary, or (with an error) wasn't changed.
+	Action ReconcileItemResultAction `json:"action"`
+	Client *string                   `json:"client,omitempty"`
+
+	// Domain For a domain list entry, with `type` and `kind`.
+	Domain *string `json:"domain,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Group For a Pi-hole group, its name.
+	Group      *string                   `json:"group,omitempty"`
+	Instance   string                    `json:"instance"`
+	InstanceId int64                     `json:"instance_id"`
+	Item       ReconcileItemResultItem   `json:"item"`
+	Kind       *ReconcileItemResultKind  `json:"kind,omitempty"`
+	Status     ReconcileItemResultStatus `json:"status"`
+	Type       *ReconcileItemResultType  `json:"type,omitempty"`
+}
+
+// ReconcileItemResultAction none means the item already matched the primary, or (with an error) wasn't changed.
+type ReconcileItemResultAction string
+
+// ReconcileItemResultItem defines model for ReconcileItemResult.Item.
+type ReconcileItemResultItem string
+
+// ReconcileItemResultKind defines model for ReconcileItemResult.Kind.
+type ReconcileItemResultKind string
+
+// ReconcileItemResultStatus defines model for ReconcileItemResult.Status.
+type ReconcileItemResultStatus string
+
+// ReconcileItemResultType defines model for ReconcileItemResult.Type.
+type ReconcileItemResultType string
+
+// ReconcileResult defines model for ReconcileResult.
+type ReconcileResult struct {
+	// Members The members reconciled, with an error for those that couldn't be read and were left alone.
+	Members []MemberRead          `json:"members"`
+	Report  DriftReport           `json:"report"`
+	Results []ReconcileItemResult `json:"results"`
+}
+
 // ReloadFailure defines model for ReloadFailure.
 type ReloadFailure struct {
 	// Message Why the secret couldn't be loaded. Never contains the value.
@@ -2077,6 +2291,9 @@ type CreateInstanceGroupJSONRequestBody = InstanceGroupInput
 // UpdateInstanceGroupJSONRequestBody defines body for UpdateInstanceGroup for application/json ContentType.
 type UpdateInstanceGroupJSONRequestBody = InstanceGroupInput
 
+// ReconcileGroupJSONRequestBody defines body for ReconcileGroup for application/json ContentType.
+type ReconcileGroupJSONRequestBody = ReconcileInput
+
 // CreateInstanceJSONRequestBody defines body for CreateInstance for application/json ContentType.
 type CreateInstanceJSONRequestBody = InstanceInput
 
@@ -2181,6 +2398,9 @@ type ServerInterface interface {
 	// CheckGroupDrift Check a mirrored group for drift now
 	// (POST /api/v1/instance-groups/{id}/drift/check)
 	CheckGroupDrift(w http.ResponseWriter, r *http.Request, id GroupID)
+	// ReconcileGroup Make a mirrored group's members match its primary
+	// (POST /api/v1/instance-groups/{id}/reconcile)
+	ReconcileGroup(w http.ResponseWriter, r *http.Request, id GroupID)
 	// ListInstances List the Pi-hole instances
 	// (GET /api/v1/instances)
 	ListInstances(w http.ResponseWriter, r *http.Request)
@@ -2590,6 +2810,32 @@ func (siw *ServerInterfaceWrapper) CheckGroupDrift(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CheckGroupDrift(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReconcileGroup operation middleware
+func (siw *ServerInterfaceWrapper) ReconcileGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GroupID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReconcileGroup(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4185,6 +4431,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/instance-groups/{id}", wrapper.UpdateInstanceGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instance-groups/{id}/drift", wrapper.GetGroupDrift)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instance-groups/{id}/drift/check", wrapper.CheckGroupDrift)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instance-groups/{id}/reconcile", wrapper.ReconcileGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles", wrapper.ListRoles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/roles", wrapper.CreateRole)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles/catalogue", wrapper.GetRoleCatalogue)
@@ -5269,6 +5516,157 @@ func (response CheckGroupDrift404JSONResponse) VisitCheckGroupDriftResponse(w ht
 type CheckGroupDrift503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response CheckGroupDrift503JSONResponse) VisitCheckGroupDriftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroupRequestObject struct {
+	Id   GroupID `json:"id"`
+	Body *ReconcileGroupJSONRequestBody
+}
+
+type ReconcileGroupResponseObject interface {
+	VisitReconcileGroupResponse(w http.ResponseWriter) error
+}
+
+type ReconcileGroup200JSONResponse ReconcileResult
+
+func (response ReconcileGroup200JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup207JSONResponse ReconcileResult
+
+func (response ReconcileGroup207JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ReconcileGroup400JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ReconcileGroup401JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ReconcileGroup403JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ReconcileGroup404JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ReconcileGroup409JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response ReconcileGroup415JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ReconcileGroup502JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReconcileGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ReconcileGroup503JSONResponse) VisitReconcileGroupResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -10680,6 +11078,9 @@ type StrictServerInterface interface {
 	// CheckGroupDrift Check a mirrored group for drift now
 	// (POST /api/v1/instance-groups/{id}/drift/check)
 	CheckGroupDrift(ctx context.Context, request CheckGroupDriftRequestObject) (CheckGroupDriftResponseObject, error)
+	// ReconcileGroup Make a mirrored group's members match its primary
+	// (POST /api/v1/instance-groups/{id}/reconcile)
+	ReconcileGroup(ctx context.Context, request ReconcileGroupRequestObject) (ReconcileGroupResponseObject, error)
 	// ListInstances List the Pi-hole instances
 	// (GET /api/v1/instances)
 	ListInstances(ctx context.Context, request ListInstancesRequestObject) (ListInstancesResponseObject, error)
@@ -11229,6 +11630,39 @@ func (sh *strictHandler) CheckGroupDrift(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CheckGroupDriftResponseObject); ok {
 		if err := validResponse.VisitCheckGroupDriftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReconcileGroup operation middleware
+func (sh *strictHandler) ReconcileGroup(w http.ResponseWriter, r *http.Request, id GroupID) {
+	var request ReconcileGroupRequestObject
+
+	request.Id = id
+
+	var body ReconcileGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReconcileGroup(ctx, request.(ReconcileGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReconcileGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReconcileGroupResponseObject); ok {
+		if err := validResponse.VisitReconcileGroupResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

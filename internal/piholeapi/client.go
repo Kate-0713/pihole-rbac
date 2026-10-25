@@ -537,10 +537,17 @@ func (c *Client) ListDomains(ctx context.Context) ([]DomainEntry, error) {
 // returns it as Pi-hole saved it (or as sent, if Pi-hole's answer doesn't include it). Pi-hole refusing it (already
 // on that list, or not a valid domain or regex) is a RejectedError.
 func (c *Client) AddDomain(ctx context.Context, entry DomainEntry) (DomainEntry, error) {
+	entry.Enabled = true
+	return c.AddDomainAs(ctx, entry)
+}
+
+// AddDomainAs adds an entry as AddDomain does, but enabled or disabled as entry.Enabled says, for copying an entry
+// from another Pi-hole.
+func (c *Client) AddDomainAs(ctx context.Context, entry DomainEntry) (DomainEntry, error) {
 	if err := checkDomainPath(entry.Type, entry.Kind); err != nil {
 		return DomainEntry{}, err
 	}
-	entry.Groups, entry.Enabled = nonNil(entry.Groups), true
+	entry.Groups = nonNil(entry.Groups)
 	body := struct {
 		Domain  string `json:"domain"`
 		Comment string `json:"comment"`
@@ -719,6 +726,31 @@ func (c *Client) UpdateClientGroups(ctx context.Context, clientIdentifier, comme
 	return nil, nil
 }
 
+// AddClient adds a client with its comment and groups, and returns it as saved (or nil if Pi-hole's answer doesn't
+// include it). A client that already exists is a RejectedError.
+func (c *Client) AddClient(ctx context.Context, clientIdentifier, comment string, groupIDs []int) (*ClientEntry, error) {
+	body := struct {
+		Client  string `json:"client"`
+		Comment string `json:"comment"`
+		Groups  []int  `json:"groups"`
+	}{clientIdentifier, comment, nonNil(groupIDs)}
+	var out writeResponse
+	if err := c.write(ctx, http.MethodPost, "/api/clients", body, &out); err != nil {
+		return nil, err
+	}
+	for _, ce := range out.Clients {
+		if ce.Client == clientIdentifier {
+			return &ce, nil
+		}
+	}
+	return nil, nil
+}
+
+// DeleteClient removes a client, named by its identifier exactly.
+func (c *Client) DeleteClient(ctx context.Context, clientIdentifier string) error {
+	return c.do(ctx, http.MethodDelete, "/api/clients/"+url.PathEscape(clientIdentifier), nil, nil)
+}
+
 // Group is a Pi-hole group (not an instance group).
 type Group struct {
 	ID      int    `json:"id"`
@@ -736,4 +768,25 @@ func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
 		return nil, err
 	}
 	return out.Groups, nil
+}
+
+// AddGroup adds a Pi-hole group with g's name, comment and enabled flag. A name already taken is a RejectedError.
+func (c *Client) AddGroup(ctx context.Context, g Group) error {
+	body := struct {
+		Name    string `json:"name"`
+		Comment string `json:"comment"`
+		Enabled bool   `json:"enabled"`
+	}{g.Name, g.Comment, g.Enabled}
+	return c.write(ctx, http.MethodPost, "/api/groups", body, nil)
+}
+
+// UpdateGroup sets the comment and enabled flag of the Pi-hole group called g.Name. Pi-hole's PUT creates a group
+// that doesn't exist, so callers check that it does first.
+func (c *Client) UpdateGroup(ctx context.Context, g Group) error {
+	body := struct {
+		Name    string `json:"name"`
+		Comment string `json:"comment"`
+		Enabled bool   `json:"enabled"`
+	}{g.Name, g.Comment, g.Enabled}
+	return c.write(ctx, http.MethodPut, "/api/groups/"+url.PathEscape(g.Name), body, nil)
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { clientChanges, domainChanges, groupChanges, summary, type DriftReport } from './drift.js';
+import { clientChanges, domainChanges, groupChanges, plan, reconcileSummary, summary, type DriftReport } from './drift.js';
 
 const base: DriftReport = {
 	group_id: 1,
@@ -68,5 +68,50 @@ describe('changes', () => {
 				member: { comment: '', enabled: false }
 			})
 		).toEqual(['enabled → disabled']);
+	});
+});
+
+describe('plan', () => {
+	it('lists each member\'s changes, counting what the user can\'t see', () => {
+		const r: DriftReport = {
+			...base,
+			drifted: true,
+			counts: { domains: 3, clients: 2, groups: 2 },
+			domains: [
+				{ instance: 'beta', instance_id: 2, domain: 'a', type: 'deny', kind: 'exact', difference: 'missing' },
+				{ instance: 'beta', instance_id: 2, domain: 'b', type: 'deny', kind: 'exact', difference: 'missing' },
+				{ instance: 'gamma', instance_id: 3, domain: 'c', type: 'deny', kind: 'exact', difference: 'extra' }
+			],
+			groups: [
+				{ instance: 'beta', instance_id: 2, name: 'kids', difference: 'missing' },
+				{ instance: 'gamma', instance_id: 3, name: 'own', difference: 'extra' }
+			]
+		};
+		expect(plan(r)).toEqual({
+			members: [
+				{ member: 'beta', lines: ['Add 2 domain list entries', 'Create 1 Pi-hole group'] },
+				{ member: 'gamma', lines: ['Delete 1 domain list entry'] }
+			],
+			hidden: ['2 clients'],
+			keptGroups: 1
+		});
+	});
+});
+
+describe('reconcileSummary', () => {
+	it('counts what changed', () => {
+		const report = { ...base };
+		expect(reconcileSummary({ results: [], members: [], report })).toBe('Nothing needed changing.');
+		expect(
+			reconcileSummary({
+				results: [
+					{ instance: 'beta', instance_id: 2, item: 'domain', domain: 'a', action: 'add', status: 'ok' },
+					{ instance: 'gamma', instance_id: 3, item: 'group', group: 'kids', action: 'add', status: 'ok' },
+					{ instance: 'gamma', instance_id: 3, item: 'client', client: 'x', action: 'none', status: 'ok' }
+				],
+				members: [],
+				report
+			})
+		).toBe('Reconciled 2 items on beta, gamma.');
 	});
 });

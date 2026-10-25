@@ -335,8 +335,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"clients": s.clients})
 	case r.Method == http.MethodPut && seg[0] == "clients" && len(seg) == 2:
 		s.putClient(w, r, seg[1])
+	case route == "POST clients" && len(seg) == 1:
+		s.postClient(w, r)
+	case r.Method == http.MethodDelete && seg[0] == "clients" && len(seg) == 2:
+		i := slices.IndexFunc(s.clients, func(c Client) bool { return c.Client == seg[1] })
+		if i < 0 {
+			writeJSON(w, http.StatusNotFound, errBody("not_found", "Client not found"))
+			return
+		}
+		s.clients = slices.Delete(s.clients, i, i+1)
+		w.WriteHeader(http.StatusNoContent)
 	case route == "GET groups" && len(seg) == 1:
 		writeJSON(w, http.StatusOK, map[string]any{"groups": s.groups})
+	case route == "POST groups" && len(seg) == 1:
+		s.putGroup(w, r, "", true)
+	case r.Method == http.MethodPut && seg[0] == "groups" && len(seg) == 2:
+		s.putGroup(w, r, seg[1], false)
 	case route == "GET queries" && len(seg) == 1:
 		n := len(s.queries)
 		if l, err := strconv.Atoi(r.URL.Query().Get("length")); err == nil && l >= 0 && l < n {
@@ -513,4 +527,78 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// postClient is called with s.mu held. A client that already exists is listed under processed.errors, as Pi-hole does.
+func (s *Server) postClient(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Client  string `json:"client"`
+		Comment string `json:"comment"`
+		Groups  []int  `json:"groups"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Client == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request"))
+		return
+	}
+	if slices.ContainsFunc(s.clients, func(c Client) bool { return c.Client == in.Client }) {
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"clients": []Client{},
+			"processed": map[string]any{"success": []any{},
+				"errors": []any{map[string]string{"item": in.Client, "error": "UNIQUE constraint failed: client.ip"}}},
+		})
+		return
+	}
+	groups := in.Groups
+	if groups == nil {
+		groups = []int{0}
+	}
+	c := Client{ID: s.id(), Client: in.Client, Comment: in.Comment, Groups: groups, DateAdded: s.now, DateModified: s.now}
+	s.clients = append(s.clients, c)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"clients":   []Client{c},
+		"processed": map[string]any{"success": []any{map[string]string{"item": c.Client}}, "errors": []any{}},
+	})
+}
+
+// putGroup is called with s.mu held. POST (create) refuses a name already taken; PUT updates the group called name,
+// creating it if it doesn't exist, as Pi-hole does.
+func (s *Server) putGroup(w http.ResponseWriter, r *http.Request, name string, create bool) {
+	var in struct {
+		Name    string `json:"name"`
+		Comment string `json:"comment"`
+		Enabled *bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Name == "" {
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request"))
+		return
+	}
+	if create {
+		name = in.Name
+	}
+	i := slices.IndexFunc(s.groups, func(g Group) bool { return g.Name == name })
+	if create && i >= 0 {
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"groups": []Group{},
+			"processed": map[string]any{"success": []any{},
+				"errors": []any{map[string]string{"item": in.Name, "error": "UNIQUE constraint failed: group.name"}}},
+		})
+		return
+	}
+	if i < 0 {
+		s.groups = append(s.groups, Group{ID: s.id()})
+		i = len(s.groups) - 1
+	}
+	g := &s.groups[i]
+	g.Name, g.Comment, g.Enabled = in.Name, in.Comment, in.Enabled == nil || *in.Enabled
+	writeJSON(w, http.StatusOK, map[string]any{
+		"groups":    []Group{*g},
+		"processed": map[string]any{"success": []any{map[string]string{"item": g.Name}}, "errors": []any{}},
+	})
+}
+
+// Groups returns the Pi-hole groups.
+func (s *Server) Groups() []Group {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.groups)
 }

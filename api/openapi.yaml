@@ -775,6 +775,61 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/instance-groups/{id}/reconcile:
+    parameters:
+      - $ref: "#/components/parameters/GroupID"
+    post:
+      summary: Make a mirrored group's members match its primary
+      description: >-
+        Reads the primary and the members again, then changes the members to match the primary: what a member is
+        missing is added, what differs is changed to the primary's settings (comment, Pi-hole groups by name, and
+        whether it's enabled), and list entries and clients only a member has are deleted. Pi-hole groups are created
+        and changed by name but never deleted; naming one that only a member has fails with not_reconcilable. A
+        Pi-hole group an entry or client needs that the member doesn't have is created as part of it. `all` covers
+        every difference on every enabled member; otherwise only the items named, on the members they name, are
+        changed, and an item that no longer differs is reported with action none. Needs drift.reconcile on the group
+        (not domains.edit or clients.edit). Members that can't be read are left alone and listed in `members`. The
+        answer is 200 when every item worked and every member was read, and 207 otherwise; it carries the drift
+        report after the reconcile. Audited as group_reconcile, one row per member, listing what was added, changed
+        and deleted.
+      operationId: reconcileGroup
+      x-permission: target:drift.reconcile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReconcileInput"
+      responses:
+        "200":
+          description: Every item worked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReconcileResult"
+        "207":
+          description: Some items failed, or some members couldn't be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReconcileResult"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/roles:
     get:
       summary: List the roles
@@ -3050,6 +3105,122 @@ components:
           type: string
         enabled:
           type: boolean
+
+    ReconcileInput:
+      type: object
+      additionalProperties: false
+      description: Either `all` true, or at least one item (at most 1000 in all). Each item names a member that isn't the primary.
+      properties:
+        all:
+          type: boolean
+        domains:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ReconcileDomain"
+        clients:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ReconcileClient"
+        groups:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ReconcileGroup"
+
+    ReconcileDomain:
+      type: object
+      additionalProperties: false
+      required: [instance_id, domain, type, kind]
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+        domain:
+          type: string
+        type:
+          type: string
+          enum: [allow, deny]
+        kind:
+          type: string
+          enum: [exact, regex]
+
+    ReconcileClient:
+      type: object
+      additionalProperties: false
+      required: [instance_id, client]
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+        client:
+          type: string
+
+    ReconcileGroup:
+      type: object
+      additionalProperties: false
+      required: [instance_id, name]
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+
+    ReconcileResult:
+      type: object
+      additionalProperties: false
+      required: [results, members, report]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReconcileItemResult"
+        members:
+          type: array
+          description: The members reconciled, with an error for those that couldn't be read and were left alone.
+          items:
+            $ref: "#/components/schemas/MemberRead"
+        report:
+          $ref: "#/components/schemas/DriftReport"
+
+    ReconcileItemResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, item, action, status]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        item:
+          type: string
+          enum: [domain, client, group]
+        domain:
+          type: string
+          description: For a domain list entry, with `type` and `kind`.
+        type:
+          type: string
+          enum: [allow, deny]
+        kind:
+          type: string
+          enum: [exact, regex]
+        client:
+          type: string
+        group:
+          type: string
+          description: For a Pi-hole group, its name.
+        action:
+          type: string
+          enum: [add, update, delete, none]
+          description: none means the item already matched the primary, or (with an error) wasn't changed.
+        status:
+          type: string
+          enum: [ok, failed]
+        error:
+          $ref: "#/components/schemas/WriteError"
 
     Grant:
       type: object
