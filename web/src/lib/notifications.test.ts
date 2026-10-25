@@ -14,13 +14,19 @@ import {
 	nameProblem,
 	needsSecret,
 	normalizeHomeserver,
+	parseGroupNames,
+	removedNames,
+	rowsProblem,
+	toProtectedInput,
+	toRows,
 	roomProblem,
 	secretVariable,
 	toInput,
 	tokenProblem,
 	webhookProblem,
 	type Channel,
-	type ChannelForm
+	type ChannelForm,
+	type ProtectedSettings
 } from './notifications.js';
 
 const discord: Channel = {
@@ -186,5 +192,47 @@ describe('summaries', () => {
 			events: ['login', 'logout']
 		});
 		expect(toInput(matrix).matrix).toEqual(matrix.matrix);
+	});
+});
+
+describe('protected groups', () => {
+	const settings: ProtectedSettings = {
+		entries: [
+			{ scope: 'instance', id: 1, name: 'pihole1', pihole_groups: ['Kids', 'Guests'] },
+			{ scope: 'group', id: 2, name: 'site', pihole_groups: ['lab'] }
+		],
+		instances: [{ id: 1, name: 'pihole1' }],
+		groups: [{ id: 2, name: 'site' }]
+	};
+
+	it('reads comma-separated names', () => {
+		expect(parseGroupNames(' kids, Guests ,,KIDS ')).toEqual(['kids', 'Guests']);
+		expect(parseGroupNames('')).toEqual([]);
+	});
+
+	it('round-trips rows', () => {
+		const rows = toRows(settings);
+		expect(rows).toEqual([
+			{ scope: 'instance:1', names: 'Kids, Guests' },
+			{ scope: 'group:2', names: 'lab' }
+		]);
+		expect(toProtectedInput(rows)).toEqual({
+			entries: [
+				{ scope: 'instance', id: 1, pihole_groups: ['Kids', 'Guests'] },
+				{ scope: 'group', id: 2, pihole_groups: ['lab'] }
+			]
+		});
+	});
+
+	it('checks rows', () => {
+		expect(rowsProblem(toRows(settings))).toBeNull();
+		expect(rowsProblem([{ scope: '', names: 'x' }])).toContain('Choose');
+		expect(rowsProblem([{ scope: 'instance:1', names: 'a' }, { scope: 'instance:1', names: 'b' }])).toContain('one row');
+		expect(rowsProblem([{ scope: 'instance:1', names: 'g'.repeat(256) }])).toContain('1-255');
+	});
+
+	it('names what a save takes away', () => {
+		expect(removedNames(settings, toRows(settings))).toEqual([]);
+		expect(removedNames(settings, [{ scope: 'instance:1', names: 'kids' }])).toEqual(['Guests on pihole1', 'lab on site']);
 	});
 });

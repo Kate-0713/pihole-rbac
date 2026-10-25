@@ -30,14 +30,14 @@ type groupEnv struct {
 	target  string
 }
 
-func newGroupEnv(t *testing.T) *groupEnv {
+func newGroupEnv(t *testing.T, modify ...func(*Options)) *groupEnv {
 	t.Helper()
 	names := []string{"alpha", "beta", "gamma"}
 	env := map[string]string{}
 	for _, n := range names {
 		env[secrets.InstanceVar(strings.ToUpper(n))] = piholePassword
 	}
-	e := newTestEnv(t, withInstances(t, env))
+	e := newTestEnv(t, append([]func(*Options){withInstances(t, env)}, modify...)...)
 	e.addUser("admin", "admin-password-1", true)
 	ge := &groupEnv{testEnv: e, admin: e.loggedIn("admin", "admin-password-1"), ph: map[string]*piholetest.Server{}, ids: map[string]int64{}}
 	for _, n := range names {

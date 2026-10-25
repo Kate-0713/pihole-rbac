@@ -1828,6 +1828,60 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/notifications/protected-groups:
+    get:
+      summary: The protected Pi-hole groups
+      description: >-
+        Per instance or mirrored group, the Pi-hole groups whose new clients raise the protected_group_add alert, with
+        the instances and mirrored groups they can be set on. An instance's own protected groups and its mirrored
+        group's both apply to it, however a client is changed.
+      operationId: getProtectedGroups
+      x-permission: notifications.manage
+      responses:
+        "200":
+          description: The protected groups.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProtectedGroupSettings"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Replace the protected Pi-hole groups
+      description: >-
+        Replaces them all. Names match ignoring case; a scope with no names is dropped. An independent group can't be a
+        scope. Removing any tells the channels that receive protected_group_add. Audited as protected_groups_update,
+        with what was added and removed; a save that changes nothing isn't.
+      operationId: setProtectedGroups
+      x-permission: notifications.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProtectedGroupsInput"
+      responses:
+        "200":
+          description: The protected groups as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProtectedGroupSettings"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/audit:
     get:
       summary: Read the audit log
@@ -4361,6 +4415,84 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NotificationEvent"
+
+    ProtectedGroupScope:
+      type: string
+      enum: [instance, group]
+
+    ProtectedGroupEntry:
+      type: object
+      additionalProperties: false
+      required: [scope, id, name, pihole_groups]
+      properties:
+        scope:
+          $ref: "#/components/schemas/ProtectedGroupScope"
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: The instance's or mirrored group's name.
+        pihole_groups:
+          type: array
+          items:
+            type: string
+
+    ProtectedGroupChoice:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+
+    ProtectedGroupSettings:
+      type: object
+      additionalProperties: false
+      required: [entries, instances, groups]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProtectedGroupEntry"
+        instances:
+          type: array
+          description: Every instance, as a scope can name it.
+          items:
+            $ref: "#/components/schemas/ProtectedGroupChoice"
+        groups:
+          type: array
+          description: Every mirrored group, as a scope can name it.
+          items:
+            $ref: "#/components/schemas/ProtectedGroupChoice"
+
+    ProtectedGroupsInput:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [scope, id, pihole_groups]
+            properties:
+              scope:
+                $ref: "#/components/schemas/ProtectedGroupScope"
+              id:
+                type: integer
+                format: int64
+              pihole_groups:
+                type: array
+                maxItems: 100
+                items:
+                  type: string
+                  maxLength: 1024
 
     AuditList:
       type: object

@@ -86,6 +86,13 @@ type NotificationChannel struct {
 	CreatedAt        int64
 }
 
+type NotificationProtectedGroup struct {
+	ID          int64
+	InstanceID  sql.NullInt64
+	GroupID     sql.NullInt64
+	PiholeGroup string
+}
+
 type NotificationRule struct {
 	ChannelID int64
 	Event     string

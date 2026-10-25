@@ -24,6 +24,21 @@ func (q *Queries) AddChannelRule(ctx context.Context, arg AddChannelRuleParams) 
 	return err
 }
 
+const addProtectedGroup = `-- name: AddProtectedGroup :exec
+INSERT INTO notification_protected_groups (instance_id, group_id, pihole_group) VALUES (?, ?, ?)
+`
+
+type AddProtectedGroupParams struct {
+	InstanceID  sql.NullInt64
+	GroupID     sql.NullInt64
+	PiholeGroup string
+}
+
+func (q *Queries) AddProtectedGroup(ctx context.Context, arg AddProtectedGroupParams) error {
+	_, err := q.db.ExecContext(ctx, addProtectedGroup, arg.InstanceID, arg.GroupID, arg.PiholeGroup)
+	return err
+}
+
 const channelEnvNameTaken = `-- name: ChannelEnvNameTaken :one
 SELECT EXISTS (SELECT 1 FROM notification_channels WHERE env_name = ? AND id <> ?)
 `
@@ -84,6 +99,15 @@ func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (i
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const deleteAllProtectedGroups = `-- name: DeleteAllProtectedGroups :exec
+DELETE FROM notification_protected_groups
+`
+
+func (q *Queries) DeleteAllProtectedGroups(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllProtectedGroups)
+	return err
 }
 
 const deleteChannel = `-- name: DeleteChannel :exec
@@ -215,6 +239,88 @@ func (q *Queries) ListChannels(ctx context.Context) ([]NotificationChannel, erro
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProtectedGroups = `-- name: ListProtectedGroups :many
+SELECT p.id, p.instance_id, p.group_id, p.pihole_group,
+       COALESCE(i.name, '') AS instance_name, COALESCE(g.name, '') AS group_name, COALESCE(g.mode, '') AS group_mode
+FROM notification_protected_groups p
+LEFT JOIN instances i ON i.id = p.instance_id
+LEFT JOIN instance_groups g ON g.id = p.group_id
+ORDER BY p.group_id IS NOT NULL, COALESCE(i.name, g.name) COLLATE NOCASE, p.pihole_group COLLATE NOCASE
+`
+
+type ListProtectedGroupsRow struct {
+	ID           int64
+	InstanceID   sql.NullInt64
+	GroupID      sql.NullInt64
+	PiholeGroup  string
+	InstanceName string
+	GroupName    string
+	GroupMode    string
+}
+
+func (q *Queries) ListProtectedGroups(ctx context.Context) ([]ListProtectedGroupsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProtectedGroups)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProtectedGroupsRow{}
+	for rows.Next() {
+		var i ListProtectedGroupsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.InstanceID,
+			&i.GroupID,
+			&i.PiholeGroup,
+			&i.InstanceName,
+			&i.GroupName,
+			&i.GroupMode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const protectedGroupsForInstance = `-- name: ProtectedGroupsForInstance :many
+SELECT DISTINCT p.pihole_group FROM notification_protected_groups p
+WHERE p.instance_id = ?1
+   OR p.group_id = (SELECT m.group_id FROM instance_group_members m
+                    WHERE m.instance_id = ?1 AND m.group_mode = 'mirrored')
+`
+
+// The protected names that apply to an instance: its own, and those of the mirrored group it belongs to (an instance
+// is in at most one). An independent group's names never apply: it isn't a target.
+func (q *Queries) ProtectedGroupsForInstance(ctx context.Context, instanceID sql.NullInt64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, protectedGroupsForInstance, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var pihole_group string
+		if err := rows.Scan(&pihole_group); err != nil {
+			return nil, err
+		}
+		items = append(items, pihole_group)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

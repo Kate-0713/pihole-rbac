@@ -269,6 +269,23 @@ CREATE TABLE notification_rules (
     PRIMARY KEY (channel_id, event)
 );
 
+-- Pi-hole group names whose new clients raise protected_group_add, per instance or per mirrored group. Exactly one of
+-- instance_id and group_id is set. Unlike other references these cascade: an alert setting shouldn't block deleting
+-- an instance or group. Names match ignoring case, as Pi-hole's own group names are compared by people.
+CREATE TABLE notification_protected_groups (
+    id           INTEGER PRIMARY KEY,
+    instance_id  INTEGER REFERENCES instances (id) ON DELETE CASCADE,
+    group_id     INTEGER REFERENCES instance_groups (id) ON DELETE CASCADE,
+    pihole_group TEXT    NOT NULL CHECK (pihole_group <> ''),
+    CHECK ((instance_id IS NULL) <> (group_id IS NULL))
+);
+
+-- UNIQUE treats NULLs as distinct, so each kind of scope gets its own partial index.
+CREATE UNIQUE INDEX notification_protected_groups_instance
+    ON notification_protected_groups (instance_id, pihole_group COLLATE NOCASE) WHERE instance_id IS NOT NULL;
+CREATE UNIQUE INDEX notification_protected_groups_group
+    ON notification_protected_groups (group_id, pihole_group COLLATE NOCASE) WHERE group_id IS NOT NULL;
+
 -- Operations -------------------------------------------------------------------
 
 -- Append-only by convention (the app never updates rows, only prunes by age).
@@ -356,6 +373,7 @@ DROP TABLE update_requests;
 DROP TABLE client_reset_runs;
 DROP TABLE client_reset_targets;
 DROP TABLE audit_log;
+DROP TABLE notification_protected_groups;
 DROP TABLE notification_rules;
 DROP TABLE notification_channels;
 DROP TABLE settings;

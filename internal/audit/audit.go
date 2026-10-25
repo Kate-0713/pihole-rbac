@@ -103,6 +103,8 @@ const (
 	ActionChannelUpdate = "channel_update"
 	ActionChannelSecret = "channel_secret"
 	ActionChannelDelete = "channel_delete"
+	// The protected Pi-hole groups changed; the detail lists those added and removed, by scope.
+	ActionProtectedGroups = "protected_groups_update"
 	// A warning to a channel's old destination (that it was changed, disabled or deleted) still failed after its
 	// retries. Written by the app, as SystemUser, with who made the change.
 	ActionNotificationFailed = "notification_failed"

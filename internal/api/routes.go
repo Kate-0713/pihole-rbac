@@ -85,6 +85,8 @@ var routePermission = map[string]string{
 	"PUT /api/v1/notifications/channels/{id}/secret": string(rbac.NotifyManage),
 	"POST /api/v1/notifications/channels/{id}/test":  string(rbac.NotifyManage),
 	"GET /api/v1/notifications/events":               string(rbac.NotifyManage),
+	"GET /api/v1/notifications/protected-groups":     string(rbac.NotifyManage),
+	"PUT /api/v1/notifications/protected-groups":     string(rbac.NotifyManage),
 
 	"GET /api/v1/audit":        string(rbac.AuditView),
 	"GET /api/v1/audit/export": string(rbac.AuditView),

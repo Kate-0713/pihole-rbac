@@ -600,6 +600,24 @@ func (e PermissionInfoClass) Valid() bool {
 	}
 }
 
+// Defines values for ProtectedGroupScope.
+const (
+	ProtectedGroupScopeGroup    ProtectedGroupScope = "group"
+	ProtectedGroupScopeInstance ProtectedGroupScope = "instance"
+)
+
+// Valid indicates whether the value is a known member of the ProtectedGroupScope enum.
+func (e ProtectedGroupScope) Valid() bool {
+	switch e {
+	case ProtectedGroupScopeGroup:
+		return true
+	case ProtectedGroupScopeInstance:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReconcileDomainKind.
 const (
 	ReconcileDomainKindExact ReconcileDomainKind = "exact"
@@ -1939,6 +1957,45 @@ type PiholeGroupList struct {
 	Groups []PiholeGroup `json:"groups"`
 }
 
+// ProtectedGroupChoice defines model for ProtectedGroupChoice.
+type ProtectedGroupChoice struct {
+	Id   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// ProtectedGroupEntry defines model for ProtectedGroupEntry.
+type ProtectedGroupEntry struct {
+	Id int64 `json:"id"`
+
+	// Name The instance's or mirrored group's name.
+	Name         string              `json:"name"`
+	PiholeGroups []string            `json:"pihole_groups"`
+	Scope        ProtectedGroupScope `json:"scope"`
+}
+
+// ProtectedGroupScope defines model for ProtectedGroupScope.
+type ProtectedGroupScope string
+
+// ProtectedGroupSettings defines model for ProtectedGroupSettings.
+type ProtectedGroupSettings struct {
+	Entries []ProtectedGroupEntry `json:"entries"`
+
+	// Groups Every mirrored group, as a scope can name it.
+	Groups []ProtectedGroupChoice `json:"groups"`
+
+	// Instances Every instance, as a scope can name it.
+	Instances []ProtectedGroupChoice `json:"instances"`
+}
+
+// ProtectedGroupsInput defines model for ProtectedGroupsInput.
+type ProtectedGroupsInput struct {
+	Entries []struct {
+		Id           int64               `json:"id"`
+		PiholeGroups []string            `json:"pihole_groups"`
+		Scope        ProtectedGroupScope `json:"scope"`
+	} `json:"entries"`
+}
+
 // QueryLog For a mirrored group, each enabled member's newest `length` entries are read, merged newest first and cut to `length`, then filtered; `members` says how each member answered. A member that didn't answer leaves the log, and the request fails only when none answered.
 type QueryLog struct {
 	// Members For a mirrored group, its enabled members, the primary first. Absent for an instance.
@@ -2655,6 +2712,9 @@ type UpdateChannelJSONRequestBody = ChannelInput
 // SetChannelSecretJSONRequestBody defines body for SetChannelSecret for application/json ContentType.
 type SetChannelSecretJSONRequestBody = ChannelSecret
 
+// SetProtectedGroupsJSONRequestBody defines body for SetProtectedGroups for application/json ContentType.
+type SetProtectedGroupsJSONRequestBody = ProtectedGroupsInput
+
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = RoleCreate
 
@@ -2810,6 +2870,12 @@ type ServerInterface interface {
 	// ListNotificationEvents The events a channel can receive
 	// (GET /api/v1/notifications/events)
 	ListNotificationEvents(w http.ResponseWriter, r *http.Request)
+	// GetProtectedGroups The protected Pi-hole groups
+	// (GET /api/v1/notifications/protected-groups)
+	GetProtectedGroups(w http.ResponseWriter, r *http.Request)
+	// SetProtectedGroups Replace the protected Pi-hole groups
+	// (PUT /api/v1/notifications/protected-groups)
+	SetProtectedGroups(w http.ResponseWriter, r *http.Request)
 	// ListRoles List the roles
 	// (GET /api/v1/roles)
 	ListRoles(w http.ResponseWriter, r *http.Request)
@@ -3870,6 +3936,34 @@ func (siw *ServerInterfaceWrapper) ListNotificationEvents(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListNotificationEvents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProtectedGroups operation middleware
+func (siw *ServerInterfaceWrapper) GetProtectedGroups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProtectedGroups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetProtectedGroups operation middleware
+func (siw *ServerInterfaceWrapper) SetProtectedGroups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetProtectedGroups(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5262,6 +5356,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/notifications/channels/{id}/secret", wrapper.SetChannelSecret)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/notifications/channels/{id}/test", wrapper.TestChannel)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/notifications/events", wrapper.ListNotificationEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/notifications/protected-groups", wrapper.GetProtectedGroups)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/notifications/protected-groups", wrapper.SetProtectedGroups)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/audit", wrapper.ListAudit)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/audit/export", wrapper.ExportAudit)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/general", wrapper.GetGeneralSettings)
@@ -8480,6 +8576,163 @@ func (response ListNotificationEvents403JSONResponse) VisitListNotificationEvent
 type ListNotificationEvents503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response ListNotificationEvents503JSONResponse) VisitListNotificationEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProtectedGroupsRequestObject struct {
+}
+
+type GetProtectedGroupsResponseObject interface {
+	VisitGetProtectedGroupsResponse(w http.ResponseWriter) error
+}
+
+type GetProtectedGroups200JSONResponse ProtectedGroupSettings
+
+func (response GetProtectedGroups200JSONResponse) VisitGetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProtectedGroups401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetProtectedGroups401JSONResponse) VisitGetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProtectedGroups403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetProtectedGroups403JSONResponse) VisitGetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProtectedGroups503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetProtectedGroups503JSONResponse) VisitGetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProtectedGroupsRequestObject struct {
+	Body *SetProtectedGroupsJSONRequestBody
+}
+
+type SetProtectedGroupsResponseObject interface {
+	VisitSetProtectedGroupsResponse(w http.ResponseWriter) error
+}
+
+type SetProtectedGroups200JSONResponse ProtectedGroupSettings
+
+func (response SetProtectedGroups200JSONResponse) VisitSetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProtectedGroups400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetProtectedGroups400JSONResponse) VisitSetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProtectedGroups401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetProtectedGroups401JSONResponse) VisitSetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProtectedGroups403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetProtectedGroups403JSONResponse) VisitSetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProtectedGroups415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetProtectedGroups415JSONResponse) VisitSetProtectedGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProtectedGroups503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetProtectedGroups503JSONResponse) VisitSetProtectedGroupsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -12842,6 +13095,12 @@ type StrictServerInterface interface {
 	// ListNotificationEvents The events a channel can receive
 	// (GET /api/v1/notifications/events)
 	ListNotificationEvents(ctx context.Context, request ListNotificationEventsRequestObject) (ListNotificationEventsResponseObject, error)
+	// GetProtectedGroups The protected Pi-hole groups
+	// (GET /api/v1/notifications/protected-groups)
+	GetProtectedGroups(ctx context.Context, request GetProtectedGroupsRequestObject) (GetProtectedGroupsResponseObject, error)
+	// SetProtectedGroups Replace the protected Pi-hole groups
+	// (PUT /api/v1/notifications/protected-groups)
+	SetProtectedGroups(ctx context.Context, request SetProtectedGroupsRequestObject) (SetProtectedGroupsResponseObject, error)
 	// ListRoles List the roles
 	// (GET /api/v1/roles)
 	ListRoles(ctx context.Context, request ListRolesRequestObject) (ListRolesResponseObject, error)
@@ -13979,6 +14238,61 @@ func (sh *strictHandler) ListNotificationEvents(w http.ResponseWriter, r *http.R
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListNotificationEventsResponseObject); ok {
 		if err := validResponse.VisitListNotificationEventsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetProtectedGroups operation middleware
+func (sh *strictHandler) GetProtectedGroups(w http.ResponseWriter, r *http.Request) {
+	var request GetProtectedGroupsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetProtectedGroups(ctx, request.(GetProtectedGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetProtectedGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetProtectedGroupsResponseObject); ok {
+		if err := validResponse.VisitGetProtectedGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetProtectedGroups operation middleware
+func (sh *strictHandler) SetProtectedGroups(w http.ResponseWriter, r *http.Request) {
+	var request SetProtectedGroupsRequestObject
+
+	var body SetProtectedGroupsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetProtectedGroups(ctx, request.(SetProtectedGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetProtectedGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetProtectedGroupsResponseObject); ok {
+		if err := validResponse.VisitSetProtectedGroupsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

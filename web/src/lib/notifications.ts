@@ -193,3 +193,68 @@ export function toInput(c: Channel, changes: Partial<ChannelInput> = {}): Channe
 	if (c.kind === 'matrix' && c.matrix) base.matrix = { ...c.matrix };
 	return { ...base, ...changes };
 }
+
+// Protected groups: Pi-hole group names, per instance or mirrored group, whose new clients raise protected_group_add.
+export type ProtectedSettings = Schemas['ProtectedGroupSettings'];
+export type ProtectedEntry = Schemas['ProtectedGroupEntry'];
+export type ProtectedScope = ProtectedEntry['scope'];
+
+// A row of the protected groups form: a scope as "instance:<id>" or "group:<id>", and the names as typed.
+export type ProtectedRow = { scope: string; names: string };
+
+export const maxPiholeGroupChars = 255;
+
+export function scopeKey(scope: ProtectedScope, id: number): string {
+	return `${scope}:${id}`;
+}
+
+// parseGroupNames reads a comma-separated list of Pi-hole group names: trimmed, repeats (ignoring case) dropped.
+export function parseGroupNames(text: string): string[] {
+	const out: string[] = [];
+	for (const raw of text.split(',')) {
+		const name = raw.trim();
+		if (name !== '' && !out.some((n) => n.toLowerCase() === name.toLowerCase())) out.push(name);
+	}
+	return out;
+}
+
+export function toRows(s: ProtectedSettings): ProtectedRow[] {
+	return s.entries.map((e) => ({ scope: scopeKey(e.scope, e.id), names: e.pihole_groups.join(', ') }));
+}
+
+// rowsProblem checks the form as the server would: each scope chosen and listed once, names within the rules.
+export function rowsProblem(rows: ProtectedRow[]): string | null {
+	const seen = new Set<string>();
+	for (const r of rows) {
+		if (r.scope === '') return 'Choose an instance or group for each row.';
+		if (seen.has(r.scope)) return 'Each instance and group can only have one row.';
+		seen.add(r.scope);
+		const names = parseGroupNames(r.names);
+		if (names.length > 100) return 'At most 100 Pi-hole groups in a row.';
+		if (names.some((n) => [...n].length > maxPiholeGroupChars || controlChars.test(n))) {
+			return `A Pi-hole group name is 1-${maxPiholeGroupChars} characters, with no control characters.`;
+		}
+	}
+	return null;
+}
+
+// toProtectedInput is the body that saves the rows. A row with no names is sent anyway; the server drops it.
+export function toProtectedInput(rows: ProtectedRow[]): Schemas['ProtectedGroupsInput'] {
+	return {
+		entries: rows.map((r) => {
+			const [scope, id] = r.scope.split(':');
+			return { scope: scope as ProtectedScope, id: Number(id), pihole_groups: parseGroupNames(r.names) };
+		})
+	};
+}
+
+// removedNames lists the protected groups a save takes away, as "<group> on <name>", for the warning it sends.
+export function removedNames(s: ProtectedSettings, rows: ProtectedRow[]): string[] {
+	const now = new Map(rows.map((r) => [r.scope, parseGroupNames(r.names).map((n) => n.toLowerCase())]));
+	const out: string[] = [];
+	for (const e of s.entries) {
+		const kept = now.get(scopeKey(e.scope, e.id)) ?? [];
+		for (const g of e.pihole_groups) if (!kept.includes(g.toLowerCase())) out.push(`${g} on ${e.name}`);
+	}
+	return out;
+}

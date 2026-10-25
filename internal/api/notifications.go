@@ -164,3 +164,49 @@ func (s *Server) ListNotificationEvents(context.Context, gen.ListNotificationEve
 	}
 	return gen.ListNotificationEvents200JSONResponse(out), nil
 }
+
+func protectedJSON(p notifications.ProtectedSettings) gen.ProtectedGroupSettings {
+	out := gen.ProtectedGroupSettings{
+		Entries:   make([]gen.ProtectedGroupEntry, 0, len(p.Entries)),
+		Instances: make([]gen.ProtectedGroupChoice, 0, len(p.Instances)),
+		Groups:    make([]gen.ProtectedGroupChoice, 0, len(p.Groups)),
+	}
+	for _, e := range p.Entries {
+		out.Entries = append(out.Entries, gen.ProtectedGroupEntry{
+			Scope: gen.ProtectedGroupScope(e.Scope), Id: e.ID, Name: e.Name, PiholeGroups: e.Groups,
+		})
+	}
+	for _, c := range p.Instances {
+		out.Instances = append(out.Instances, gen.ProtectedGroupChoice{Id: c.ID, Name: c.Name})
+	}
+	for _, c := range p.Groups {
+		out.Groups = append(out.Groups, gen.ProtectedGroupChoice{Id: c.ID, Name: c.Name})
+	}
+	return out
+}
+
+func (s *Server) GetProtectedGroups(ctx context.Context, _ gen.GetProtectedGroupsRequestObject) (gen.GetProtectedGroupsResponseObject, error) {
+	if s.Notifications == nil {
+		return nil, errNoNotifications
+	}
+	p, err := s.Notifications.ProtectedGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetProtectedGroups200JSONResponse(protectedJSON(p)), nil
+}
+
+func (s *Server) SetProtectedGroups(ctx context.Context, req gen.SetProtectedGroupsRequestObject) (gen.SetProtectedGroupsResponseObject, error) {
+	if s.Notifications == nil {
+		return nil, errNoNotifications
+	}
+	in := make([]notifications.ProtectedInput, 0, len(req.Body.Entries))
+	for _, e := range req.Body.Entries {
+		in = append(in, notifications.ProtectedInput{Scope: string(e.Scope), ID: e.Id, Groups: e.PiholeGroups})
+	}
+	p, err := s.Notifications.SetProtectedGroups(ctx, actor(ctx), in)
+	if err != nil {
+		return nil, err
+	}
+	return gen.SetProtectedGroups200JSONResponse(protectedJSON(p)), nil
+}

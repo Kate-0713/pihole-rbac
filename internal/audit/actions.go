@@ -74,6 +74,7 @@ var actions = []ActionInfo{
 	{ActionChannelUpdate, GroupNotifications, "A notification channel changed, enabled or disabled"},
 	{ActionChannelSecret, GroupNotifications, "A notification channel's secret replaced"},
 	{ActionChannelDelete, GroupNotifications, "A notification channel deleted"},
+	{ActionProtectedGroups, GroupNotifications, "The protected Pi-hole groups changed"},
 	{ActionNotificationFailed, GroupNotifications, "A warning to a channel's old destination couldn't be delivered"},
 }
 

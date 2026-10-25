@@ -1042,6 +1042,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications/protected-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The protected Pi-hole groups
+         * @description Per instance or mirrored group, the Pi-hole groups whose new clients raise the protected_group_add alert, with the instances and mirrored groups they can be set on. An instance's own protected groups and its mirrored group's both apply to it, however a client is changed.
+         */
+        get: operations["getProtectedGroups"];
+        /**
+         * Replace the protected Pi-hole groups
+         * @description Replaces them all. Names match ignoring case; a scope with no names is dropped. An independent group can't be a scope. Removing any tells the channels that receive protected_group_add. Audited as protected_groups_update, with what was added and removed; a save that changes nothing isn't.
+         */
+        put: operations["setProtectedGroups"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -2066,6 +2090,36 @@ export interface components {
         };
         NotificationEventList: {
             events: components["schemas"]["NotificationEvent"][];
+        };
+        /** @enum {string} */
+        ProtectedGroupScope: "instance" | "group";
+        ProtectedGroupEntry: {
+            scope: components["schemas"]["ProtectedGroupScope"];
+            /** Format: int64 */
+            id: number;
+            /** @description The instance's or mirrored group's name. */
+            name: string;
+            pihole_groups: string[];
+        };
+        ProtectedGroupChoice: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
+        ProtectedGroupSettings: {
+            entries: components["schemas"]["ProtectedGroupEntry"][];
+            /** @description Every instance, as a scope can name it. */
+            instances: components["schemas"]["ProtectedGroupChoice"][];
+            /** @description Every mirrored group, as a scope can name it. */
+            groups: components["schemas"]["ProtectedGroupChoice"][];
+        };
+        ProtectedGroupsInput: {
+            entries: {
+                scope: components["schemas"]["ProtectedGroupScope"];
+                /** Format: int64 */
+                id: number;
+                pihole_groups: string[];
+            }[];
         };
         AuditList: {
             entries: components["schemas"]["AuditEntry"][];
@@ -4377,6 +4431,58 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getProtectedGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The protected groups. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProtectedGroupSettings"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setProtectedGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProtectedGroupsInput"];
+            };
+        };
+        responses: {
+            /** @description The protected groups as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProtectedGroupSettings"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            415: components["responses"]["UnsupportedMediaType"];
             503: components["responses"]["SetupRequired"];
         };
     };

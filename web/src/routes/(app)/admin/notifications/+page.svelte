@@ -10,6 +10,7 @@
 	import ChannelFormDialog from '#lib/components/app/channel-form-dialog.svelte';
 	import ChannelList from '#lib/components/app/channel-list.svelte';
 	import ChannelSecretDialog from '#lib/components/app/channel-secret-dialog.svelte';
+	import ProtectedGroupsCard from '#lib/components/app/protected-groups-card.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { toInput, type Channel } from '#lib/notifications.js';
@@ -118,6 +119,9 @@
 		When a channel's destination or secret changes, or it is disabled, deleted or loses events, its current
 		destination is told first, so alerts can't be quietly redirected or switched off.
 	</p>
+	{#if data.protected}
+		<ProtectedGroupsCard settings={data.protected} channels={data.channels} onsaved={reload} />
+	{/if}
 	{#if !data.canStoreSecrets}
 		<p class="text-muted-foreground text-sm">
 			Secrets can't be stored until the master key (PIHOLE_RBAC_SECRET_KEY) is set. Until then, each channel's secret

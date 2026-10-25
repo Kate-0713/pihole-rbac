@@ -5,7 +5,7 @@
 // reaches over plain HTTP on the loopback. Each test uses a room of its own, so what it reads back is only its own.
 import type { APIRequestContext, Page } from '@playwright/test';
 import { matrixURL } from './addresses.js';
-import { expect, logIn, openAs, test } from './fixtures.js';
+import { apiWrite, expect, logIn, openAs, test } from './fixtures.js';
 
 async function received(request: APIRequestContext, room: string): Promise<string[]> {
 	const res = await request.get(`${matrixURL}?room=${encodeURIComponent(room)}`);
@@ -148,6 +148,54 @@ test('a Discord channel only takes a Discord webhook URL', async ({ page, state 
 	await expect(page.getByRole('alertdialog')).not.toContainText('last message');
 	await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click();
 	await expect(row).toHaveCount(0);
+});
+
+test('protected groups: an alert when a client joins one, and a warning when it stops', async ({ page, request, state }) => {
+	const { homeserver, token } = state.seeded.fixture.matrix;
+	const pihole1 = state.seeded.fixture.instances[0];
+	const room = `!protected-${Date.now()}:localhost`;
+	const name = `Protected ${Date.now()}`;
+	await openAs(page, state.seeded.fixture.admin, '/admin/notifications');
+	const created = await apiWrite(page, 'POST', '/api/v1/notifications/channels', {
+		kind: 'matrix', name, enabled: true, events: ['protected_group_add'], secret: token,
+		matrix: { homeserver, room_id: room, allow_http: true }
+	});
+	const channel = (await created.json()) as { id: number };
+	await page.reload();
+	const card = page.locator('[data-slot="card"]').filter({ hasText: 'Protected groups' });
+	await expect(card).toContainText(`Alerts go to ${name}`);
+
+	// Protect kids on pihole1.
+	await card.getByRole('button', { name: 'Edit' }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Instance or group').first().click();
+	await page.getByRole('option', { name: pihole1.name }).click();
+	await dialog.getByLabel('Pi-hole groups, separated by commas').first().fill('kids');
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByText('Protected groups saved.')).toBeVisible();
+	await expect(card.getByRole('list', { name: 'Protected groups' })).toContainText(new RegExp(`${pihole1.name}\\s*instance\\s*kids`));
+
+	// The lab subnet joins kids: an alert.
+	const target = `i-${pihole1.id}`;
+	const { groups } = await (await page.request.get(`/api/v1/targets/${target}/groups`)).json();
+	const kids = groups.find((g: { name: string }) => g.name === 'kids').id;
+	await apiWrite(page, 'PATCH', `/api/v1/targets/${target}/clients`, { client: '10.0.0.0/24', groups: [0, kids] });
+	try {
+		expect(await nthReceived(request, room, 1)).toBe(`🚨 admin added client 10.0.0.0/24 to protected group kids on ${pihole1.name}`);
+
+		// Taking it away warns the channel first.
+		await card.getByRole('button', { name: 'Edit' }).click();
+		await dialog.getByRole('button', { name: 'Remove row 1' }).click();
+		await expect(dialog.getByText(`these alerts stop: kids on ${pihole1.name}`)).toBeVisible();
+		await dialog.getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByText('Protected groups saved.').last()).toBeVisible();
+		await expect(card).toContainText('None yet.');
+		expect(await nthReceived(request, room, 2)).toContain(`no more alerts when a client is added to kids on ${pihole1.name}`);
+	} finally {
+		// Put the client back for the other tests, and remove the channel.
+		await apiWrite(page, 'PATCH', `/api/v1/targets/${target}/clients`, { client: '10.0.0.0/24', groups: [0] });
+		await apiWrite(page, 'DELETE', `/api/v1/notifications/channels/${channel.id}`);
+	}
 });
 
 test('the notifications page needs notifications.manage', async ({ page, state }) => {

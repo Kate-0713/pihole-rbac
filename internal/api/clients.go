@@ -9,6 +9,7 @@ import (
 
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
+	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
@@ -132,6 +133,9 @@ func (s *Server) UpdateClient(ctx context.Context, req gen.UpdateClientRequestOb
 	})
 	for i, m := range tg.members {
 		if attempted[i] {
+			if outs[i].callErr == nil && b.Groups != nil {
+				s.markProtected(ctx, m, details[i])
+			}
 			s.auditPihole(ctx, m, audit.ActionClientUpdate, outs[i].callErr, details[i])
 		}
 	}
@@ -180,4 +184,24 @@ func clientJSON(ce piholeapi.ClientEntry) gen.PiholeClient {
 		out.Name = &name
 	}
 	return out
+}
+
+// markProtected records in a client update's audit detail which protected Pi-hole groups the client was added to on
+// this instance, by the names Pi-hole uses: the instance's own protected groups and its mirrored group's. The notifier
+// sends protected_group_add alerts from it. A failure to read them is logged, never a reason to fail the write, which
+// has already been made.
+func (s *Server) markProtected(ctx context.Context, m instanceRef, detail map[string]any) {
+	if s.Notifications == nil || detail == nil {
+		return
+	}
+	protected, err := s.Notifications.ProtectedFor(ctx, m.id)
+	if err != nil {
+		s.Logger.Error("reading protected groups", "instance", m.name, "err", err)
+		return
+	}
+	before, _ := detail["groups_before"].([]string)
+	after, _ := detail["groups_after"].([]string)
+	if added := notifications.ProtectedAdded(before, after, protected); len(added) > 0 {
+		detail["protected_added"] = added
+	}
 }
