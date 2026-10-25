@@ -118,8 +118,8 @@ const (
 	// retries. Written by the app, as SystemUser, with who made the change.
 	ActionNotificationFailed = "notification_failed"
 
-	// Audit rows older than the retention were deleted; the detail has how many and the cutoff. Written only when
-	// something was deleted.
+	// Audit rows, or finished client reset runs, older than the retention were deleted; the detail has how many of
+	// each and the cutoff. Written only when something was deleted.
 	ActionAuditPrune = "audit_prune"
 )
 

@@ -70,7 +70,7 @@ var actions = []ActionInfo{
 	{ActionSettingsUpdate, GroupSettings, "Settings changed (login methods, LDAP, sessions, audit retention)"},
 	{ActionConfigReload, GroupSettings, "Secrets reloaded"},
 	{ActionRotateKey, GroupSettings, "The master key was rotated on the command line"},
-	{ActionAuditPrune, GroupSettings, "Old audit entries deleted"},
+	{ActionAuditPrune, GroupSettings, "Old audit entries and client reset runs deleted"},
 	{ActionClientResetRules, GroupSettings, "The client reset rules changed"},
 
 	{ActionChannelCreate, GroupNotifications, "A notification channel added"},

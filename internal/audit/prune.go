@@ -13,9 +13,9 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
 )
 
-// Pruner deletes audit rows older than the retention: once at startup, then daily, and soon after Poke (called when
-// the retention setting changes). A prune that deletes rows records it as audit_prune in the same transaction; one
-// that deletes nothing writes nothing, so the log doesn't gain a row a day.
+// Pruner deletes audit rows, and finished client reset runs, older than the retention: once at startup, then daily,
+// and soon after Poke (called when the retention setting changes). A prune that deletes rows records it as
+// audit_prune in the same transaction; one that deletes nothing writes nothing, so the log doesn't gain a row a day.
 type Pruner struct {
 	Store     *store.Store
 	Audit     *Logger
@@ -86,7 +86,8 @@ func (p *Pruner) runOnce(ctx context.Context) {
 	}
 }
 
-// Prune deletes the rows older than the retention now, and returns how many it deleted.
+// Prune deletes the audit rows and finished client reset runs older than the retention now, and returns how many
+// audit rows it deleted.
 func (p *Pruner) Prune(ctx context.Context) (int64, error) {
 	now := time.Now()
 	if p.Now != nil {
@@ -94,15 +95,22 @@ func (p *Pruner) Prune(ctx context.Context) (int64, error) {
 	}
 	days := p.Retention()
 	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
-	var n int64
+	var n, runs int64
 	entry := Entry{At: now, Username: SystemUser, Action: ActionAuditPrune, Target: "audit_log"}
 	err := p.Store.WithTx(ctx, func(q *db.Queries) error {
 		var err error
-		if n, err = q.DeleteAuditBefore(ctx, store.Millis(cutoff)); err != nil || n == 0 {
+		if n, err = q.DeleteAuditBefore(ctx, store.Millis(cutoff)); err != nil {
 			return err
 		}
+		if runs, err = q.DeleteClientResetRunsBefore(ctx, store.Millis(cutoff)); err != nil {
+			return err
+		}
+		if n == 0 && runs == 0 {
+			return nil
+		}
 		entry.Detail = map[string]any{
-			"deleted": n, "before": cutoff.UTC().Format(time.RFC3339), "retention_days": days,
+			"deleted": n, "client_reset_runs_deleted": runs, "before": cutoff.UTC().Format(time.RFC3339),
+			"retention_days": days,
 		}
 		_, err = Insert(ctx, q, entry)
 		return err
@@ -110,7 +118,7 @@ func (p *Pruner) Prune(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if n > 0 && p.Audit != nil {
+	if n+runs > 0 && p.Audit != nil {
 		p.Audit.Log(entry)
 	}
 	return n, nil

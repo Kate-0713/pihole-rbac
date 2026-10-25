@@ -1435,6 +1435,17 @@ type ClientResetRunList struct {
 	Runs  []ClientResetRun `json:"runs"`
 }
 
+// ClientResetSchedule When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is.
+type ClientResetSchedule struct {
+	Enabled bool `json:"enabled"`
+
+	// Time HH:MM, 24-hour, in the time zone. A time skipped by a daylight saving change runs an hour later that day.
+	Time string `json:"time"`
+
+	// TimeZone An IANA time zone, such as Europe/London or UTC. Not "Local".
+	TimeZone string `json:"time_zone"`
+}
+
 // ClientResetScope defines model for ClientResetScope.
 type ClientResetScope string
 
@@ -1735,10 +1746,13 @@ type ErrorBody struct {
 
 // GeneralSettings defines model for GeneralSettings.
 type GeneralSettings struct {
-	// AuditRetentionDays How many days audit entries are kept; 365 until saved.
-	AuditRetentionDays     int `json:"audit_retention_days"`
-	IdleTimeoutMinutes     int `json:"idle_timeout_minutes"`
-	SessionLifetimeMinutes int `json:"session_lifetime_minutes"`
+	// AuditRetentionDays How many days audit entries, and client reset runs, are kept; 365 until saved.
+	AuditRetentionDays int `json:"audit_retention_days"`
+
+	// ClientResetSchedule When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is.
+	ClientResetSchedule    ClientResetSchedule `json:"client_reset_schedule"`
+	IdleTimeoutMinutes     int                 `json:"idle_timeout_minutes"`
+	SessionLifetimeMinutes int                 `json:"session_lifetime_minutes"`
 
 	// UpdatedAt Absent until the settings are first saved.
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
@@ -1749,6 +1763,9 @@ type GeneralSettings struct {
 type GeneralSettingsInput struct {
 	// AuditRetentionDays How many days audit entries are kept, 30 to 3650. Absent leaves it as it is.
 	AuditRetentionDays *int `json:"audit_retention_days,omitempty"`
+
+	// ClientResetSchedule When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is.
+	ClientResetSchedule *ClientResetSchedule `json:"client_reset_schedule,omitempty"`
 
 	// IdleTimeoutMinutes How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime.
 	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`

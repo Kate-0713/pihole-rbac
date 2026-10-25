@@ -205,6 +205,11 @@ func serve() error {
 	auditPruner := &audit.Pruner{Store: st, Audit: auditLog, Retention: login.AuditRetentionDays, Logger: logger}
 	login.RetentionChanged = auditPruner.Poke
 	go auditPruner.Run(ctx)
+	// Client reset runs every target with rules daily at the time set in the general settings, while it is on.
+	scheduler := &clientreset.Scheduler{Service: resets, Schedule: func() clientreset.Schedule {
+		return resetSchedule(login.ResetSchedule())
+	}}
+	go scheduler.Run(ctx)
 	rechecker := &auth.Rechecker{
 		Store:     st,
 		Audit:     auditLog,
@@ -275,4 +280,15 @@ func logSecrets(logger *slog.Logger, sec *secrets.Manager) {
 	if sec.Cipher() == nil {
 		logger.Warn("PIHOLE_RBAC_SECRET_KEY is not set: Pi-hole passwords, the LDAP bind password and notification secrets can't be stored until it is")
 	}
+}
+
+// resetSchedule turns the saved client reset schedule into the scheduler's. The settings are validated when saved
+// and loaded, so a time zone that doesn't load can only be a database edited by hand; the scheduler then stays off.
+func resetSchedule(r loginsettings.ResetSchedule) clientreset.Schedule {
+	loc, err := r.Location()
+	if err != nil {
+		return clientreset.Schedule{}
+	}
+	h, m := r.Clock()
+	return clientreset.Schedule{Enabled: r.Enabled, Hour: h, Minute: m, Location: loc}
 }

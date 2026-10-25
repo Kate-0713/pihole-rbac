@@ -65,7 +65,8 @@ type Service struct {
 	directory *auth.LDAPAuthenticator // built from the saved LDAP settings, enabled or not; nil without them
 	generalAt time.Time               // when the general settings were last saved, and by whom
 	generalBy string
-	retention int // audit retention in days; 0 means the default
+	retention int           // audit retention in days; 0 means the default
+	schedule  ResetSchedule // the client reset schedule; zero means the default
 }
 
 // StoredPassword is the bind password as kept in the database.

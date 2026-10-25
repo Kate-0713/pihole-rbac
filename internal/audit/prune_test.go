@@ -5,6 +5,7 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"sync/atomic"
@@ -131,5 +132,46 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestPruneClientResetRuns(t *testing.T) {
+	st := openStore(t)
+	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	add := func(started time.Time, status string) {
+		t.Helper()
+		finished := sql.NullInt64{Int64: store.Millis(started) + 1, Valid: status != "running"}
+		if err := st.WithTx(context.Background(), func(q *db.Queries) error {
+			id, err := q.StartClientResetRun(context.Background(), db.StartClientResetRunParams{
+				StartedAt: store.Millis(started), Trigger: "schedule", Username: SystemUser, Target: "i-1", TargetName: "p1",
+			})
+			if err != nil || status == "running" {
+				return err
+			}
+			return q.FinishClientResetRun(context.Background(), db.FinishClientResetRunParams{
+				FinishedAt: finished, Status: status, Summary: "{}", ID: id,
+			})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(now.Add(-400*24*time.Hour), "ok")
+	add(now.Add(-380*24*time.Hour), "failed")
+	add(now.Add(-24*time.Hour), "ok")
+	add(now.Add(-500*24*time.Hour), "running") // left running by a crash: never pruned while it is
+	l, _ := testLogger()
+	p := &Pruner{Store: st, Audit: l, Retention: func() int { return 365 }, Now: func() time.Time { return now }}
+
+	// No audit rows old enough, but two runs: the prune is still recorded.
+	if n, err := p.Prune(context.Background()); err != nil || n != 0 {
+		t.Fatalf("Prune: %d, %v", n, err)
+	}
+	left, err := st.Read().ListClientResetRuns(context.Background(), db.ListClientResetRunsParams{RowLimit: 100})
+	if err != nil || len(left) != 2 || left[0].Status != "running" || left[1].Status != "ok" {
+		t.Fatalf("runs left %+v, want the recent one and the running one (%v)", left, err)
+	}
+	rows := rowsOf(t, st)
+	if len(rows) != 1 || !strings.Contains(rows[0].Detail, `"client_reset_runs_deleted":2`) || !strings.Contains(rows[0].Detail, `"deleted":0`) {
+		t.Errorf("prune rows %+v", rows)
 	}
 }

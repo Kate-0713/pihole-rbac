@@ -1115,12 +1115,12 @@ export interface paths {
         };
         /**
          * The general settings
-         * @description How long sessions last and how long audit entries are kept. Defaults until saved.
+         * @description How long sessions last, how long audit entries are kept, and when client reset runs. Defaults until saved.
          */
         get: operations["getGeneralSettings"];
         /**
          * Change the general settings
-         * @description A new session lifetime applies to sessions started from now on; a new idle timeout applies to every session at once; a new audit retention applies at a prune a few seconds later. Audited as settings_update.
+         * @description A new session lifetime applies to sessions started from now on; a new idle timeout applies to every session at once; a new audit retention applies at a prune a few seconds later; a new client reset schedule within a minute. Audited as settings_update.
          */
         put: operations["setGeneralSettings"];
         post?: never;
@@ -2277,12 +2277,22 @@ export interface components {
             idle_timeout_minutes: number;
             /** @description How many days audit entries are kept, 30 to 3650. Absent leaves it as it is. */
             audit_retention_days?: number;
+            client_reset_schedule?: components["schemas"]["ClientResetSchedule"];
+        };
+        /** @description When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is. */
+        ClientResetSchedule: {
+            enabled: boolean;
+            /** @description HH:MM, 24-hour, in the time zone. A time skipped by a daylight saving change runs an hour later that day. */
+            time: string;
+            /** @description An IANA time zone, such as Europe/London or UTC. Not "Local". */
+            time_zone: string;
         };
         GeneralSettings: {
             session_lifetime_minutes: number;
             idle_timeout_minutes: number;
-            /** @description How many days audit entries are kept; 365 until saved. */
+            /** @description How many days audit entries, and client reset runs, are kept; 365 until saved. */
             audit_retention_days: number;
+            client_reset_schedule: components["schemas"]["ClientResetSchedule"];
             /**
              * Format: date-time
              * @description Absent until the settings are first saved.

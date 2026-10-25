@@ -263,3 +263,76 @@ func TestAuditRetentionSetting(t *testing.T) {
 		t.Errorf("an older row: %d, %v", old.AuditRetentionDays(), err)
 	}
 }
+
+func TestClientResetScheduleSetting(t *testing.T) {
+	var svc *loginsettings.Service
+	e := newTestEnv(t, func(o *Options) {
+		svc = &loginsettings.Service{
+			Store: o.Store, Audit: o.Audit, Secrets: testSecrets{}, Sessions: o.Sessions,
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}
+		if err := svc.Load(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		o.LoginSettings = svc
+	})
+	e.addUser("admin", "admin-password-1", true)
+	c := e.loggedIn("admin", "admin-password-1")
+
+	g := decode[gen.GeneralSettings](t, c.do(http.MethodGet, "/api/v1/settings/general", nil))
+	if s := g.ClientResetSchedule; s.Enabled || s.Time != "03:00" || s.TimeZone != "UTC" {
+		t.Errorf("default schedule %+v", s)
+	}
+	put := func(s *gen.ClientResetSchedule) response {
+		return c.do(http.MethodPut, "/api/v1/settings/general", gen.GeneralSettingsInput{
+			SessionLifetimeMinutes: 480, IdleTimeoutMinutes: 60, ClientResetSchedule: s,
+		})
+	}
+	for _, bad := range []gen.ClientResetSchedule{
+		{Enabled: true, Time: "3:00", TimeZone: "UTC"},
+		{Enabled: true, Time: "24:00", TimeZone: "UTC"},
+		{Enabled: true, Time: "03:60", TimeZone: "UTC"},
+		{Enabled: true, Time: "03:00", TimeZone: ""},
+		{Enabled: true, Time: "03:00", TimeZone: "Local"},
+		{Enabled: true, Time: "03:00", TimeZone: "Mars/Olympus_Mons"},
+		{Enabled: true, Time: "03:00", TimeZone: "../../etc/passwd"},
+	} {
+		res := put(&bad)
+		mustStatus(t, res, http.StatusBadRequest)
+		if f := detailsField(t, res); !strings.HasPrefix(f, "client_reset_schedule.") {
+			t.Errorf("%+v: field %q", bad, f)
+		}
+	}
+	res := put(&gen.ClientResetSchedule{Enabled: true, Time: "02:30", TimeZone: "Europe/London"})
+	mustStatus(t, res, http.StatusOK)
+	if s := decode[gen.GeneralSettings](t, res).ClientResetSchedule; !s.Enabled || s.Time != "02:30" || s.TimeZone != "Europe/London" {
+		t.Errorf("saved %+v", s)
+	}
+	if s := svc.ResetSchedule(); !s.Enabled || s.Time != "02:30" {
+		t.Errorf("service %+v", s)
+	}
+	rows := e.auditRows()
+	last := rows[len(rows)-1]
+	if !strings.Contains(last.Detail, `"changed":["client_reset_schedule"]`) || !strings.Contains(last.Detail, `"time_zone":"Europe/London"`) {
+		t.Errorf("audit %s", last.Detail)
+	}
+
+	// A save that leaves the schedule out (the session settings card) keeps it, and changes nothing else here.
+	n := len(e.auditRows())
+	mustStatus(t, put(nil), http.StatusOK)
+	if s := svc.ResetSchedule(); !s.Enabled || s.TimeZone != "Europe/London" || len(e.auditRows()) != n {
+		t.Errorf("after a save without it: %+v, %d audit rows (was %d)", s, len(e.auditRows()), n)
+	}
+
+	// After a restart the saved schedule applies again.
+	again := &loginsettings.Service{Store: e.st, Audit: e.srv.Audit, Secrets: testSecrets{}}
+	if err := again.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if s := again.ResetSchedule(); !s.Enabled || s.Time != "02:30" || s.TimeZone != "Europe/London" {
+		t.Errorf("after a restart %+v", s)
+	}
+	if h, m := again.ResetSchedule().Clock(); h != 2 || m != 30 {
+		t.Errorf("clock %d:%d", h, m)
+	}
+}
