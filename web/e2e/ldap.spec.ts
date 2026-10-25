@@ -76,10 +76,16 @@ test('setting LDAP up, turning it on, mapping a group, and turning it off', asyn
 	const [dnBox, rolesBox] = [await dn.boundingBox(), await roles.boundingBox()];
 	expect(dnBox!.x + dnBox!.width).toBeLessThanOrEqual(rolesBox!.x);
 	// The box alone isn't enough: text that doesn't wrap spills out of its box. It must be clipped, with an ellipsis.
+	// The DN is longer than the column in any monospace font (Windows' is narrower than Linux's), so it really is clipped:
+	// its content is wider than the box.
 	await expect(dn).toHaveCSS('overflow-x', 'hidden');
 	await expect(dn).toHaveCSS('text-overflow', 'ellipsis');
+	const clipped = () => dn.evaluate((el) => el.scrollWidth > el.clientWidth);
+	expect(await clipped()).toBe(true);
 	await dn.click();
 	await expect(dn).toHaveAttribute('aria-expanded', 'true');
+	// Opened, all of it shows: nothing is clipped, and it wraps onto more lines.
+	await expect.poll(clipped).toBe(false);
 	expect((await dn.boundingBox())!.height).toBeGreaterThan(dnBox!.height);
 	await page.goto('/admin/ldap');
 

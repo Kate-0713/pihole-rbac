@@ -101,7 +101,7 @@ func TestSearches(t *testing.T) {
 		t.Errorf("missing base: %v", err)
 	}
 	// Members are compared as DNs, so case and spacing don't matter.
-	res, err = search(f.BaseDN, ldap.ScopeWholeSubtree, "(member=UID=Mark, OU=People,DC=example,DC=local)")
+	res, err = search(f.BaseDN, ldap.ScopeWholeSubtree, "(member=UID=Mark, OU=People, OU=Headquarters,DC=example,DC=local)")
 	if err != nil || len(res.Entries) != 1 {
 		t.Errorf("member as a DN: %v %v", res, err)
 	}

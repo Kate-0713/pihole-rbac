@@ -32,6 +32,7 @@
 	let adminPages = $derived(
 		[
 			{ href: '/admin/instances', label: 'Instances', show: can('instances.manage') },
+			{ href: '/admin/groups', label: 'Groups', show: can('instances.manage') },
 			{ href: '/admin/users', label: 'Users', show: can('users.manage') },
 			{ href: '/admin/roles', label: 'Roles', show: can('roles.manage') },
 			{ href: '/admin/ldap', label: 'LDAP', show: canAnyGlobal('roles.manage', 'settings.manage') },

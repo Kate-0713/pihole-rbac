@@ -16,7 +16,7 @@ test('the admin sees every page and the Admin menu', async ({ page, state }) => 
 	await expect(nav.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
 
 	await nav.getByRole('button', { name: 'Admin' }).click();
-	for (const name of ['Instances', 'Users', 'Roles', 'Sessions', 'Audit log', 'System']) {
+	for (const name of ['Instances', 'Groups', 'Users', 'Roles', 'Sessions', 'Audit log', 'System']) {
 		await expect(page.getByRole('menuitem', { name })).toBeVisible();
 	}
 });

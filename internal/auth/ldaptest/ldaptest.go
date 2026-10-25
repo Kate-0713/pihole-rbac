@@ -362,7 +362,8 @@ func Example(s *Server) Fixture {
 		EmptyGroup:   "cn=nobody,ou=groups,dc=example,dc=local",
 		Users: map[string]string{
 			"lucy": "uid=lucy,ou=people,dc=example,dc=local",
-			"mark": "uid=mark,ou=people,dc=example,dc=local",
+			// mark sits deeper, as users in a real directory often do; the users page test needs a DN too long for its column.
+			"mark": "uid=mark,ou=people,ou=headquarters,dc=example,dc=local",
 			"nina": "uid=nina,ou=people,dc=example,dc=local",
 		},
 	}
