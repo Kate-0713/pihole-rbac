@@ -4,10 +4,12 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
@@ -28,7 +30,8 @@ func actor(ctx context.Context) rbac.Actor {
 	}
 }
 
-// ListTargets lists the enabled instances where the session holds at least one permission, with their health.
+// ListTargets lists the enabled instances where the session holds at least one permission, with their health, then
+// the mirrored groups whose primary is enabled and where it holds at least one, with their enabled members' health.
 func (s *Server) ListTargets(ctx context.Context, _ gen.ListTargetsRequestObject) (gen.ListTargetsResponseObject, error) {
 	if s.Instances == nil {
 		return nil, errNoInstances
@@ -42,17 +45,80 @@ func (s *Server) ListTargets(ctx context.Context, _ gen.ListTargetsRequestObject
 	if err != nil {
 		return nil, err
 	}
+	groups, err := s.Instances.ListGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	enabled := map[int64]instances.Instance{}
+	for _, inst := range insts {
+		if inst.Enabled {
+			enabled[inst.ID] = inst
+		}
+	}
+	mirroredOf := map[int64]instances.Group{}
+	for _, g := range groups {
+		if g.Mode == rbac.Mirrored {
+			for _, id := range g.Members {
+				mirroredOf[id] = g
+			}
+		}
+	}
+
 	out := gen.TargetList{Targets: []gen.Target{}}
 	for _, inst := range insts {
 		t := rbac.InstanceTarget(inst.ID)
 		if !inst.Enabled || len(byTarget[t]) == 0 {
 			continue
 		}
+		tj := gen.Target{Id: t.String(), Kind: gen.TargetKindInstance, Name: inst.Name, Health: targetHealth(s.health(inst.ID))}
+		if g, ok := mirroredOf[inst.ID]; ok {
+			tj.MirroredGroup = &gen.MirroredGroupRef{Id: rbac.GroupTarget(g.ID).String(), Name: g.Name}
+		}
+		out.Targets = append(out.Targets, tj)
+	}
+	for _, g := range groups {
+		t := rbac.GroupTarget(g.ID)
+		primary, ok := enabled[g.Primary]
+		if g.Mode != rbac.Mirrored || !ok || len(byTarget[t]) == 0 {
+			continue
+		}
+		members := []gen.TargetMember{{InstanceId: primary.ID, Name: primary.Name, Primary: true, Health: *s.health(primary.ID)}}
+		var others []gen.TargetMember
+		for _, id := range g.Members {
+			if inst, ok := enabled[id]; ok && id != g.Primary {
+				others = append(others, gen.TargetMember{InstanceId: id, Name: inst.Name, Health: *s.health(id)})
+			}
+		}
+		slices.SortFunc(others, func(a, b gen.TargetMember) int { return cmp.Compare(a.Name, b.Name) })
+		members = append(members, others...)
 		out.Targets = append(out.Targets, gen.Target{
-			Id: t.String(), Kind: gen.TargetKindInstance, Name: inst.Name, Health: s.health(inst.ID),
+			Id: t.String(), Kind: gen.TargetKindGroup, Name: g.Name, Members: &members, Health: groupHealth(members),
 		})
 	}
 	return gen.ListTargets200JSONResponse(out), nil
+}
+
+// targetHealth is an instance's health as a target's.
+func targetHealth(h *gen.InstanceHealth) *gen.TargetHealth {
+	return &gen.TargetHealth{
+		State: gen.TargetHealthState(h.State), LastSuccess: h.LastSuccess, LastFailure: h.LastFailure, LastError: h.LastError,
+	}
+}
+
+// groupHealth is a mirrored group's overall state: up when every enabled member is up, down when every one is down,
+// unknown when none has been checked yet, and degraded otherwise.
+func groupHealth(members []gen.TargetMember) *gen.TargetHealth {
+	count := map[gen.InstanceHealthState]int{}
+	for _, m := range members {
+		count[m.Health.State]++
+	}
+	state := gen.TargetHealthState("degraded")
+	for _, st := range []gen.InstanceHealthState{"up", "down", "unknown"} {
+		if count[st] == len(members) {
+			state = gen.TargetHealthState(st)
+		}
+	}
+	return &gen.TargetHealth{State: state}
 }
 
 func (s *Server) ListInstances(ctx context.Context, _ gen.ListInstancesRequestObject) (gen.ListInstancesResponseObject, error) {

@@ -17,8 +17,8 @@ import (
 // Every Pi-hole write answers with one result per instance it acted on (see WriteResults in the spec): ok, failed,
 // or skipped when the instance wasn't asked. The response is 200 when every result is ok and 207 when they differ.
 // When none is ok, the request fails with the first failure's error envelope, carrying all the results in
-// details.results, so a plain failure still reads as one. A target is a single instance for now, so it has one
-// result; a mirrored group will have one per member.
+// details.results, so a plain failure still reads as one. An instance target has one result; a mirrored group has one
+// per enabled member, the primary first.
 
 // outcome is how one instance's part of a write went.
 type outcome struct {
@@ -30,9 +30,10 @@ type outcome struct {
 
 func (o outcome) ok() bool { return o.err == nil }
 
-// write runs fn for one instance through s.call and reports the outcome. An error that isn't a Pi-hole or instance
-// failure (an entry that doesn't exist, a group the Pi-hole doesn't have, a cancelled request) is also returned, and
-// the request fails as usual; the caller still audits a write that was attempted, with outcome.callErr.
+// write runs fn for one instance through s.call and reports the outcome. A *memberError is the instance's failure,
+// like a Pi-hole failure. Any other error that isn't a Pi-hole or instance failure (an entry that doesn't exist, a
+// group the Pi-hole doesn't have, a cancelled request) is also returned, and the request fails as usual; the caller
+// still audits a write that was attempted, with outcome.callErr.
 func (s *Server) write(ctx context.Context, ref instanceRef, fn func(context.Context, *piholeapi.Client) error) (outcome, error) {
 	out := outcome{ref: ref}
 	err := s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
@@ -41,6 +42,11 @@ func (s *Server) write(ctx context.Context, ref instanceRef, fn func(context.Con
 	})
 	out.callErr = err
 	if err == nil {
+		return out, nil
+	}
+	var me *memberError
+	if errors.As(err, &me) {
+		out.err = &piholeFailure{Instance: ref.name, Err: me}
 		return out, nil
 	}
 	var pf *piholeFailure
@@ -115,6 +121,22 @@ type failure struct {
 // underlying error can name internal addresses, so it goes to the log and the audit log, not to the client; Pi-hole's
 // own reason for a rejection is passed on, as text.
 func describeFailure(pf *piholeFailure) failure {
+	f := describeCode(pf)
+	if pf.PrimaryOf != "" && !f.internal {
+		f.message += fmt.Sprintf(" It's the primary of %q.", pf.PrimaryOf)
+	}
+	return f
+}
+
+func describeCode(pf *piholeFailure) failure {
+	var me *memberError
+	if errors.As(pf.Err, &me) {
+		f := failure{status: http.StatusConflict, code: me.code, message: me.message}
+		if me.code == codeNotFound {
+			f.status = http.StatusNotFound
+		}
+		return f
+	}
 	f := failure{status: http.StatusBadGateway, code: instances.Kind(pf.Err)}
 	switch f.code {
 	case piholeapi.CodeRejected:
@@ -147,19 +169,38 @@ func describeFailure(pf *piholeFailure) failure {
 func (s *Server) logFailure(request string, pf *piholeFailure) {
 	code := instances.Kind(pf.Err)
 	level := s.Logger.Warn
-	if code == piholeapi.CodeRejected {
+	var me *memberError
+	if errors.As(pf.Err, &me) {
+		code, level = me.code, s.Logger.Info
+	} else if code == piholeapi.CodeRejected {
 		level = s.Logger.Info
 	}
 	level("pi-hole call failed", "instance", pf.Instance, "request", request, "code", code, "err", pf.Err)
 }
 
 // resultsOf builds an operation's results from its outcomes, in order; build fills in each result, including an ok
-// result's own fields (the entry as saved, say).
-func resultsOf[T any](outs []outcome, build func(o outcome, status gen.WriteStatus, we *gen.WriteError) T) []T {
+// result's own fields (the entry as saved, say), which it finds by the outcome's index i.
+func resultsOf[T any](outs []outcome, build func(i int, o outcome, status gen.WriteStatus, we *gen.WriteError) T) []T {
 	out := make([]T, 0, len(outs))
-	for _, o := range outs {
+	for i, o := range outs {
 		st, we := o.status()
-		out = append(out, build(o, st, we))
+		out = append(out, build(i, o, st, we))
 	}
 	return out
+}
+
+// memberReads reports how each member answered a read made through a mirrored group, or nil for an instance target.
+// extra fills in a member's own fields (its blocking state, say) when it answered.
+func memberReads(tg target, outs []outcome, extra func(i int, r *gen.MemberRead)) *[]gen.MemberRead {
+	if !tg.isGroup() {
+		return nil
+	}
+	reads := resultsOf(outs, func(i int, o outcome, st gen.WriteStatus, we *gen.WriteError) gen.MemberRead {
+		r := gen.MemberRead{Instance: o.ref.name, InstanceId: o.ref.id, Primary: o.ref.primary, Status: st, Error: we}
+		if o.ok() && extra != nil {
+			extra(i, &r)
+		}
+		return r
+	})
+	return &reads
 }

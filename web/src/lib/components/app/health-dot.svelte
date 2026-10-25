@@ -10,6 +10,8 @@
 	const looks = {
 		up: { dot: 'bg-emerald-500', label: 'Up' },
 		down: { dot: 'bg-red-500', label: 'Down' },
+		// Only a mirrored group: some of its members are up and some aren't.
+		degraded: { dot: 'bg-amber-500', label: 'Some members down' },
 		unknown: { dot: 'bg-muted-foreground/40', label: 'Not checked yet' }
 	} as const;
 

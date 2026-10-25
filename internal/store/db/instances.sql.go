@@ -161,6 +161,24 @@ func (q *Queries) GetInstanceGroup(ctx context.Context, id int64) (InstanceGroup
 	return i, err
 }
 
+const getMirroredGroupOfInstance = `-- name: GetMirroredGroupOfInstance :one
+SELECT g.id, g.name FROM instance_group_members m JOIN instance_groups g ON g.id = m.group_id
+WHERE m.instance_id = ? AND m.group_mode = 'mirrored'
+`
+
+type GetMirroredGroupOfInstanceRow struct {
+	ID   int64
+	Name string
+}
+
+// The mirrored group an instance belongs to, if any; there is at most one.
+func (q *Queries) GetMirroredGroupOfInstance(ctx context.Context, instanceID int64) (GetMirroredGroupOfInstanceRow, error) {
+	row := q.db.QueryRowContext(ctx, getMirroredGroupOfInstance, instanceID)
+	var i GetMirroredGroupOfInstanceRow
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
 const listGroupMembership = `-- name: ListGroupMembership :many
 SELECT g.id AS group_id, g.mode, m.instance_id
 FROM instance_groups g

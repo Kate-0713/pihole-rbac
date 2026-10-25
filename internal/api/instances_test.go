@@ -121,7 +121,7 @@ func TestInstanceLifecycle(t *testing.T) {
 	tl := decode[gen.TargetList](t, c.do(http.MethodGet, "/api/v1/targets", nil))
 	want := "i-" + strconv.FormatInt(inst.Id, 10)
 	if len(tl.Targets) != 1 || tl.Targets[0].Id != want || tl.Targets[0].Kind != gen.TargetKindInstance ||
-		tl.Targets[0].Name != "pihole1" || tl.Targets[0].Health == nil || tl.Targets[0].Health.State != gen.InstanceHealthState(instances.StateUp) ||
+		tl.Targets[0].Name != "pihole1" || tl.Targets[0].Health == nil || tl.Targets[0].Health.State != gen.TargetHealthState(instances.StateUp) ||
 		tl.Targets[0].Health.LastSuccess == nil {
 		t.Fatalf("targets %s", mustJSON(t, tl))
 	}

@@ -22,6 +22,7 @@ const (
 	BlockingStatusBlockingDisabled BlockingStatusBlocking = "disabled"
 	BlockingStatusBlockingEnabled  BlockingStatusBlocking = "enabled"
 	BlockingStatusBlockingFailed   BlockingStatusBlocking = "failed"
+	BlockingStatusBlockingMixed    BlockingStatusBlocking = "mixed"
 	BlockingStatusBlockingUnknown  BlockingStatusBlocking = "unknown"
 )
 
@@ -33,6 +34,8 @@ func (e BlockingStatusBlocking) Valid() bool {
 	case BlockingStatusBlockingEnabled:
 		return true
 	case BlockingStatusBlockingFailed:
+		return true
+	case BlockingStatusBlockingMixed:
 		return true
 	case BlockingStatusBlockingUnknown:
 		return true
@@ -545,6 +548,30 @@ func (e TargetKind) Valid() bool {
 	}
 }
 
+// Defines values for TargetHealthState.
+const (
+	TargetHealthStateDegraded TargetHealthState = "degraded"
+	TargetHealthStateDown     TargetHealthState = "down"
+	TargetHealthStateUnknown  TargetHealthState = "unknown"
+	TargetHealthStateUp       TargetHealthState = "up"
+)
+
+// Valid indicates whether the value is a known member of the TargetHealthState enum.
+func (e TargetHealthState) Valid() bool {
+	switch e {
+	case TargetHealthStateDegraded:
+		return true
+	case TargetHealthStateDown:
+		return true
+	case TargetHealthStateUnknown:
+		return true
+	case TargetHealthStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UserSource.
 const (
 	UserSourceLdap  UserSource = "ldap"
@@ -607,14 +634,14 @@ type BlockingInput struct {
 
 // BlockingStatus defines model for BlockingStatus.
 type BlockingStatus struct {
-	// Blocking failed and unknown mean Pi-hole couldn't tell.
+	// Blocking failed and unknown mean Pi-hole couldn't tell. mixed is only for a mirrored group whose members differ.
 	Blocking BlockingStatusBlocking `json:"blocking"`
 
-	// Timer Seconds until blocking changes back, rounded up. Absent when no timer is running.
+	// Timer Seconds until blocking changes back, rounded up. Absent when no timer is running. For a mirrored group, the soonest of its members' timers.
 	Timer *int `json:"timer,omitempty"`
 }
 
-// BlockingStatusBlocking failed and unknown mean Pi-hole couldn't tell.
+// BlockingStatusBlocking failed and unknown mean Pi-hole couldn't tell. mixed is only for a mirrored group whose members differ.
 type BlockingStatusBlocking string
 
 // BlockingWriteResult defines model for BlockingWriteResult.
@@ -1251,6 +1278,29 @@ type LoginRequest struct {
 	Username string `json:"username"`
 }
 
+// MemberRead How one member of a mirrored group answered a read made through the group.
+type MemberRead struct {
+	Blocking *BlockingStatus `json:"blocking,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error      *WriteError `json:"error,omitempty"`
+	Instance   string      `json:"instance"`
+	InstanceId int64       `json:"instance_id"`
+	Primary    bool        `json:"primary"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// MirroredGroupRef The mirrored group an instance belongs to. Editing the instance on its own makes it differ from the group; such edits are allowed to anyone whose grants cover the instance, and are flagged in the audit log.
+type MirroredGroupRef struct {
+	// Id The group's target, `g-<group id>`.
+	//
+	// Examples: g-1
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // PasswordChange defines model for PasswordChange.
 type PasswordChange struct {
 	CurrentPassword string `json:"current_password"`
@@ -1310,8 +1360,10 @@ type PiholeGroupList struct {
 	Groups []PiholeGroup `json:"groups"`
 }
 
-// QueryLog defines model for QueryLog.
+// QueryLog For a mirrored group, each enabled member's newest `length` entries are read, merged newest first and cut to `length`, then filtered; `members` says how each member answered. A member that didn't answer leaves the log, and the request fails only when none answered.
 type QueryLog struct {
+	// Members For a mirrored group, its enabled members, the primary first. Absent for an instance.
+	Members *[]MemberRead   `json:"members,omitempty"`
 	Queries []QueryLogEntry `json:"queries"`
 }
 
@@ -1325,6 +1377,9 @@ type QueryLogEntry struct {
 	// Dnssec Absent when Pi-hole didn't report a DNSSEC status.
 	Dnssec *string `json:"dnssec,omitempty"`
 	Domain string  `json:"domain"`
+
+	// Instance The instance that answered the query.
+	Instance string `json:"instance"`
 
 	// ReplyTimeMs Absent when there was no reply.
 	ReplyTimeMs *float64 `json:"reply_time_ms,omitempty"`
@@ -1507,23 +1562,49 @@ type SetupStatus struct {
 
 // Target defines model for Target.
 type Target struct {
-	// Health Present only for enabled instances.
-	Health *InstanceHealth `json:"health,omitempty"`
+	// Health An instance's health (see InstanceHealth), or a mirrored group's overall state, worked out from its enabled members: up when all are up, down when all are down, unknown when none has been checked yet, and degraded otherwise. A group's health has no times or error; its members carry their own.
+	Health *TargetHealth `json:"health,omitempty"`
 
 	// Id The target as used in URLs and the session's permissions, `i-<instance id>` or `g-<group id>`.
 	//
 	// Examples: i-1
 	Id   string     `json:"id"`
 	Kind TargetKind `json:"kind"`
-	Name string     `json:"name"`
+
+	// Members For a mirrored group: its enabled members, the primary first, then by name. Absent for an instance.
+	Members *[]TargetMember `json:"members,omitempty"`
+
+	// MirroredGroup The mirrored group an instance belongs to. Editing the instance on its own makes it differ from the group; such edits are allowed to anyone whose grants cover the instance, and are flagged in the audit log.
+	MirroredGroup *MirroredGroupRef `json:"mirrored_group,omitempty"`
+	Name          string            `json:"name"`
 }
 
 // TargetKind defines model for Target.Kind.
 type TargetKind string
 
+// TargetHealth An instance's health (see InstanceHealth), or a mirrored group's overall state, worked out from its enabled members: up when all are up, down when all are down, unknown when none has been checked yet, and degraded otherwise. A group's health has no times or error; its members carry their own.
+type TargetHealth struct {
+	LastError   *string           `json:"last_error,omitempty"`
+	LastFailure *time.Time        `json:"last_failure,omitempty"`
+	LastSuccess *time.Time        `json:"last_success,omitempty"`
+	State       TargetHealthState `json:"state"`
+}
+
+// TargetHealthState defines model for TargetHealth.State.
+type TargetHealthState string
+
 // TargetList defines model for TargetList.
 type TargetList struct {
 	Targets []Target `json:"targets"`
+}
+
+// TargetMember defines model for TargetMember.
+type TargetMember struct {
+	// Health Present only for enabled instances.
+	Health     InstanceHealth `json:"health"`
+	InstanceId int64          `json:"instance_id"`
+	Name       string         `json:"name"`
+	Primary    bool           `json:"primary"`
 }
 
 // TargetPermissions defines model for TargetPermissions.
@@ -1535,7 +1616,7 @@ type TargetPermissions struct {
 	Target string `json:"target"`
 }
 
-// TargetSummary defines model for TargetSummary.
+// TargetSummary For a mirrored group, the counters are summed over the members that answered (counts of distinct clients and domains are sums too, so a client seen by two members counts twice), the percentages are worked out from the sums, and the blocklist size is the primary's (or the largest, if the primary didn't answer). `blocking` is the members' common state, or mixed. `members` says how each member answered, with its own blocking state; a member that didn't answer leaves the totals, and the request fails only when none answered.
 type TargetSummary struct {
 	Blocking BlockingStatus `json:"blocking"`
 
@@ -1544,6 +1625,9 @@ type TargetSummary struct {
 
 	// Live Counters since FTL last started.
 	Live LiveCounters `json:"live"`
+
+	// Members For a mirrored group, its enabled members, the primary first. Absent for an instance.
+	Members *[]MemberRead `json:"members,omitempty"`
 }
 
 // TestedPermissions defines model for TestedPermissions.
@@ -1609,7 +1693,7 @@ type UserRoles struct {
 
 // WriteError Why an instance failed or was skipped. Present exactly when the status isn't ok.
 type WriteError struct {
-	// Code pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured.
+	// Code pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member) or pihole_group_missing (it has no Pi-hole group with a name the change uses).
 	Code string `json:"code"`
 
 	// Message Safe to show to the user.

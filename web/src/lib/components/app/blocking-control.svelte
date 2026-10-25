@@ -84,6 +84,10 @@
 			{#if remaining !== null}
 				<span class="text-muted-foreground font-normal">· back on in {formatCountdown(remaining)}</span>
 			{/if}
+		{:else if status.blocking === 'mixed'}
+			<!-- Only a mirrored group: its members differ. -->
+			<span class="size-2.5 rounded-full bg-amber-500" aria-hidden="true"></span>
+			Blocking is on for some members and off for others
 		{:else}
 			<span class="bg-muted-foreground/40 size-2.5 rounded-full" aria-hidden="true"></span>
 			Pi-hole couldn't tell whether blocking is on

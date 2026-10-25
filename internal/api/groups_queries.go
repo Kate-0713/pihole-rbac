@@ -4,8 +4,10 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,12 +17,12 @@ import (
 )
 
 func (s *Server) ListPiholeGroups(ctx context.Context, req gen.ListPiholeGroupsRequestObject) (gen.ListPiholeGroupsResponseObject, error) {
-	ref, err := s.resolveTarget(ctx, req.Target, "")
+	tg, err := s.resolveTarget(ctx, req.Target, "")
 	if err != nil {
 		return nil, err
 	}
 	var list []piholeapi.Group
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
+	err = s.call(ctx, tg.primary(), func(ctx context.Context, c *piholeapi.Client) error {
 		var err error
 		list, err = c.ListGroups(ctx)
 		return err
@@ -61,21 +63,45 @@ func (s *Server) ListQueries(ctx context.Context, req gen.ListQueriesRequestObje
 		}
 		clientFilter = strings.ToLower(strings.TrimSpace(*req.Params.Client))
 	}
-	ref, err := s.resolveTarget(ctx, req.Target, rbac.QueryLogView)
+	tg, err := s.resolveTarget(ctx, req.Target, rbac.QueryLogView)
 	if err != nil {
 		return nil, err
 	}
-	var list []piholeapi.QueryLogEntry
-	err = s.call(ctx, ref, func(ctx context.Context, c *piholeapi.Client) error {
+	lists := make([][]piholeapi.QueryLogEntry, len(tg.members))
+	outs, err := s.fanOut(ctx, tg, func(ctx context.Context, i int, _ instanceRef, c *piholeapi.Client) error {
 		var err error
-		list, err = c.ListQueries(ctx, length)
+		lists[i], err = c.ListQueries(ctx, length)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	out := gen.QueryLog{Queries: make([]gen.QueryLogEntry, 0, len(list))}
-	for _, q := range list {
+	if !anyOK(outs) {
+		return nil, firstFailure(outs)
+	}
+	// Each member's newest entries, merged newest first and cut to length, so a group's log reads like one Pi-hole's.
+	type tagged struct {
+		q        piholeapi.QueryLogEntry
+		instance string
+	}
+	var merged []tagged
+	for i, o := range outs {
+		if !o.ok() {
+			continue
+		}
+		for _, q := range lists[i] {
+			merged = append(merged, tagged{q, o.ref.name})
+		}
+	}
+	if tg.isGroup() {
+		slices.SortStableFunc(merged, func(a, b tagged) int { return cmp.Compare(b.q.Time, a.q.Time) })
+		if len(merged) > length {
+			merged = merged[:length]
+		}
+	}
+	out := gen.QueryLog{Queries: make([]gen.QueryLogEntry, 0, len(merged)), Members: memberReads(tg, outs, nil)}
+	for _, t := range merged {
+		q := t.q
 		if domainFilter != "" && !strings.Contains(strings.ToLower(q.Domain), domainFilter) {
 			continue
 		}
@@ -83,15 +109,15 @@ func (s *Server) ListQueries(ctx context.Context, req gen.ListQueriesRequestObje
 			!strings.Contains(strings.ToLower(q.Client.Name), clientFilter) {
 			continue
 		}
-		out.Queries = append(out.Queries, queryJSON(q))
+		out.Queries = append(out.Queries, queryJSON(q, t.instance))
 	}
 	return gen.ListQueries200JSONResponse(out), nil
 }
 
-func queryJSON(q piholeapi.QueryLogEntry) gen.QueryLogEntry {
+func queryJSON(q piholeapi.QueryLogEntry, instance string) gen.QueryLogEntry {
 	sec, frac := math.Modf(q.Time)
 	out := gen.QueryLogEntry{
-		Time: time.Unix(int64(sec), int64(frac*1e9)).UTC(), Type: q.Type, Domain: q.Domain,
+		Instance: instance, Time: time.Unix(int64(sec), int64(frac*1e9)).UTC(), Type: q.Type, Domain: q.Domain,
 		ClientIp: q.Client.IP, Status: q.Status, ReplyType: q.Reply.Type,
 	}
 	if q.Client.Name != "" && q.Client.Name != q.Client.IP {

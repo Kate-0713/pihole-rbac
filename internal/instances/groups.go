@@ -392,3 +392,15 @@ func (s *Service) DeleteGroup(ctx context.Context, a rbac.Actor, id int64) error
 		return nil
 	})
 }
+
+// MirroredGroupOf returns the mirrored group an instance belongs to, if any.
+func (s *Service) MirroredGroupOf(ctx context.Context, instanceID int64) (id int64, name string, ok bool, err error) {
+	r, err := s.Store.Read().GetMirroredGroupOfInstance(ctx, instanceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", false, nil
+	}
+	if err != nil {
+		return 0, "", false, err
+	}
+	return r.ID, r.Name, true, nil
+}

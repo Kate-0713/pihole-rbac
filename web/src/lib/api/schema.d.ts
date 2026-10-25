@@ -233,7 +233,7 @@ export interface paths {
         };
         /**
          * The instances the user can act on
-         * @description Every enabled instance where the user holds at least one permission, by name, with its health. Mirrored groups will be listed here too once they exist. The health comes from the server's own calls and a periodic check of idle instances; it is held in memory, so it starts as unknown after a restart.
+         * @description Every enabled instance where the user holds at least one permission, by name, with its health, then every mirrored group whose primary is enabled and where the user holds at least one permission, by name, with its enabled members' health and an overall state. Disabled members are left out. An instance in a mirrored group names it in `mirrored_group`, so a client can warn before editing it on its own. The health comes from the server's own calls and a periodic check of idle instances; it is held in memory, so it starts as unknown after a restart.
          */
         get: operations["listTargets"];
         put?: never;
@@ -884,7 +884,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -907,7 +907,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -934,7 +934,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -957,7 +957,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -992,7 +992,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -1019,7 +1019,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -1042,7 +1042,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -1177,7 +1177,46 @@ export interface components {
             /** @enum {string} */
             kind: "instance" | "group";
             name: string;
-            health?: components["schemas"]["InstanceHealth"];
+            health?: components["schemas"]["TargetHealth"];
+            /** @description For a mirrored group: its enabled members, the primary first, then by name. Absent for an instance. */
+            members?: components["schemas"]["TargetMember"][];
+            mirrored_group?: components["schemas"]["MirroredGroupRef"];
+        };
+        /** @description An instance's health (see InstanceHealth), or a mirrored group's overall state, worked out from its enabled members: up when all are up, down when all are down, unknown when none has been checked yet, and degraded otherwise. A group's health has no times or error; its members carry their own. */
+        TargetHealth: {
+            /** @enum {string} */
+            state: "unknown" | "up" | "down" | "degraded";
+            /** Format: date-time */
+            last_success?: string;
+            /** Format: date-time */
+            last_failure?: string;
+            last_error?: string;
+        };
+        TargetMember: {
+            /** Format: int64 */
+            instance_id: number;
+            name: string;
+            primary: boolean;
+            health: components["schemas"]["InstanceHealth"];
+        };
+        /** @description The mirrored group an instance belongs to. Editing the instance on its own makes it differ from the group; such edits are allowed to anyone whose grants cover the instance, and are flagged in the audit log. */
+        MirroredGroupRef: {
+            /**
+             * @description The group's target, `g-<group id>`.
+             * @example g-1
+             */
+            id: string;
+            name: string;
+        };
+        /** @description How one member of a mirrored group answered a read made through the group. */
+        MemberRead: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            primary: boolean;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            blocking?: components["schemas"]["BlockingStatus"];
         };
         InstanceInput: {
             /** @description Unique, ignoring case. Surrounding spaces are ignored. */
@@ -1602,10 +1641,13 @@ export interface components {
             updated_at?: string;
             updated_by?: string;
         };
+        /** @description For a mirrored group, the counters are summed over the members that answered (counts of distinct clients and domains are sums too, so a client seen by two members counts twice), the percentages are worked out from the sums, and the blocklist size is the primary's (or the largest, if the primary didn't answer). `blocking` is the members' common state, or mixed. `members` says how each member answered, with its own blocking state; a member that didn't answer leaves the totals, and the request fails only when none answered. */
         TargetSummary: {
             blocking: components["schemas"]["BlockingStatus"];
             last_24h: components["schemas"]["DatabaseTotals"];
             live: components["schemas"]["LiveCounters"];
+            /** @description For a mirrored group, its enabled members, the primary first. Absent for an instance. */
+            members?: components["schemas"]["MemberRead"][];
         };
         /** @description Totals for the last 24 hours from Pi-hole's long-term database, unaffected by FTL restarts. */
         DatabaseTotals: {
@@ -1639,11 +1681,11 @@ export interface components {
         };
         BlockingStatus: {
             /**
-             * @description failed and unknown mean Pi-hole couldn't tell.
+             * @description failed and unknown mean Pi-hole couldn't tell. mixed is only for a mirrored group whose members differ.
              * @enum {string}
              */
-            blocking: "enabled" | "disabled" | "failed" | "unknown";
-            /** @description Seconds until blocking changes back, rounded up. Absent when no timer is running. */
+            blocking: "enabled" | "disabled" | "mixed" | "failed" | "unknown";
+            /** @description Seconds until blocking changes back, rounded up. Absent when no timer is running. For a mirrored group, the soonest of its members' timers. */
             timer?: number;
         };
         BlockingInput: {
@@ -1658,7 +1700,7 @@ export interface components {
         WriteStatus: "ok" | "failed" | "skipped";
         /** @description Why an instance failed or was skipped. Present exactly when the status isn't ok. */
         WriteError: {
-            /** @description pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured. */
+            /** @description pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member) or pihole_group_missing (it has no Pi-hole group with a name the change uses). */
             code: string;
             /** @description Safe to show to the user. */
             message: string;
@@ -1819,10 +1861,15 @@ export interface components {
             comment: string;
             enabled: boolean;
         };
+        /** @description For a mirrored group, each enabled member's newest `length` entries are read, merged newest first and cut to `length`, then filtered; `members` says how each member answered. A member that didn't answer leaves the log, and the request fails only when none answered. */
         QueryLog: {
             queries: components["schemas"]["QueryLogEntry"][];
+            /** @description For a mirrored group, its enabled members, the primary first. Absent for an instance. */
+            members?: components["schemas"]["MemberRead"][];
         };
         QueryLogEntry: {
+            /** @description The instance that answered the query. */
+            instance: string;
             /** Format: date-time */
             time: string;
             /** @description The record type asked for (A, AAAA, PTR and so on). */
@@ -1985,7 +2032,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The instance can't be used: its password variable isn't set (code instance_password_missing) or its settings can't be used (code instance_misconfigured). `details.instance` names it. On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
+        /** @description The instance can't be used: its password variable isn't set (code instance_password_missing) or its settings can't be used (code instance_misconfigured). `details.instance` names it. Through a mirrored group, also a member without a Pi-hole group the change uses (code pihole_group_missing). On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
         TargetUnavailable: {
             headers: {
                 [name: string]: unknown;
@@ -1994,7 +2041,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected) or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. The underlying error goes to the server log only. On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
+        /** @description The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected) or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. When it is a mirrored group's primary, `details.group` names the group and `details.primary` is true: reads of domains, clients and Pi-hole groups come from the primary alone. The underlying error goes to the server log only. On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
         TargetPiholeFailed: {
             headers: {
                 [name: string]: unknown;
@@ -2028,7 +2075,7 @@ export interface components {
         UserID: number;
         /** @description The LDAP group mapping's ID. */
         MappingID: number;
-        /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+        /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
         TargetID: string;
     };
     requestBodies: never;
@@ -3563,7 +3610,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3593,7 +3640,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3623,7 +3670,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3667,7 +3714,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3706,7 +3753,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3736,7 +3783,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3780,7 +3827,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3824,7 +3871,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3868,7 +3915,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3898,7 +3945,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3942,7 +3989,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;
@@ -3979,7 +4026,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description `i-<instance id>` for one instance. `g-<group id>` (a mirrored group) is a 404 until mirrored groups are built. */
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
                 target: components["parameters"]["TargetID"];
             };
             cookie?: never;

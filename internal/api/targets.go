@@ -19,17 +19,10 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
 
-// The /targets/{target}/... endpoints act on one Pi-hole. Each handler validates its input, calls resolveTarget
-// (which parses the target, checks the permission and finds the instance), then does its Pi-hole calls in one
-// s.call, which goes through the pool's backoff and health tracking. Writes are audited after the call with
-// auditPihole.
-
-// instanceRef is the instance a target request acts on.
-type instanceRef struct {
-	target rbac.Target
-	id     int64
-	name   string
-}
+// The /targets/{target}/... endpoints act on one instance or a mirrored group (see fanout.go). Each handler validates
+// its input, calls resolveTarget (which parses the target, checks the permission and finds the instances), then does
+// its Pi-hole calls through s.call or s.fanOut, which go through the pool's backoff and health tracking. Writes are
+// audited after the call with auditPihole, once per instance.
 
 // piholeFailure is a Pi-hole call that failed for one instance: the instance can't be used, or its Pi-hole was
 // unreachable, refused the app password, answered unexpectedly or refused the request's content. responseError
@@ -39,6 +32,8 @@ type piholeFailure struct {
 	Instance string
 	Err      error
 	Results  any
+	// Set when the instance is a mirrored group's primary, reached through the group: the group's name.
+	PrimaryOf string
 }
 
 func (e *piholeFailure) Error() string {
@@ -69,41 +64,9 @@ func (s *Server) authorizeAny(ctx context.Context, t rbac.Target) error {
 	return nil
 }
 
-// resolveTarget parses a {target}, checks that the session holds p on it (any permission when p is ""), and finds
-// the enabled instance it names. Only instances are targets so far; a mirrored group is a 404 until group fan-out
-// exists. A target the user holds nothing on is a 403 whether or not it exists, so the answer reveals nothing.
-func (s *Server) resolveTarget(ctx context.Context, raw string, p rbac.Permission) (instanceRef, error) {
-	if s.Instances == nil {
-		return instanceRef{}, errNoInstances
-	}
-	t, err := rbac.ParseTarget(raw)
-	if err != nil {
-		return instanceRef{}, invalid("target", `The target must be "i-<id>" for an instance or "g-<id>" for a mirrored group.`)
-	}
-	if t.Kind != rbac.TargetInstance {
-		return instanceRef{}, &rbac.Error{
-			Code: rbac.CodeNotFound, Message: "Mirrored groups can't be used as targets yet.",
-			Details: map[string]any{"target": t.String()},
-		}
-	}
-	if p == "" {
-		err = s.authorizeAny(ctx, t)
-	} else {
-		err = s.authorize(ctx, p, t)
-	}
-	if err != nil {
-		return instanceRef{}, err
-	}
-	name, ok := s.Instances.Pool.Name(t.ID)
-	if !ok {
-		return instanceRef{}, targetNotFound(t)
-	}
-	return instanceRef{target: t, id: t.ID, name: name}, nil
-}
-
 // call runs fn with the instance's Pi-hole client through the pool. fn may return an *rbac.Error of its own (an
 // entry that doesn't exist, a group the Pi-hole doesn't have), which passes through; a Pi-hole or instance failure
-// becomes a *piholeFailure. An instance disabled since resolveTarget is a 404.
+// becomes a *piholeFailure, and a *memberError passes through. An instance disabled since resolveTarget is a 404.
 func (s *Server) call(ctx context.Context, ref instanceRef, fn func(context.Context, *piholeapi.Client) error) error {
 	err := s.Instances.Pool.Do(ctx, ref.id, fn)
 	switch {
@@ -117,10 +80,15 @@ func (s *Server) call(ctx context.Context, ref instanceRef, fn func(context.Cont
 	if _, ok := rbac.AsError(err); ok {
 		return err
 	}
-	if instances.Kind(err) == "" {
+	var me *memberError
+	if errors.As(err, &me) || instances.Kind(err) == "" {
 		return err
 	}
-	return &piholeFailure{Instance: ref.name, Err: err}
+	pf := &piholeFailure{Instance: ref.name, Err: err}
+	if ref.primary {
+		pf.PrimaryOf = ref.group
+	}
+	return pf
 }
 
 // piholeFailed answers a *piholeFailure with the error envelope (see describeFailure), adding the write's results
@@ -136,6 +104,10 @@ func (s *Server) piholeFailed(w http.ResponseWriter, r *http.Request, pf *pihole
 	details := map[string]any{"instance": pf.Instance}
 	if f.piholeMessage != "" {
 		details["pihole_message"] = f.piholeMessage
+	}
+	if pf.PrimaryOf != "" {
+		details["group"] = pf.PrimaryOf
+		details["primary"] = true
 	}
 	if pf.Results != nil {
 		details["results"] = pf.Results
@@ -155,9 +127,20 @@ func (s *Server) auditPihole(ctx context.Context, ref instanceRef, action string
 		detail = map[string]any{}
 	}
 	if err != nil {
-		if code := instances.Kind(err); code != "" {
+		var me *memberError
+		if errors.As(err, &me) {
+			detail["error_code"] = me.code
+		} else if code := instances.Kind(err); code != "" {
 			detail["error_code"] = code
 		}
+	}
+	if ref.target.Kind == rbac.TargetGroup {
+		detail["via"] = ref.target.String()
+	}
+	if ref.mirroredOf != "" {
+		// A change to one member of a mirrored group on its own: the group now differs until it is reconciled.
+		detail["mirrored_member"] = true
+		detail["mirrored_group"] = ref.mirroredOf
 	}
 	e := audit.Entry{
 		UserID: ri.sess.UserID, Username: ri.sess.Username, Action: action, Target: ref.target.String(),

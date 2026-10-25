@@ -90,3 +90,8 @@ ORDER BY r.name;
 
 -- name: CountClientResetTargetsForGroup :one
 SELECT COUNT(*) FROM client_reset_targets WHERE group_id = ?;
+
+-- The mirrored group an instance belongs to, if any; there is at most one.
+-- name: GetMirroredGroupOfInstance :one
+SELECT g.id, g.name FROM instance_group_members m JOIN instance_groups g ON g.id = m.group_id
+WHERE m.instance_id = ? AND m.group_mode = 'mirrored';

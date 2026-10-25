@@ -187,8 +187,9 @@ func TestTargetAccess(t *testing.T) {
 					t.Errorf("target %q: %d, want 400", bad, res.Code)
 				}
 			}
-			if res := te.admin.do(op.method, "/api/v1/targets/g-1"+op.suffix, op.body); res.Code != http.StatusNotFound {
-				t.Errorf("group target: %d, want 404", res.Code)
+			// So does a group that doesn't exist, even for the admin: an independent group isn't a target either.
+			if res := te.admin.do(op.method, "/api/v1/targets/g-999"+op.suffix, op.body); res.Code != http.StatusForbidden {
+				t.Errorf("missing group target: %d, want 403", res.Code)
 			}
 			if got := te.ph.Requests()[before:]; len(got) != 0 {
 				t.Errorf("refused requests reached Pi-hole: %v", got)
@@ -619,7 +620,7 @@ func TestFinishWrite(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := resultsOf(tt.outs, func(o outcome, st gen.WriteStatus, we *gen.WriteError) gen.DeleteResult {
+			results := resultsOf(tt.outs, func(_ int, o outcome, st gen.WriteStatus, we *gen.WriteError) gen.DeleteResult {
 				return gen.DeleteResult{Instance: o.ref.name, Status: st, Error: we}
 			})
 			multi, err := e.srv.finishWrite(ctx, tt.outs, results)
