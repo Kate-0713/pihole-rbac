@@ -52,6 +52,8 @@ func run(args []string) error {
 		return cmdSetup(args[1:])
 	case "user":
 		return cmdUser(args[1:])
+	case "rotate-key":
+		return cmdRotateKey(args[1:])
 	case "help", "--help", "-h":
 		fmt.Fprint(stdout, usage)
 		return nil
@@ -67,6 +69,10 @@ commands:
   setup [--print-token]        show whether first-run setup is open; --print-token makes a new setup token
   user reset-admin <username>  break-glass recovery: set a local admin's password (read from the terminal or stdin),
                                enable the account and give it the admin role, creating it if needed
+  rotate-key --old-key-file <path>
+                               re-encrypt the stored secrets (instance passwords, the LDAP bind password, notification
+                               channel secrets) from the old master key in the file to the new one in
+                               PIHOLE_RBAC_SECRET_KEY; then reload secrets or restart
   version                      print the version, build details and source location
 `
 

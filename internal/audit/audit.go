@@ -98,6 +98,9 @@ const (
 
 	// System.
 	ActionConfigReload = "config_reload" // secrets were reloaded; the detail lists the names that changed or failed
+	// `pihole-rbac rotate-key` re-encrypted the stored secrets under a new master key; the detail lists them by table and
+	// name, never a value.
+	ActionRotateKey = "rotate_key"
 	// Notification channels. The detail lists what changed; a secret shows as stored or confirmed, never its value.
 	ActionChannelCreate = "channel_create"
 	ActionChannelUpdate = "channel_update"
