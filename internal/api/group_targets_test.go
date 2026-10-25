@@ -482,3 +482,65 @@ func TestGroupClientWrites(t *testing.T) {
 }
 
 func (ge *groupEnv) auditCount() int { return len(ge.auditRows()) }
+
+// TestGroupRetryMembers: ?members= sends a group write to the members named, to retry those that failed.
+func TestGroupRetryMembers(t *testing.T) {
+	ge := newGroupEnv(t)
+	kidsAlpha := ge.ph["alpha"].AddGroup("kids")
+	ge.ph["gamma"].AddGroup("padding")
+	kidsGamma := ge.ph["gamma"].AddGroup("kids")
+	ge.ph["beta"].AddGroup("kids")
+	add := gen.DomainInput{Domain: "games.example", Type: "deny", Kind: "exact", Groups: &[]int{kidsAlpha}}
+
+	ge.down("gamma")
+	res := ge.admin.do(http.MethodPost, ge.path("/domains"), add)
+	if res.Code != http.StatusMultiStatus {
+		t.Fatalf("%d %s", res.Code, res.Body)
+	}
+
+	// gamma is back: retrying it alone sends nothing to the others, and the primary's group names still apply.
+	ge.ph["gamma"].Handle(func(http.ResponseWriter, *http.Request) bool { return false })
+	before := ge.auditCount()
+	alphaRequests := len(ge.ph["alpha"].Requests())
+	res = ge.admin.do(http.MethodPost, ge.path("/domains?members="+strconv.FormatInt(ge.ids["gamma"], 10)), add)
+	mustStatus(t, res, http.StatusOK)
+	if got := summarise(results(t, res)); !slices.Equal(got, []string{"gamma:ok"}) {
+		t.Errorf("results %v", got)
+	}
+	if d := ge.ph["gamma"].Domains(); len(d) != 1 || !slices.Equal(d[0].Groups, []int{kidsGamma}) {
+		t.Errorf("gamma has %+v", d)
+	}
+	for _, r := range ge.ph["alpha"].Requests()[alphaRequests:] {
+		if r[:4] != "GET " {
+			t.Errorf("alpha was changed by the retry: %s", r)
+		}
+	}
+	rows, details := ge.auditSince(before)
+	if len(rows) != 1 || rows[0].Target != ge.target || details[0]["via"] != ge.target || rows[0].InstanceName != "gamma" {
+		t.Errorf("audit %+v %v", rows, details)
+	}
+
+	// Several members are named with the parameter repeated.
+	res = ge.admin.do(http.MethodPut, ge.path("/blocking?members="+strconv.FormatInt(ge.ids["beta"], 10)+"&members="+strconv.FormatInt(ge.ids["alpha"], 10)), gen.BlockingInput{Enabled: false})
+	mustStatus(t, res, http.StatusOK)
+	if got := summarise(results(t, res)); !slices.Equal(got, []string{"alpha:ok", "beta:ok"}) {
+		t.Errorf("results %v", got)
+	}
+	if on, _ := ge.ph["gamma"].Blocking(); !on {
+		t.Error("gamma wasn't named but was changed")
+	}
+
+	for name, path := range map[string]string{
+		"an instance target": ge.instPath("beta", "/blocking?members=" + strconv.FormatInt(ge.ids["beta"], 10)),
+		"not a member":       ge.path("/blocking?members=999"),
+	} {
+		if res := ge.admin.do(http.MethodPut, path, gen.BlockingInput{Enabled: true}); res.Code != http.StatusBadRequest || errorDetails(t, res)["field"] != "members" {
+			t.Errorf("%s: %d %s", name, res.Code, res.Body)
+		}
+	}
+	// A disabled member isn't one.
+	mustStatus(t, ge.admin.do(http.MethodPost, instancePath(ge.ids["gamma"], "/disable"), nil), http.StatusOK)
+	if res := ge.admin.do(http.MethodPut, ge.path("/blocking?members="+strconv.FormatInt(ge.ids["gamma"], 10)), gen.BlockingInput{Enabled: true}); res.Code != http.StatusBadRequest {
+		t.Errorf("a disabled member: %d %s", res.Code, res.Body)
+	}
+}

@@ -58,14 +58,20 @@
 					done: seconds ? `Blocking turned off for ${formatDuration(seconds)}` : 'Blocking turned off',
 					failed: "Couldn't turn blocking off"
 				};
-		try {
-			const body = seconds ? { enabled, timer: seconds } : { enabled };
+		const body = seconds ? { enabled, timer: seconds } : { enabled };
+		// For a mirrored group, a retry sends the same change to the members that failed, named in ?members=.
+		const send = async (members?: number[]) => {
+			const query = members ? { members } : undefined;
 			const { results } = await unwrap(
-				api.PUT('/api/v1/targets/{target}/blocking', { params: { path: { target } }, body })
+				api.PUT('/api/v1/targets/{target}/blocking', { params: { path: { target }, query }, body })
 			);
-			reportResults(results, text);
+			return results;
+		};
+		const retry = { retry: send, after: onchange };
+		try {
+			reportResults(await send(), text, retry);
 		} catch (e) {
-			reportFailure(e, text);
+			reportFailure(e, text, retry);
 		} finally {
 			await onchange();
 			busy = false;

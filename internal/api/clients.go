@@ -66,6 +66,9 @@ func (s *Server) UpdateClient(ctx context.Context, req gen.UpdateClientRequestOb
 	if err != nil {
 		return nil, err
 	}
+	if tg, err = tg.only(req.Params.Members); err != nil {
+		return nil, err
+	}
 	var want groupWant
 	if b.Groups != nil {
 		if want, err = s.wantGroups(ctx, tg, *b.Groups); err != nil {

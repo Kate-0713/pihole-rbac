@@ -7,6 +7,7 @@
 import { ApiError } from '#lib/api/client.js';
 import { failedResults, summarise, type InstanceResult } from '#lib/api/results.js';
 import { notices } from '#lib/stores/notices.svelte.js';
+import { writeResults, type Retry } from '#lib/stores/write-results.svelte.js';
 
 export type WriteText = {
 	// What happened, without a full stop: "Blocking turned off for 5 minutes". The instances are added after it.
@@ -15,10 +16,19 @@ export type WriteText = {
 	failed: string;
 };
 
+// How a write through a mirrored group retries the members that failed: retry sends it again to the members it
+// names, and after (if given) runs when a retry is done, so the page can read its data again.
+export type RetryWith = { retry: Retry; after?: () => Promise<void> | void };
+
 // reportResults reports the results of a write that answered 200 or 207. It returns whether every instance
-// succeeded.
-export function reportResults(results: readonly InstanceResult[], text: WriteText): boolean {
+// succeeded. When a write with several results (a mirrored group's) didn't work everywhere and can be retried, the
+// results go to the panel above the page, member by member, with a button to retry those that failed.
+export function reportResults(results: readonly InstanceResult[], text: WriteText, retry?: RetryWith): boolean {
 	const s = summarise(results);
+	if (retry && results.length > 1 && !s.allOk) {
+		writeResults.show({ ...text, results: [...results], retry: retry.retry, after: retry.after });
+		return false;
+	}
 	if (s.ok.length > 0) notices.success(`${text.done} on ${names(s.ok)}.`);
 	for (const r of [...s.failed, ...s.skipped]) notices.error(r.error?.message ?? `Pi-hole "${r.instance}" failed.`, text.failed);
 	return s.allOk;
@@ -26,10 +36,10 @@ export function reportResults(results: readonly InstanceResult[], text: WriteTex
 
 // reportFailure reports a write that threw: no instance succeeded, or the request was refused before any Pi-hole was
 // asked (bad input, no permission). When the error carries results, each instance's own error is shown.
-export function reportFailure(e: unknown, text: WriteText): void {
+export function reportFailure(e: unknown, text: WriteText, retry?: RetryWith): void {
 	const results = failedResults(e);
 	if (results && results.length > 0) {
-		reportResults(results, text);
+		reportResults(results, text, retry);
 		return;
 	}
 	notices.error(e, text.failed);

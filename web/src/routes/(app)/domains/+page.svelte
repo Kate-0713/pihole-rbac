@@ -8,6 +8,7 @@
 	import DeleteDomainDialog from '#lib/components/app/delete-domain-dialog.svelte';
 	import DomainFormDialog from '#lib/components/app/domain-form-dialog.svelte';
 	import DomainTable from '#lib/components/app/domain-table.svelte';
+	import MirroredMemberNote from '#lib/components/app/mirrored-member-note.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import type { Domain } from '#lib/domains.js';
@@ -58,10 +59,19 @@
 	<p class="text-muted-foreground text-sm">You can't view the domain lists of {target?.name ?? 'this instance'}.</p>
 {:else if data.error}
 	<Alert variant="destructive">
-		<AlertDescription>Couldn't read the domain lists: {data.error}</AlertDescription>
+		<AlertDescription>
+			<p>Couldn't read the domain lists: {data.error}</p>
+			{#if data.primaryDown}
+				<p>
+					A mirrored group's lists are read from its primary alone, so they can't be shown until it answers. The
+					dashboard still shows the members that answered.
+				</p>
+			{/if}
+		</AlertDescription>
 	</Alert>
 	<Button variant="outline" size="sm" class="w-fit" onclick={reload}>Try again</Button>
 {:else}
+	{#if canEdit && target}<MirroredMemberNote {target} />{/if}
 	<DomainTable domains={data.domains} groups={data.groups} {canEdit} onedit={edit} ondelete={remove} />
 
 	{#if canEdit && target}

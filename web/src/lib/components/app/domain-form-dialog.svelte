@@ -68,28 +68,28 @@
 		if (!ready) return;
 		busy = true;
 		error = null;
-		const params = { params: { path: { target } } };
+		// The query for a retry through a mirrored group: ?members= naming the members that failed.
+		const params = (members?: number[]) => ({ params: { path: { target }, query: members ? { members } : undefined } });
 		try {
 			if (entry) {
-				const { results } = await unwrap(
-					api.PATCH('/api/v1/targets/{target}/domains', {
-						...params,
-						body: { domain: entry.domain, type: entry.type, kind: entry.kind, comment, groups: selected }
-					})
+				const body = { domain: entry.domain, type: entry.type, kind: entry.kind, comment, groups: selected };
+				const send = async (members?: number[]) =>
+					(await unwrap(api.PATCH('/api/v1/targets/{target}/domains', { ...params(members), body }))).results;
+				reportResults(
+					await send(),
+					{ done: `${entry.domain} updated`, failed: `Couldn't update ${entry.domain}` },
+					{ retry: send, after: onsaved }
 				);
-				reportResults(results, { done: `${entry.domain} updated`, failed: `Couldn't update ${entry.domain}` });
 			} else {
 				const d = domain.trim();
-				const { results } = await unwrap(
-					api.POST('/api/v1/targets/{target}/domains', {
-						...params,
-						body: { domain: d, type, kind, comment, groups: selected }
-					})
+				const body = { domain: d, type, kind, comment, groups: selected };
+				const send = async (members?: number[]) =>
+					(await unwrap(api.POST('/api/v1/targets/{target}/domains', { ...params(members), body }))).results;
+				reportResults(
+					await send(),
+					{ done: `${d} added to the ${type} list`, failed: `Couldn't add ${d}` },
+					{ retry: send, after: onsaved }
 				);
-				reportResults(results, {
-					done: `${d} added to the ${type} list`,
-					failed: `Couldn't add ${d}`
-				});
 			}
 			open = false;
 			await onsaved();

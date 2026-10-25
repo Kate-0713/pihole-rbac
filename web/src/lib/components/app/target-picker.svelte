@@ -14,6 +14,8 @@
 	let { current }: { current: string | null } = $props();
 
 	let selected = $derived(targets.find(current));
+	let instances = $derived(targets.list.filter((t) => t.kind === 'instance'));
+	let groups = $derived(targets.list.filter((t) => t.kind === 'group'));
 
 	// Choosing a target stays on the same page and only changes ?target=, which reruns the page's load functions.
 	// reset: false keeps the scroll position and focus where they were (SvelteKit 3's replacement for keepFocus and
@@ -42,7 +44,7 @@
 {:else}
 	<!-- bits-ui's Select: `value` is the selected item's value; onValueChange fires when the user picks another. -->
 	<Select.Root type="single" value={current ?? undefined} onValueChange={choose} onOpenChange={opened}>
-		<Select.Trigger class="w-56" aria-label="Instance">
+		<Select.Trigger class="w-56" aria-label={groups.length > 0 ? 'Instance or group' : 'Instance'}>
 			{#if selected}
 				<span class="flex items-center gap-2 truncate">
 					<HealthDot health={selected.health} />
@@ -53,11 +55,24 @@
 			{/if}
 		</Select.Trigger>
 		<Select.Content>
-			{#each targets.list as t (t.id)}
-				<Select.Item value={t.id} label={t.name}>
-					<HealthDot health={t.health} />
-					<span class="truncate">{t.name}</span>
-				</Select.Item>
+			<!-- Instances, then mirrored groups, each under a heading once there are both. -->
+			{#each [{ heading: 'Instances', items: instances }, { heading: 'Mirrored groups', items: groups }] as section (section.heading)}
+				{#if section.items.length > 0}
+					<Select.Group>
+						{#if groups.length > 0}
+							<Select.GroupHeading>{section.heading}</Select.GroupHeading>
+						{/if}
+						{#each section.items as t (t.id)}
+							<Select.Item value={t.id} label={t.name}>
+								<HealthDot health={t.health} />
+								<!-- No whitespace after the name: an instance's option reads exactly "<health> <name>". -->
+								<span class="truncate">{t.name}</span>{#if t.members}<span class="text-muted-foreground ml-auto text-xs"
+										>{t.members.length === 1 ? '1 member' : `${t.members.length} members`}</span
+									>{/if}
+							</Select.Item>
+						{/each}
+					</Select.Group>
+				{/if}
 			{/each}
 		</Select.Content>
 	</Select.Root>

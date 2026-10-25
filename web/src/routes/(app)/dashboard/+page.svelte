@@ -7,6 +7,7 @@
 	import BlockingControl from '#lib/components/app/blocking-control.svelte';
 	import DnsRestart from '#lib/components/app/dns-restart.svelte';
 	import HealthDot from '#lib/components/app/health-dot.svelte';
+	import MemberStatus from '#lib/components/app/member-status.svelte';
 	import StatTile from '#lib/components/app/stat-tile.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -56,6 +57,9 @@
 		<HealthDot health={target.health} />
 		{target.name}
 		<span class="text-muted-foreground">· {target.health?.state ?? 'unknown'}</span>
+		{#if target.members}
+			<span class="text-muted-foreground">· mirrored group of {target.members.length}</span>
+		{/if}
 	</p>
 
 	{#if data.error}
@@ -88,11 +92,29 @@
 						<Card.Description>Restart Pi-hole's resolver to pick up changes or clear its cache.</Card.Description>
 					</Card.Header>
 					<Card.Content>
-						<DnsRestart target={data.target} name={target.name} onchange={refresh} />
+						<DnsRestart
+							target={data.target}
+							name={target.members ? `every member of ${target.name}` : target.name}
+							onchange={refresh}
+						/>
 					</Card.Content>
 				</Card.Root>
 			{/if}
 		</div>
+
+		{#if target.members}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Members</Card.Title>
+					<Card.Description>
+						The counters below add up the members that answered. Lists are read from the primary.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<MemberStatus members={target.members} reads={s.members} />
+				</Card.Content>
+			</Card.Root>
+		{/if}
 
 		<Card.Root>
 			<Card.Header>

@@ -67,6 +67,9 @@ func (s *Server) AddDomain(ctx context.Context, req gen.AddDomainRequestObject) 
 	if err != nil {
 		return nil, err
 	}
+	if tg, err = tg.only(req.Params.Members); err != nil {
+		return nil, err
+	}
 	want, err := s.wantGroups(ctx, tg, wanted)
 	if err != nil {
 		return nil, err
@@ -145,6 +148,9 @@ func (s *Server) UpdateDomain(ctx context.Context, req gen.UpdateDomainRequestOb
 	}
 	tg, err := s.resolveTarget(ctx, req.Target, rbac.DomainsEdit)
 	if err != nil {
+		return nil, err
+	}
+	if tg, err = tg.only(req.Params.Members); err != nil {
 		return nil, err
 	}
 	var want groupWant
@@ -233,6 +239,9 @@ func (s *Server) DeleteDomain(ctx context.Context, req gen.DeleteDomainRequestOb
 	}
 	tg, err := s.resolveTarget(ctx, req.Target, rbac.DomainsEdit)
 	if err != nil {
+		return nil, err
+	}
+	if tg, err = tg.only(req.Params.Members); err != nil {
 		return nil, err
 	}
 	if tg.isGroup() {

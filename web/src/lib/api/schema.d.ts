@@ -2067,6 +2067,8 @@ export interface components {
         InstanceID: number;
         /** @description The instance group's ID. */
         GroupID: number;
+        /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+        Members: number[];
         /** @description The role's ID. */
         RoleID: number;
         /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
@@ -3667,7 +3669,10 @@ export interface operations {
     };
     setBlocking: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
             header?: never;
             path: {
                 /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
@@ -3711,7 +3716,10 @@ export interface operations {
     };
     restartDNS: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
             header?: never;
             path: {
                 /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
@@ -3780,7 +3788,10 @@ export interface operations {
     };
     addDomain: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
             header?: never;
             path: {
                 /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
@@ -3824,7 +3835,10 @@ export interface operations {
     };
     deleteDomain: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
             header?: never;
             path: {
                 /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
@@ -3868,7 +3882,10 @@ export interface operations {
     };
     updateDomain: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
             header?: never;
             path: {
                 /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
@@ -3942,7 +3959,10 @@ export interface operations {
     };
     updateClient: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
             header?: never;
             path: {
                 /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */

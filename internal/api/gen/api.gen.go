@@ -1718,6 +1718,9 @@ type InstanceID = int64
 // MappingID defines model for MappingID.
 type MappingID = int64
 
+// Members defines model for Members.
+type Members = []int64
+
 // RoleID defines model for RoleID.
 type RoleID = int64
 
@@ -1800,6 +1803,42 @@ type ListSessionsParams struct {
 
 	// Mine Only the caller's own sessions, even with sessions.manage.
 	Mine *bool `form:"mine,omitempty" json:"mine,omitempty"`
+}
+
+// SetBlockingParams defines parameters for SetBlocking.
+type SetBlockingParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// UpdateClientParams defines parameters for UpdateClient.
+type UpdateClientParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// RestartDNSParams defines parameters for RestartDNS.
+type RestartDNSParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// DeleteDomainParams defines parameters for DeleteDomain.
+type DeleteDomainParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// UpdateDomainParams defines parameters for UpdateDomain.
+type UpdateDomainParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// AddDomainParams defines parameters for AddDomain.
+type AddDomainParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 }
 
 // ListQueriesParams defines parameters for ListQueries.
@@ -2049,28 +2088,28 @@ type ServerInterface interface {
 	GetBlocking(w http.ResponseWriter, r *http.Request, target TargetID)
 	// SetBlocking Turn blocking on or off
 	// (PUT /api/v1/targets/{target}/blocking)
-	SetBlocking(w http.ResponseWriter, r *http.Request, target TargetID)
+	SetBlocking(w http.ResponseWriter, r *http.Request, target TargetID, params SetBlockingParams)
 	// ListClients The configured clients
 	// (GET /api/v1/targets/{target}/clients)
 	ListClients(w http.ResponseWriter, r *http.Request, target TargetID)
 	// UpdateClient Change a client's groups or comment
 	// (PATCH /api/v1/targets/{target}/clients)
-	UpdateClient(w http.ResponseWriter, r *http.Request, target TargetID)
+	UpdateClient(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateClientParams)
 	// RestartDNS Restart Pi-hole's DNS resolver
 	// (POST /api/v1/targets/{target}/dns/restart)
-	RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID)
+	RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID, params RestartDNSParams)
 	// DeleteDomain Delete a list entry
 	// (DELETE /api/v1/targets/{target}/domains)
-	DeleteDomain(w http.ResponseWriter, r *http.Request, target TargetID)
+	DeleteDomain(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteDomainParams)
 	// ListDomains The allow and deny lists
 	// (GET /api/v1/targets/{target}/domains)
 	ListDomains(w http.ResponseWriter, r *http.Request, target TargetID)
 	// UpdateDomain Change a list entry's groups or comment
 	// (PATCH /api/v1/targets/{target}/domains)
-	UpdateDomain(w http.ResponseWriter, r *http.Request, target TargetID)
+	UpdateDomain(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateDomainParams)
 	// AddDomain Add a domain to a list
 	// (POST /api/v1/targets/{target}/domains)
-	AddDomain(w http.ResponseWriter, r *http.Request, target TargetID)
+	AddDomain(w http.ResponseWriter, r *http.Request, target TargetID, params AddDomainParams)
 	// ListPiholeGroups The Pi-hole's groups
 	// (GET /api/v1/targets/{target}/groups)
 	ListPiholeGroups(w http.ResponseWriter, r *http.Request, target TargetID)
@@ -3091,8 +3130,24 @@ func (siw *ServerInterfaceWrapper) SetBlocking(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetBlockingParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.SetBlocking(w, r, target)
+		siw.Handler.SetBlocking(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3143,8 +3198,24 @@ func (siw *ServerInterfaceWrapper) UpdateClient(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateClientParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateClient(w, r, target)
+		siw.Handler.UpdateClient(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3169,8 +3240,24 @@ func (siw *ServerInterfaceWrapper) RestartDNS(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RestartDNSParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RestartDNS(w, r, target)
+		siw.Handler.RestartDNS(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3195,8 +3282,24 @@ func (siw *ServerInterfaceWrapper) DeleteDomain(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteDomainParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteDomain(w, r, target)
+		siw.Handler.DeleteDomain(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3247,8 +3350,24 @@ func (siw *ServerInterfaceWrapper) UpdateDomain(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateDomainParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateDomain(w, r, target)
+		siw.Handler.UpdateDomain(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3273,8 +3392,24 @@ func (siw *ServerInterfaceWrapper) AddDomain(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddDomainParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AddDomain(w, r, target)
+		siw.Handler.AddDomain(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7834,6 +7969,7 @@ func (response GetBlocking503JSONResponse) VisitGetBlockingResponse(w http.Respo
 
 type SetBlockingRequestObject struct {
 	Target TargetID `json:"target"`
+	Params SetBlockingParams
 	Body   *SetBlockingJSONRequestBody
 }
 
@@ -8105,6 +8241,7 @@ func (response ListClients503JSONResponse) VisitListClientsResponse(w http.Respo
 
 type UpdateClientRequestObject struct {
 	Target TargetID `json:"target"`
+	Params UpdateClientParams
 	Body   *UpdateClientJSONRequestBody
 }
 
@@ -8256,6 +8393,7 @@ func (response UpdateClient503JSONResponse) VisitUpdateClientResponse(w http.Res
 
 type RestartDNSRequestObject struct {
 	Target TargetID `json:"target"`
+	Params RestartDNSParams
 }
 
 type RestartDNSResponseObject interface {
@@ -8390,6 +8528,7 @@ func (response RestartDNS503JSONResponse) VisitRestartDNSResponse(w http.Respons
 
 type DeleteDomainRequestObject struct {
 	Target TargetID `json:"target"`
+	Params DeleteDomainParams
 	Body   *DeleteDomainJSONRequestBody
 }
 
@@ -8661,6 +8800,7 @@ func (response ListDomains503JSONResponse) VisitListDomainsResponse(w http.Respo
 
 type UpdateDomainRequestObject struct {
 	Target TargetID `json:"target"`
+	Params UpdateDomainParams
 	Body   *UpdateDomainJSONRequestBody
 }
 
@@ -8812,6 +8952,7 @@ func (response UpdateDomain503JSONResponse) VisitUpdateDomainResponse(w http.Res
 
 type AddDomainRequestObject struct {
 	Target TargetID `json:"target"`
+	Params AddDomainParams
 	Body   *AddDomainJSONRequestBody
 }
 
@@ -11582,10 +11723,11 @@ func (sh *strictHandler) GetBlocking(w http.ResponseWriter, r *http.Request, tar
 }
 
 // SetBlocking operation middleware
-func (sh *strictHandler) SetBlocking(w http.ResponseWriter, r *http.Request, target TargetID) {
+func (sh *strictHandler) SetBlocking(w http.ResponseWriter, r *http.Request, target TargetID, params SetBlockingParams) {
 	var request SetBlockingRequestObject
 
 	request.Target = target
+	request.Params = params
 
 	var body SetBlockingJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -11641,10 +11783,11 @@ func (sh *strictHandler) ListClients(w http.ResponseWriter, r *http.Request, tar
 }
 
 // UpdateClient operation middleware
-func (sh *strictHandler) UpdateClient(w http.ResponseWriter, r *http.Request, target TargetID) {
+func (sh *strictHandler) UpdateClient(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateClientParams) {
 	var request UpdateClientRequestObject
 
 	request.Target = target
+	request.Params = params
 
 	var body UpdateClientJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -11674,10 +11817,11 @@ func (sh *strictHandler) UpdateClient(w http.ResponseWriter, r *http.Request, ta
 }
 
 // RestartDNS operation middleware
-func (sh *strictHandler) RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID) {
+func (sh *strictHandler) RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID, params RestartDNSParams) {
 	var request RestartDNSRequestObject
 
 	request.Target = target
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.RestartDNS(ctx, request.(RestartDNSRequestObject))
@@ -11700,10 +11844,11 @@ func (sh *strictHandler) RestartDNS(w http.ResponseWriter, r *http.Request, targ
 }
 
 // DeleteDomain operation middleware
-func (sh *strictHandler) DeleteDomain(w http.ResponseWriter, r *http.Request, target TargetID) {
+func (sh *strictHandler) DeleteDomain(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteDomainParams) {
 	var request DeleteDomainRequestObject
 
 	request.Target = target
+	request.Params = params
 
 	var body DeleteDomainJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -11759,10 +11904,11 @@ func (sh *strictHandler) ListDomains(w http.ResponseWriter, r *http.Request, tar
 }
 
 // UpdateDomain operation middleware
-func (sh *strictHandler) UpdateDomain(w http.ResponseWriter, r *http.Request, target TargetID) {
+func (sh *strictHandler) UpdateDomain(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateDomainParams) {
 	var request UpdateDomainRequestObject
 
 	request.Target = target
+	request.Params = params
 
 	var body UpdateDomainJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -11792,10 +11938,11 @@ func (sh *strictHandler) UpdateDomain(w http.ResponseWriter, r *http.Request, ta
 }
 
 // AddDomain operation middleware
-func (sh *strictHandler) AddDomain(w http.ResponseWriter, r *http.Request, target TargetID) {
+func (sh *strictHandler) AddDomain(w http.ResponseWriter, r *http.Request, target TargetID, params AddDomainParams) {
 	var request AddDomainRequestObject
 
 	request.Target = target
+	request.Params = params
 
 	var body AddDomainJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

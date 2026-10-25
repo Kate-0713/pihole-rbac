@@ -31,16 +31,22 @@
 		if (!entry) return;
 		busy = true;
 		const text = { done: `${entry.domain} deleted`, failed: `Couldn't delete ${entry.domain}` };
-		try {
+		const body = { domain: entry.domain, type: entry.type, kind: entry.kind };
+		// For a mirrored group, a retry deletes from the members that failed, named in ?members=.
+		const send = async (members?: number[]) => {
 			const { results } = await unwrap(
 				api.DELETE('/api/v1/targets/{target}/domains', {
-					params: { path: { target } },
-					body: { domain: entry.domain, type: entry.type, kind: entry.kind }
+					params: { path: { target }, query: members ? { members } : undefined },
+					body
 				})
 			);
-			reportResults(results, text);
+			return results;
+		};
+		const retry = { retry: send, after: ondeleted };
+		try {
+			reportResults(await send(), text, retry);
 		} catch (e) {
-			reportFailure(e, text);
+			reportFailure(e, text, retry);
 		} finally {
 			busy = false;
 			open = false;

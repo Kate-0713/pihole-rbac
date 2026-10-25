@@ -18,17 +18,26 @@
 	async function restart() {
 		busy = true;
 		const text = { done: 'DNS restarted', failed: "Couldn't restart DNS" };
+		// For a mirrored group, a retry restarts only the members that failed, named in ?members=.
+		const send = async (members?: number[]) => {
+			const query = members ? { members } : undefined;
+			const { results } = await unwrap(
+				api.POST('/api/v1/targets/{target}/dns/restart', { params: { path: { target }, query } })
+			);
+			return results;
+		};
+		const retry = { retry: send, after: onchange };
 		try {
-			const { results } = await unwrap(api.POST('/api/v1/targets/{target}/dns/restart', { params: { path: { target } } }));
+			const results = await send();
 			if (results.every((r) => r.status !== 'ok' || r.confirmed)) {
-				reportResults(results, text);
+				reportResults(results, text, retry);
 			} else {
 				// The restart took the connection down with it before Pi-hole could answer. That usually means it worked.
-				reportResults(results, { ...text, done: 'DNS restart requested' });
+				reportResults(results, { ...text, done: 'DNS restart requested' }, retry);
 				notices.info("Pi-hole didn't confirm the restart before the connection dropped. Check back in a few seconds.");
 			}
 		} catch (e) {
-			reportFailure(e, text);
+			reportFailure(e, text, retry);
 		} finally {
 			confirming = false;
 			busy = false;

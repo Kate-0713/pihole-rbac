@@ -182,6 +182,9 @@ func (s *Server) SetBlocking(ctx context.Context, req gen.SetBlockingRequestObje
 	if err != nil {
 		return nil, err
 	}
+	if tg, err = tg.only(req.Params.Members); err != nil {
+		return nil, err
+	}
 	sts := make([]*piholeapi.Status, len(tg.members))
 	outs, err := s.fanOut(ctx, tg, func(ctx context.Context, i int, _ instanceRef, c *piholeapi.Client) error {
 		var err error
@@ -224,6 +227,9 @@ func (s *Server) SetBlocking(ctx context.Context, req gen.SetBlockingRequestObje
 func (s *Server) RestartDNS(ctx context.Context, req gen.RestartDNSRequestObject) (gen.RestartDNSResponseObject, error) {
 	tg, err := s.resolveTarget(ctx, req.Target, rbac.DNSRestart)
 	if err != nil {
+		return nil, err
+	}
+	if tg, err = tg.only(req.Params.Members); err != nil {
 		return nil, err
 	}
 	n := len(tg.members)

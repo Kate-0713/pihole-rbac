@@ -17,6 +17,8 @@ type Data = {
 	// Set when there's nothing to show, with the reason.
 	error: string | null;
 	allowed: boolean;
+	// Set when the target is a mirrored group whose primary couldn't be read: its lists come from the primary alone.
+	primaryDown?: boolean;
 };
 
 export const load: PageLoad = async ({ parent, fetch, depends }): Promise<Data> => {
@@ -37,7 +39,7 @@ export const load: PageLoad = async ({ parent, fetch, depends }): Promise<Data> 
 		return { domains: list.domains, groups: groups.groups, error: null, allowed: true };
 	} catch (e) {
 		// A Pi-hole that is down is shown on the page, as on the dashboard.
-		if (e instanceof ApiError) return { ...empty, error: e.message, allowed: true };
+		if (e instanceof ApiError) return { ...empty, error: e.message, allowed: true, primaryDown: e.details.primary === true };
 		throw e;
 	}
 };

@@ -31,6 +31,7 @@
 
 	const columns = column.columns([
 		column.accessor((q) => Date.parse(q.time), { id: 'time', sortFn: 'basic' }),
+		column.accessor('instance', { sortFn: 'alphanumeric' }),
 		column.accessor('domain', { sortFn: 'alphanumeric' }),
 		column.accessor((q) => q.client_name ?? q.client_ip, { id: 'client', sortFn: 'alphanumeric' }),
 		column.accessor((q) => describeStatus(q.status).label, { id: 'status', sortFn: 'alphanumeric' }),
@@ -53,14 +54,17 @@
 	// filterHref gives the link that filters the log by a domain or client, so a value in the table can be clicked
 	// to narrow the log to it.
 	// empty is what to say when nothing came back at all, which depends on the server-side filters.
+	// showInstance adds a column naming the instance that answered, for a mirrored group's merged log.
 	let {
 		queries,
 		filterHref,
-		empty
+		empty,
+		showInstance = false
 	}: {
 		queries: QueryLogEntry[];
 		filterHref: (by: 'domain' | 'client', value: string) => string;
 		empty: string;
+		showInstance?: boolean;
 	} = $props();
 
 	const table = createTable({
@@ -86,7 +90,7 @@
 		return d.toDateString() === new Date().toDateString() ? timeFormat.format(d) : dateTimeFormat.format(d);
 	}
 
-	type SortableId = 'time' | 'domain' | 'client' | 'status' | 'reply';
+	type SortableId = 'time' | 'instance' | 'domain' | 'client' | 'status' | 'reply';
 	function sortState(id: SortableId): false | 'asc' | 'desc' {
 		return table.getColumn(id)?.getIsSorted() ?? false;
 	}
@@ -130,6 +134,7 @@
 		<Table.Header>
 			<Table.Row>
 				{@render sortHeader('time', 'Time')}
+				{#if showInstance}{@render sortHeader('instance', 'Instance')}{/if}
 				<Table.Head>Type</Table.Head>
 				{@render sortHeader('domain', 'Domain')}
 				{@render sortHeader('client', 'Client')}
@@ -146,6 +151,7 @@
 					<Table.Cell class="text-sm whitespace-nowrap tabular-nums">
 						<time datetime={q.time}>{when(q.time)}</time>
 					</Table.Cell>
+					{#if showInstance}<Table.Cell class="text-sm whitespace-nowrap">{q.instance}</Table.Cell>{/if}
 					<Table.Cell class="text-muted-foreground text-sm">{q.type}</Table.Cell>
 					<Table.Cell class="max-w-80">
 						<a
@@ -176,7 +182,7 @@
 				</Table.Row>
 			{:else}
 				<Table.Row>
-					<Table.Cell colspan={7} class="text-muted-foreground py-6 text-center">
+					<Table.Cell colspan={showInstance ? 8 : 7} class="text-muted-foreground py-6 text-center">
 						{queries.length > 0 ? 'Nothing matches.' : empty}
 					</Table.Cell>
 				</Table.Row>

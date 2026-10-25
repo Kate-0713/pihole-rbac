@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
@@ -39,12 +40,37 @@ type instanceRef struct {
 type target struct {
 	t     rbac.Target
 	group string // the mirrored group's name; empty for an instance
-	// The instance; or the group's enabled members, the primary first, then by name. Never empty.
+	// The instance; or the group's enabled members, the primary first, then by name (narrowed by only). Never empty.
 	members []instanceRef
+	// The instance itself, or the group's primary, which reads and the group's checks use even when only has left it
+	// out of members.
+	main instanceRef
 }
 
 func (tg target) isGroup() bool        { return tg.t.Kind == rbac.TargetGroup }
-func (tg target) primary() instanceRef { return tg.members[0] }
+func (tg target) primary() instanceRef { return tg.main }
+
+// only narrows a mirrored group's write to the members a request names in ?members=, to retry those that failed:
+// nil leaves every member. Naming members is a 400 for an instance target, or for an ID that isn't an enabled member.
+func (tg target) only(ids *gen.Members) (target, error) {
+	if ids == nil {
+		return tg, nil
+	}
+	if !tg.isGroup() {
+		return target{}, invalid("members", "Members can only be named for a mirrored group.")
+	}
+	if len(*ids) == 0 {
+		return target{}, invalid("members", "Name at least one member.")
+	}
+	for _, id := range *ids {
+		if !slices.ContainsFunc(tg.members, func(m instanceRef) bool { return m.id == id }) {
+			return target{}, invalid("members", "Instance %d isn't an enabled member of %s.", id, tg.group)
+		}
+	}
+	out := tg
+	out.members = slices.DeleteFunc(slices.Clone(tg.members), func(m instanceRef) bool { return !slices.Contains(*ids, m.id) })
+	return out, nil
+}
 
 // resolveTarget parses a {target}, checks that the session holds p on it (any permission when p is ""), and finds
 // what it names. A target the user holds nothing on is a 403 whether or not it exists, so the answer reveals nothing;
@@ -77,7 +103,7 @@ func (s *Server) resolveTarget(ctx context.Context, raw string, p rbac.Permissio
 		} else if ok {
 			ref.mirroredOf = group
 		}
-		return target{t: t, members: []instanceRef{ref}}, nil
+		return target{t: t, members: []instanceRef{ref}, main: ref}, nil
 	}
 
 	g, err := s.Instances.GetGroup(ctx, t.ID)
@@ -108,6 +134,7 @@ func (s *Server) resolveTarget(ctx context.Context, raw string, p rbac.Permissio
 	}
 	slices.SortFunc(others, func(a, b instanceRef) int { return cmp.Compare(a.name, b.name) })
 	tg.members = append(tg.members, others...)
+	tg.main = tg.members[0]
 	return tg, nil
 }
 

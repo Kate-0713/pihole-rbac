@@ -53,14 +53,23 @@
 		if (!client || commentHint) return;
 		busy = true;
 		error = null;
-		try {
+		const body = { client: client.client, comment, groups: selected };
+		// For a mirrored group, a retry sends the same change to the members that failed, named in ?members=.
+		const send = async (members?: number[]) => {
 			const { results } = await unwrap(
 				api.PATCH('/api/v1/targets/{target}/clients', {
-					params: { path: { target } },
-					body: { client: client.client, comment, groups: selected }
+					params: { path: { target }, query: members ? { members } : undefined },
+					body
 				})
 			);
-			reportResults(results, { done: `${client.client} updated`, failed: `Couldn't update ${client.client}` });
+			return results;
+		};
+		try {
+			reportResults(
+				await send(),
+				{ done: `${client.client} updated`, failed: `Couldn't update ${client.client}` },
+				{ retry: send, after: onsaved }
+			);
 			open = false;
 			await onsaved();
 		} catch (e) {

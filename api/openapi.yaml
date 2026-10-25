@@ -1614,6 +1614,8 @@ paths:
         (see WriteResults under the schemas). Audited as blocking_set.
       operationId: setBlocking
       x-permission: target:blocking.toggle
+      parameters:
+        - $ref: "#/components/parameters/Members"
       requestBody:
         required: true
         content:
@@ -1663,6 +1665,8 @@ paths:
         failure. Answers with a result per instance (see WriteResults under the schemas). Audited as dns_restart.
       operationId: restartDNS
       x-permission: target:dns.restart
+      parameters:
+        - $ref: "#/components/parameters/Members"
       responses:
         "200":
           description: The restart was requested on every instance.
@@ -1731,6 +1735,8 @@ paths:
         per instance (see WriteResults under the schemas). Audited as domain_add.
       operationId: addDomain
       x-permission: target:domains.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
       requestBody:
         required: true
         content:
@@ -1777,6 +1783,8 @@ paths:
         Audited as domain_update, with the groups before and after.
       operationId: updateDomain
       x-permission: target:domains.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
       requestBody:
         required: true
         content:
@@ -1822,6 +1830,8 @@ paths:
         with the entry's groups and comment.
       operationId: deleteDomain
       x-permission: target:domains.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
       requestBody:
         required: true
         content:
@@ -1898,6 +1908,8 @@ paths:
         and after.
       operationId: updateClient
       x-permission: target:clients.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
       requestBody:
         required: true
         content:
@@ -2041,6 +2053,25 @@ components:
         type: integer
         format: int64
         minimum: 1
+
+    Members:
+      name: members
+      in: query
+      required: false
+      description: >-
+        Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the
+        group), to retry the members that failed last time. The results list only them, and the write is still made
+        through the group: it is audited with the group as its target, and the group's rules apply (the primary's
+        Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that
+        isn't an enabled member.
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 100
+        items:
+          type: integer
+          format: int64
+          minimum: 1
 
     RoleID:
       name: id

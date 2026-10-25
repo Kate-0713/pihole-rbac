@@ -18,6 +18,8 @@
 
 	let { data }: PageProps = $props();
 	let target = $derived(targets.find(data.target));
+	// For a mirrored group: the members whose queries aren't in the log, because they didn't answer.
+	let missing = $derived((data.members ?? []).filter((m) => m.status !== 'ok'));
 
 	// The form's fields, copied from the URL's filters whenever they change (applying a filter, clicking a domain in
 	// the table, Back), so the form always shows what the table is filtered by.
@@ -60,7 +62,11 @@
 <div class="flex flex-wrap items-start justify-between gap-2">
 	<div class="grid gap-1">
 		<h1 class="text-xl font-semibold">Query log</h1>
-		<p class="text-muted-foreground text-sm">The newest DNS queries this Pi-hole answered, newest first.</p>
+		<p class="text-muted-foreground text-sm">
+			{target?.members
+				? `The newest DNS queries the members of ${target.name} answered, merged, newest first.`
+				: 'The newest DNS queries this Pi-hole answered, newest first.'}
+		</p>
 	</div>
 	{#if data.allowed && data.target}
 		<Button variant="outline" size="sm" onclick={refresh} disabled={refreshing}>
@@ -119,7 +125,17 @@
 		</Alert>
 		<Button variant="outline" size="sm" class="w-fit" onclick={refresh}>Try again</Button>
 	{:else}
+		{#if missing.length > 0}
+			<Alert>
+				<AlertDescription>
+					Not included, because {missing.length === 1 ? 'it' : 'they'} didn't answer: {missing
+						.map((m) => (m.error ? `${m.instance} (${m.error.message})` : m.instance))
+						.join(', ')}
+				</AlertDescription>
+			</Alert>
+		{/if}
 		<QueryTable
+			showInstance={target?.kind === 'group'}
 			queries={data.queries}
 			{filterHref}
 			empty={filtered ? 'No queries match among the newest ' + data.filters.length + '.' : 'The query log is empty.'}

@@ -6,6 +6,7 @@
 	import { invalidate } from '$app/navigation';
 	import ClientFormDialog from '#lib/components/app/client-form-dialog.svelte';
 	import ClientTable from '#lib/components/app/client-table.svelte';
+	import MirroredMemberNote from '#lib/components/app/mirrored-member-note.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { can } from '#lib/permissions.js';
@@ -44,10 +45,19 @@
 	<p class="text-muted-foreground text-sm">You can't view the clients of {target?.name ?? 'this instance'}.</p>
 {:else if data.error}
 	<Alert variant="destructive">
-		<AlertDescription>Couldn't read the clients: {data.error}</AlertDescription>
+		<AlertDescription>
+			<p>Couldn't read the clients: {data.error}</p>
+			{#if data.primaryDown}
+				<p>
+					A mirrored group's lists are read from its primary alone, so they can't be shown until it answers. The
+					dashboard still shows the members that answered.
+				</p>
+			{/if}
+		</AlertDescription>
 	</Alert>
 	<Button variant="outline" size="sm" class="w-fit" onclick={reload}>Try again</Button>
 {:else}
+	{#if canEdit && target}<MirroredMemberNote {target} />{/if}
 	<ClientTable clients={data.clients} groups={data.groups} {canEdit} onedit={edit} />
 
 	{#if canEdit && target}
