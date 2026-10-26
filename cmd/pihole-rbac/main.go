@@ -21,6 +21,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/logging"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/notify"
@@ -57,6 +58,8 @@ func run(args []string) error {
 		return cmdRotateKey(args[1:])
 	case "import-json":
 		return cmdImportJSON(args[1:])
+	case "healthcheck":
+		return cmdHealthcheck(args[1:])
 	case "help", "--help", "-h":
 		fmt.Fprint(stdout, usage)
 		return nil
@@ -79,6 +82,7 @@ commands:
   import-json --config <config.json> [--permissions <file>] [--users <file>] [--instance-name <name>]
               [--time-zone <zone>] [--offline] [--apply]
                                show what would be imported from v1's files; --apply imports it into a new database
+  healthcheck                  exit 0 if the server on PIHOLE_RBAC_LISTEN answers /healthz, 1 otherwise
   version                      print the version, build details and source location
 `
 
@@ -106,8 +110,13 @@ func serve() error {
 	if err != nil {
 		return fmt.Errorf("configuration: %w", err)
 	}
-	// Replaced by the file-and-stdout logger ported from v1.
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	// stdout, plus a file per day when PIHOLE_RBAC_LOG_DIR is set. Closed last, so shutdown is logged to the file.
+	logs, err := logging.Open(logging.Options{Dir: cfg.LogDir, RetentionDays: cfg.LogRetentionDays, Level: cfg.LogLevel})
+	if err != nil {
+		return err
+	}
+	defer logs.Close()
+	logger := logs.Logger
 	slog.SetDefault(logger)
 
 	// Secrets before the database: a misconfigured secret should stop startup before any migration runs.
@@ -135,7 +144,7 @@ func serve() error {
 	if err := announceSetup(ctx, st, logger); err != nil {
 		return err
 	}
-	auditLog := audit.NewLogger(os.Stdout)
+	auditLog := audit.NewLogger(logs.Writer)
 
 	// The login methods, LDAP settings and bind password, and the login chain built from them. Saving them through the
 	// API rebuilds the chain and the recheck's directory without a restart.
@@ -235,7 +244,7 @@ func serve() error {
 
 	errc := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", cfg.Listen, "version", buildinfo.Version, "data_dir", cfg.DataDir)
+		logger.Info("listening", "addr", cfg.Listen, "version", buildinfo.Version, "data_dir", cfg.DataDir, "log_dir", cfg.LogDir)
 		errc <- srv.ListenAndServe()
 	}()
 

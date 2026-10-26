@@ -14,6 +14,7 @@ import (
 
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
+	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
@@ -654,6 +655,15 @@ func (p *Plan) buildAdvice(v *V1) {
 	}
 	if v.Config.ListenAddr != "" && v.Config.ListenAddr != ":8080" {
 		p.todof("v1 listened on %s; v2 listens on :8080 unless PIHOLE_RBAC_LISTEN says otherwise. Point the reverse proxy at the right one.", v.Config.ListenAddr)
+	}
+	if v.Config.LogFile != "" {
+		p.todof("v1 wrote daily log files beside %s. v2 writes them only when PIHOLE_RBAC_LOG_DIR is set (the LXC install sets /var/log/pihole-rbac); otherwise it logs to stdout only.", v.Config.LogFile)
+		switch days := v.Config.LogRetentionDays; {
+		case days <= 0:
+			p.todof("v1 kept its log files forever: set PIHOLE_RBAC_LOG_RETENTION_DAYS=0 to do the same (v2 keeps %d days unless told otherwise).", config.DefaultLogRetentionDays)
+		case days != config.DefaultLogRetentionDays:
+			p.todof("v1 kept %d days of log files: set PIHOLE_RBAC_LOG_RETENTION_DAYS=%d to do the same (v2 keeps %d days unless told otherwise).", days, days, config.DefaultLogRetentionDays)
+		}
 	}
 	p.todof("Sessions aren't carried over (v1's session_key isn't used): everyone logs in again.")
 }

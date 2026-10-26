@@ -24,6 +24,9 @@ const Prefix = "PIHOLE_RBAC_"
 const (
 	DefaultListen  = ":8080"
 	DefaultDataDir = "/var/lib/pihole-rbac"
+	// DefaultLogRetentionDays is how long daily log files are kept when PIHOLE_RBAC_LOG_DIR is set.
+	DefaultLogRetentionDays = 30
+	maxLogRetentionDays     = 3650
 )
 
 // CookieSecure decides when the session cookie gets the Secure flag.
@@ -49,6 +52,10 @@ type Config struct {
 	LDAPCAFile     string // optional CA bundle for LDAPS
 	UpdateCheck    bool
 	LogLevel       slog.Level
+	// LogDir, when set (absolute), gets one log file per day as well as stdout; LogRetentionDays of them are kept,
+	// 0 meaning all.
+	LogDir           string
+	LogRetentionDays int
 }
 
 // FromEnv loads the configuration from the process environment.
@@ -61,10 +68,11 @@ func FromEnv() (*Config, error) {
 func Load(getenv func(string) string) (*Config, error) {
 	get := func(name string) string { return strings.TrimSpace(getenv(Prefix + name)) }
 	c := &Config{
-		Listen:      DefaultListen,
-		DataDir:     DefaultDataDir,
-		UpdateCheck: true,
-		LogLevel:    slog.LevelInfo,
+		Listen:           DefaultListen,
+		DataDir:          DefaultDataDir,
+		UpdateCheck:      true,
+		LogLevel:         slog.LevelInfo,
+		LogRetentionDays: DefaultLogRetentionDays,
 	}
 	var errs []error
 	bad := func(name string, err error) { errs = append(errs, fmt.Errorf("%s%s: %w", Prefix, name, err)) }
@@ -113,6 +121,22 @@ func Load(getenv func(string) string) (*Config, error) {
 	if v := get("LOG_LEVEL"); v != "" {
 		if err := c.LogLevel.UnmarshalText([]byte(v)); err != nil {
 			bad("LOG_LEVEL", fmt.Errorf("%q is not debug, info, warn or error", v))
+		}
+	}
+
+	if v := get("LOG_DIR"); v != "" {
+		if abs, err := filepath.Abs(v); err != nil {
+			bad("LOG_DIR", err)
+		} else {
+			c.LogDir = abs
+		}
+	}
+	if v := get("LOG_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > maxLogRetentionDays {
+			bad("LOG_RETENTION_DAYS", fmt.Errorf("%q is not a number of days from 0 (keep every file) to %d", v, maxLogRetentionDays))
+		} else {
+			c.LogRetentionDays = n
 		}
 	}
 

@@ -322,6 +322,23 @@ func TestBuildProblems(t *testing.T) {
 			},
 		},
 		{
+			name: "v1 log file and retention",
+			change: func(cfg, _ map[string]any, u []any) []any {
+				cfg["log_file"] = "/opt/pihole-rbac/logs/pihole-rbac.log"
+				cfg["log_retention_days"] = 14
+				return u
+			},
+			todo: []string{"/opt/pihole-rbac/logs/pihole-rbac.log", "PIHOLE_RBAC_LOG_DIR", "PIHOLE_RBAC_LOG_RETENTION_DAYS=14"},
+		},
+		{
+			name: "v1 log files kept forever",
+			change: func(cfg, _ map[string]any, u []any) []any {
+				cfg["log_file"] = "/var/log/pihole-rbac.log"
+				return u
+			},
+			todo: []string{"PIHOLE_RBAC_LOG_RETENTION_DAYS=0"},
+		},
+		{
 			name: "every v1 permission maps",
 			change: func(_, perms map[string]any, u []any) []any {
 				perms["reader"] = []any{"view_query_log", "view_domains", "edit_domains", "view_clients", "edit_clients",

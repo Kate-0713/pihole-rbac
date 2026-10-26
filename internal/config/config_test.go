@@ -23,7 +23,8 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	wantDir, _ := filepath.Abs(DefaultDataDir)
 	if c.Listen != ":8080" || c.DataDir != wantDir || c.CookieSecure != CookieSecureAuto ||
-		!c.UpdateCheck || c.LogLevel != slog.LevelInfo || len(c.TrustedProxies) != 0 || c.LDAPCAFile != "" {
+		!c.UpdateCheck || c.LogLevel != slog.LevelInfo || len(c.TrustedProxies) != 0 || c.LDAPCAFile != "" ||
+		c.LogDir != "" || c.LogRetentionDays != DefaultLogRetentionDays {
 		t.Fatalf("defaults = %+v", c)
 	}
 }
@@ -82,6 +83,27 @@ func TestLoad(t *testing.T) {
 				}
 			}},
 		{name: "log level invalid", env: map[string]string{"PIHOLE_RBAC_LOG_LEVEL": "loud"}, wantErr: "PIHOLE_RBAC_LOG_LEVEL"},
+		{name: "log dir made absolute", env: map[string]string{"PIHOLE_RBAC_LOG_DIR": "logs"},
+			check: func(t *testing.T, c *Config) {
+				if !filepath.IsAbs(c.LogDir) || filepath.Base(c.LogDir) != "logs" {
+					t.Errorf("LogDir = %q", c.LogDir)
+				}
+			}},
+		{name: "log retention", env: map[string]string{"PIHOLE_RBAC_LOG_RETENTION_DAYS": "14"},
+			check: func(t *testing.T, c *Config) {
+				if c.LogRetentionDays != 14 {
+					t.Errorf("LogRetentionDays = %d", c.LogRetentionDays)
+				}
+			}},
+		{name: "log retention 0 keeps everything", env: map[string]string{"PIHOLE_RBAC_LOG_RETENTION_DAYS": "0"},
+			check: func(t *testing.T, c *Config) {
+				if c.LogRetentionDays != 0 {
+					t.Errorf("LogRetentionDays = %d", c.LogRetentionDays)
+				}
+			}},
+		{name: "log retention negative", env: map[string]string{"PIHOLE_RBAC_LOG_RETENTION_DAYS": "-1"}, wantErr: "PIHOLE_RBAC_LOG_RETENTION_DAYS"},
+		{name: "log retention too long", env: map[string]string{"PIHOLE_RBAC_LOG_RETENTION_DAYS": "3651"}, wantErr: "PIHOLE_RBAC_LOG_RETENTION_DAYS"},
+		{name: "log retention not a number", env: map[string]string{"PIHOLE_RBAC_LOG_RETENTION_DAYS": "30d"}, wantErr: "PIHOLE_RBAC_LOG_RETENTION_DAYS"},
 		{name: "ldap ca file", env: map[string]string{"PIHOLE_RBAC_LDAP_CA_FILE": "/etc/ssl/internal.pem"},
 			check: func(t *testing.T, c *Config) {
 				if c.LDAPCAFile != "/etc/ssl/internal.pem" {
