@@ -1,0 +1,2 @@
+53a144ff623704ac212d01bc0d2429406d5ce0572c600377cfd8e76d3bd2014c  pihole-rbac_2.0.0-rc.1_linux_amd64.tar.gz
+28a02771435435d2abceee4e0c69b2e348dc5827be488d2df5fd7cf3183402a6  pihole-rbac_2.0.0-rc.1_linux_arm64.tar.gz
