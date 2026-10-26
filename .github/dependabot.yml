@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Keeps the runtime base image in deploy/docker/Dockerfile current (and its digest, once one is pinned). The node and
+# golang build stages take their versions from ARGs, which Dependabot leaves alone: Go follows go.mod and Node
+# follows CI.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly

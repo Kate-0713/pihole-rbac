@@ -14,7 +14,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'web', 'web-check', 'web-test', 'e2e', 'build', 'check-embedded', 'test', 'generate', 'generate-check', 'dev-api', 'dev-web', 'snapshot', 'clean')]
+    [ValidateSet('help', 'web', 'web-check', 'web-test', 'e2e', 'build', 'check-embedded', 'test', 'generate', 'generate-check', 'dev-api', 'dev-web', 'docker', 'snapshot', 'clean')]
     [string]$Task = 'help'
 )
 
@@ -70,7 +70,7 @@ function Test-Embedded {
 try {
     switch ($Task) {
         'help' {
-            Write-Host 'Tasks: web, web-check, web-test, e2e, build, check-embedded, test, generate, generate-check, dev-api, dev-web, snapshot, clean'
+            Write-Host 'Tasks: web, web-check, web-test, e2e, build, check-embedded, test, generate, generate-check, dev-api, dev-web, docker, snapshot, clean'
         }
         'web' {
             Install-WebDeps
@@ -141,6 +141,13 @@ try {
         'dev-web' {
             Install-WebDeps
             Invoke-Native 'npm' @('--prefix', 'web', 'run', 'dev')
+        }
+        'docker' {
+            $version = Get-GitOrDefault @('describe', '--tags', '--always', '--dirty') 'dev'
+            $commit = Get-GitOrDefault @('rev-parse', '--short', 'HEAD') 'unknown'
+            $date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            Invoke-Native 'docker' @('build', '-f', 'deploy/docker/Dockerfile', '-t', 'pihole-rbac:dev',
+                '--build-arg', "VERSION=$version", '--build-arg', "COMMIT=$commit", '--build-arg', "DATE=$date", '.')
         }
         'snapshot' {
             Invoke-Native 'goreleaser' @('release', '--snapshot', '--clean')

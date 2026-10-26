@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Example Docker Compose file for pihole-rbac. Copy it to compose.yaml beside a secrets/ directory, then:
+#
+#   mkdir -p secrets
+#   openssl rand -base64 32 > secrets/secret_key      # the master key; keep a copy somewhere safe
+#   sudo chown 65532:65532 secrets/* && sudo chmod 0400 secrets/*
+#   docker compose up -d
+#   docker compose logs pihole-rbac | grep 'setup token'
+#
+# The container runs as UID 65532 (distroless "nonroot"), and Compose mounts file secrets with the host file's owner
+# and mode, hence the chown. Open http://<host>:8080/setup (or the reverse proxy's address) and enter the setup token;
+# `docker compose exec pihole-rbac pihole-rbac setup --print-token` makes a new one if it has expired.
+#
+# Updating: the app shows a banner when a new version is out. Run `docker compose pull && docker compose up -d`;
+# the new container backs up the database and runs its migrations on startup. The app never updates itself.
+
+services:
+  pihole-rbac:
+    image: ghcr.io/kate-0713/pihole-rbac:latest # or pin a version, e.g. :1.0.0
+    restart: unless-stopped
+    ports:
+      # Plain HTTP: put a reverse proxy (Caddy, Traefik, nginx) in front for HTTPS. Bound to loopback here so only
+      # a proxy on this host can reach it; use "8080:8080" if the proxy runs elsewhere.
+      - "127.0.0.1:8080:8080"
+    environment:
+      # The address the reverse proxy connects from, so its X-Forwarded-For and X-Forwarded-Proto are believed (login
+      # rate limits and the audit log use the client address). Keep it as narrow as possible: anything listed here
+      # can claim any client address. Through a published port, the app usually sees Docker's bridge gateway (e.g.
+      # 172.18.0.1); a proxy container on the same Compose network connects from its own address.
+      # PIHOLE_RBAC_TRUSTED_PROXIES: "172.18.0.1"
+      # auto (default): Secure cookies when the proxy says the request was HTTPS.
+      PIHOLE_RBAC_COOKIE_SECURE: "auto"
+      # Encrypts the Pi-hole passwords, the LDAP bind password and notification secrets stored in the database. It
+      # must not live in the data volume. Without it those can only come from the environment.
+      PIHOLE_RBAC_SECRET_KEY_FILE: /run/secrets/pihole_rbac_secret_key
+      PIHOLE_RBAC_LOG_LEVEL: "info"
+      # Optional: the zone for log timestamps and log file dates (UTC otherwise). The client reset schedule has its
+      # own zone in the app.
+      TZ: "Europe/London"
+      # Optional: daily log files in the data volume as well as `docker compose logs`.
+      # PIHOLE_RBAC_LOG_DIR: /var/lib/pihole-rbac/logs
+      # PIHOLE_RBAC_LOG_RETENTION_DAYS: "30"
+      # Optional: air-gapped installs can turn off the daily check for a new release.
+      # PIHOLE_RBAC_UPDATE_CHECK: "false"
+      #
+      # Optional overrides. Passwords are normally entered in the app and stored encrypted; a variable set here is
+      # used instead, and the app shows it as managed by the environment. Each needs a matching secret below.
+      # PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD_FILE: /run/secrets/pihole1_password
+      # PIHOLE_RBAC_LDAP_BIND_PASSWORD_FILE: /run/secrets/ldap_bind_password
+      # PIHOLE_RBAC_LDAP_CA_FILE: /run/secrets/ldap_ca
+    secrets:
+      - pihole_rbac_secret_key
+      # - pihole1_password
+      # - ldap_bind_password
+      # - ldap_ca
+    volumes:
+      # The SQLite database, the session signing key and the pre-migration backups. A new named volume takes the
+      # image's owner (65532); a host directory mounted instead must be owned by 65532 (mode 0750).
+      - pihole-rbac-data:/var/lib/pihole-rbac
+    # The app writes only to its data volume (and SQLite may spill to /tmp).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  pihole_rbac_secret_key:
+    file: ./secrets/secret_key
+  # pihole1_password:
+  #   file: ./secrets/pihole1_password
+  # ldap_bind_password:
+  #   file: ./secrets/ldap_bind_password
+  # ldap_ca:
+  #   file: ./secrets/ldap_ca.pem
+
+volumes:
+  pihole-rbac-data:

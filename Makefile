@@ -24,7 +24,7 @@ API_GEN  := internal/api/gen/api.gen.go web/src/lib/api/schema.d.ts
 export CGO_ENABLED := 0
 export PIHOLE_RBAC_DATA_DIR ?= $(CURDIR)/.devdata
 
-.PHONY: help web web-check web-test e2e build check-embedded test generate generate-check dev-api dev-web snapshot clean
+.PHONY: help web web-check web-test e2e build check-embedded test generate generate-check dev-api dev-web docker snapshot clean
 
 help: ## List tasks
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-15s %s\n", $$1, $$2}'
@@ -81,6 +81,10 @@ dev-api: ## Run the API on :8080 with the dev data dir (no frontend build needed
 
 dev-web: web/node_modules ## Run the Vite dev server (proxies /api to :8080)
 	npm --prefix web run dev
+
+docker: ## Build the Docker image for this machine's platform as pihole-rbac:dev
+	docker build -f deploy/docker/Dockerfile -t pihole-rbac:dev \
+		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) .
 
 snapshot: ## GoReleaser snapshot build into dist/
 	goreleaser release --snapshot --clean

@@ -1,0 +1,18 @@
+# Keep the build context small and free of local state: the image builds the frontend and the binary itself.
+.git
+.github
+.idea
+.vscode
+.devdata
+.env
+.env.*
+bin
+dist
+**/node_modules
+web/build/app
+web/test-results
+web/playwright-report
+web/.svelte-kit
+deploy/docker/secrets
+*.db
+*.db-*

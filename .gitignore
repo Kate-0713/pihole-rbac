@@ -5,6 +5,9 @@
 # Dev data dir (SQLite DB, session key) used by `make dev-api` / `.\build.ps1 dev-api`
 /.devdata/
 
+# Secrets for a local run of deploy/docker/compose.example.yaml
+/deploy/docker/secrets/
+
 # Local env files with secrets
 .env
 .env.*
