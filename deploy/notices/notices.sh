@@ -18,6 +18,14 @@ readonly web="web/build/notices-web.txt"
 readonly out="web/build/app/THIRD_PARTY_NOTICES.txt"
 readonly rule="--------------------------------------------------------------------------------"
 
+# Modules whose licence go-licenses can't classify, as "module licence sha256-of-its-LICENSE-file". Each was read by
+# hand; the checksum makes an update that changes the file fail here, so it's read again. go-licenses skips them and
+# their LICENSE comes from the module cache.
+#   modernc.org/mathutil: BSD-3-Clause, worded "the names of the authors", which go-licenses v1.6.0 doesn't match.
+readonly manual=(
+	"modernc.org/mathutil BSD-3-Clause bfa9bf72a72ca009fd62a8f84fca3dca67e51d93af96352723646599898b6cf5"
+)
+
 die() {
 	echo "notices: $*" >&2
 	exit 1
@@ -31,9 +39,21 @@ trap 'rm -rf "$tmp"' EXIT
 export GOOS=linux CGO_ENABLED=0
 golicenses() { go tool -modfile=tools/go.mod go-licenses "$@"; }
 
-golicenses check "$pkg" --ignore "$self" --allowed_licenses="$allowed"
-golicenses save "$pkg" --ignore "$self" --save_path "$tmp/go"
-golicenses report "$pkg" --ignore "$self" >"$tmp/report.csv"
+ignore=(--ignore "$self")
+linked="$(go list -deps -f '{{with .Module}}{{.Path}}{{end}}' "$pkg" | sort -u)"
+for entry in "${manual[@]}"; do
+	read -r mod _ sum <<<"$entry"
+	grep -qxF "$mod" <<<"$linked" || die "$mod is no longer linked into the binary: remove it from the manual list"
+	dir="$(go list -m -f '{{.Dir}}' "$mod")"
+	[ -f "$dir/LICENSE" ] || die "$mod has no LICENSE file any more: read its licence again"
+	[ "$(sha256sum "$dir/LICENSE" | cut -d' ' -f1)" = "$sum" ] ||
+		die "$mod's LICENSE has changed: read it again and update its entry in the manual list"
+	ignore+=(--ignore "$mod")
+done
+
+golicenses check "$pkg" "${ignore[@]}" --allowed_licenses="$allowed"
+golicenses save "$pkg" "${ignore[@]}" --save_path "$tmp/go"
+golicenses report "$pkg" "${ignore[@]}" >"$tmp/report.csv"
 [ -s "$tmp/report.csv" ] || die "go-licenses reported no modules"
 
 # notice NAME LICENCE SOURCE FILE...: one entry, its licence files one after another.
@@ -72,6 +92,11 @@ EOF
 		)
 		[ ${#files[@]} -gt 0 ] || die "no licence file saved for $lib"
 		notice "$lib" "$licence" "$url" "${files[@]}"
+	done
+	for entry in "${manual[@]}"; do
+		read -r mod licence _ <<<"$entry"
+		notice "$mod $(go list -m -f '{{.Version}}' "$mod")" "$licence" "https://pkg.go.dev/$mod" \
+			"$(go list -m -f '{{.Dir}}' "$mod")/LICENSE"
 	done
 	cat <<EOF
 FRONTEND PACKAGES (bundled into the web interface)
