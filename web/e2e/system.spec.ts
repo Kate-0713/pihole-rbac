@@ -68,6 +68,10 @@ async function fakeUpdater(page: Page, over: Record<string, unknown> = {}) {
 		}
 		await route.fulfill({ json: state });
 	});
+	// SvelteKit's build stamp: once the server runs the new version, it serves that version's pages too.
+	await page.route('**/_app/version.json', (route) =>
+		state.current_version === '2.0.0' ? route.continue() : route.fulfill({ json: { version: 'the-new-build' } })
+	);
 	return { requested: () => requested };
 }
 
@@ -146,7 +150,7 @@ test('an update on LXC: the banner, Update now, its progress and the result', as
 	await expect(page.getByText('Update finished: running v2.1.0.')).toBeVisible({ timeout: 10_000 });
 	await expect(history.getByText('Done')).toBeVisible();
 	await expect(history).toContainText('is running and healthy');
-	await expect(updates).toContainText('The server now runs v2.1.0. Reload the page');
+	await expect(page.getByRole('alert', { name: 'New version' })).toContainText('Reload to use the new version.');
 	await expect(updates.getByRole('button', { name: 'Update now' })).toBeVisible();
 });
 

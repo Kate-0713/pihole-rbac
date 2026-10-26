@@ -5,6 +5,7 @@
 <script lang="ts">
 	import AppHeader from '#lib/components/app/app-header.svelte';
 	import ErrorBanner from '#lib/components/app/error-banner.svelte';
+	import NewVersionBanner from '#lib/components/app/new-version-banner.svelte';
 	import UpdateBanner from '#lib/components/app/update-banner.svelte';
 	import WriteResultsPanel from '#lib/components/app/write-results-panel.svelte';
 	import { writeResults } from '#lib/stores/write-results.svelte.js';
@@ -25,6 +26,7 @@
 
 <main class="mx-auto grid w-full max-w-6xl flex-1 content-start gap-4 p-4">
 	<ErrorBanner />
+	<NewVersionBanner />
 	<UpdateBanner />
 	<WriteResultsPanel />
 	{@render children()}

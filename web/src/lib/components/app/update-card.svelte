@@ -3,6 +3,7 @@
 	SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <script lang="ts">
+	import { updated } from '$app/state';
 	import { ApiError, api, unwrap } from '#lib/api/client.js';
 	import UpdateHistory from '#lib/components/app/update-history.svelte';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
@@ -34,9 +35,14 @@
 	// read only once here (Svelte warns about reading a prop outside a reactive context; here that is the point).
 	// svelte-ignore state_referenced_locally
 	let status = $state<UpdateStatus>(initial);
-	// The version the page was loaded with: when it changes, the browser is still running the old version's pages.
+	// The version the page was loaded with. When the server reports another, the update has finished and this tab is
+	// still running the old version's pages: asking SvelteKit about the new build now, rather than at the root
+	// layout's next check, shows the new-version banner (with its Reload button) at once.
 	// svelte-ignore state_referenced_locally
 	const loadedVersion = initial.current_version;
+	$effect(() => {
+		if (status.current_version !== loadedVersion) void updated.check();
+	});
 
 	// $effect runs after the component is on the page and again whenever what it reads changes. This one keeps the
 	// shared store (and so the banner) in step with the card.
@@ -167,14 +173,6 @@
 
 		{#if restarting}
 			<Alert><AlertDescription>The app is restarting. This page carries on once it answers again.</AlertDescription></Alert>
-		{/if}
-		{#if status.current_version !== loadedVersion}
-			<Alert>
-				<AlertDescription class="flex flex-wrap items-center gap-3">
-					<span>The server now runs {running}. Reload the page to use its version of these pages.</span>
-					<Button size="sm" variant="outline" onclick={() => location.reload()}>Reload</Button>
-				</AlertDescription>
-			</Alert>
 		{/if}
 
 		{#if status.install === 'lxc'}

@@ -6,9 +6,12 @@
 	// Importing a CSS file in the root layout is the SvelteKit way to load global styles: Vite bundles it into the
 	// build, and every page sits inside this layout.
 	import '../app.css';
+	import { beforeNavigate } from '$app/navigation';
+	import { updated } from '$app/state';
 	import favicon from '#lib/assets/favicon.svg';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Toaster } from '#lib/components/ui/sonner/index.js';
+	import { whileVisible } from '#lib/poll.js';
 	import { applyTheme, theme } from '#lib/stores/theme.svelte.js';
 	import type { LayoutProps } from './$types';
 
@@ -20,6 +23,18 @@
 	// changes. app.html has already applied it once, before the page was drawn.
 	$effect(() => theme.start());
 	$effect(() => applyTheme(theme.resolved));
+
+	// A tab left open across an update keeps running the old build: an SPA moves between pages without asking the
+	// server for the page again. SvelteKit stamps each build with a version and serves it at /_app/version.json;
+	// updated.check() compares that with the version this tab loaded and sets updated.current when they differ. It is
+	// asked every five minutes while the tab is visible, and at once when the tab is shown again (whileVisible), which
+	// catches the usual case of coming back to a tab after updating. A failed ask just reports no change.
+	$effect(() => whileVisible(() => void updated.check(), 5 * 60_000));
+	// Once a new build is known, the next move to another page is a full page load, which brings in the new build.
+	// (The SvelteKit docs' recommended pattern: setting location.href replaces the client-side navigation.)
+	beforeNavigate(({ willUnload, to }) => {
+		if (updated.current && !willUnload && to?.url) location.href = to.url.href;
+	});
 </script>
 
 <svelte:head>
