@@ -13,6 +13,7 @@ set -euo pipefail
 
 image=${1:?usage: smoke-test.sh <image>}
 name="pihole-rbac-smoke-$$"
+volume="$name-data"
 
 fail() {
 	echo "smoke test failed: $*" >&2
@@ -26,6 +27,7 @@ cleanup() {
 		docker logs "$name" >&2 || true
 	fi
 	docker rm -f "$name" >/dev/null 2>&1 || true
+	docker volume rm "$volume" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -33,8 +35,10 @@ out="$(docker run --rm "$image" version)"
 echo "$out"
 grep -qx 'frontend: embedded' <<<"$out" || fail "the frontend is not embedded"
 
-# The key is passed as a plain variable here; compose.example.yaml uses a Docker secret.
+# As compose.example.yaml runs it: a read-only root with a new named volume for the data, which must take the image's
+# owner so the non-root user can write the database. The key is a plain variable here; compose uses a Docker secret.
 docker run -d --name "$name" \
+	-v "$volume:/var/lib/pihole-rbac" \
 	-e PIHOLE_RBAC_SECRET_KEY="$(openssl rand -base64 32)" \
 	-p 127.0.0.1::8080 \
 	--read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
