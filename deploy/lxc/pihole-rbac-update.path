@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Installed to /etc/systemd/system by deploy/lxc/install.sh, with pihole-rbac-update.service. The app writes
+# /run/pihole-rbac/update.request when an admin asks for an update (Update now, or sudo pihole-rbac update); this
+# starts the updater, which removes the file first.
+
+[Unit]
+Description=pihole-rbac: watch for update requests
+Documentation=https://github.com/Kate-0713/pihole-rbac
+
+[Path]
+PathExists=/run/pihole-rbac/update.request
+Unit=pihole-rbac-update.service
+
+[Install]
+WantedBy=multi-user.target

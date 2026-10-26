@@ -7,7 +7,7 @@
 # env file, the secrets or the data once they exist.
 #
 #   install.sh                       install or upgrade to the latest release (signature and checksum verified)
-#   install.sh --version v1.2.3      install or upgrade to that release
+#   install.sh --version v1.2.3      install or upgrade to that release (a prerelease such as v1.2.3-rc.1 too)
 #   install.sh --binary <file>       install a binary already on this host, e.g. from `make build` (not verified);
 #                                    the unit and env template are taken from beside this script
 #   install.sh --uninstall           remove the service and the binary; keep config, data and logs
@@ -26,6 +26,9 @@ readonly MINISIGN_PUBKEY="RWSiTwpzJ1fyeg5FbD9k+fgdn1h28wLmH8lid3NJsRYxw5iv7iHhzU
 readonly APP=pihole-rbac
 readonly BIN=/usr/local/bin/pihole-rbac
 readonly UNIT=/etc/systemd/system/pihole-rbac.service
+# The updater's units: the path unit watches for the app's update requests and starts the oneshot service, which runs
+# `pihole-rbac updater` as root.
+readonly UPDATE_UNITS=(pihole-rbac-update.path pihole-rbac-update.service)
 readonly CONF_DIR=/etc/pihole-rbac
 readonly ENV_FILE=/etc/pihole-rbac/env
 readonly SECRETS_DIR=/etc/pihole-rbac/secrets
@@ -81,8 +84,8 @@ parse_args() {
 		*) die "unknown option $1 (see --help)" ;;
 		esac
 	done
-	if [ -n "$version" ] && ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-		die "--version must look like v1.2.3"
+	if [ -n "$version" ] && ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+		die "--version must look like v1.2.3 or v1.2.3-rc.1"
 	fi
 	if [ -n "$version" ] && [ -n "$binary" ]; then
 		die "--version and --binary can't be used together"
@@ -187,18 +190,25 @@ fetch_release() {
 	cp "$tmp/release/pihole-rbac" "$tmp/pihole-rbac"
 	cp "$tmp/release/deploy/lxc/pihole-rbac.service" "$tmp/pihole-rbac.service"
 	cp "$tmp/release/deploy/lxc/env.example" "$tmp/env.example"
+	# Releases before the updater have no update units; the install then works without them.
+	for f in "${UPDATE_UNITS[@]}"; do
+		if [ -f "$tmp/release/deploy/lxc/$f" ]; then
+			cp "$tmp/release/deploy/lxc/$f" "$tmp/$f"
+		fi
+	done
 }
 
 # use_local_binary copies --binary and the files beside this script into $tmp.
 use_local_binary() {
 	[ -f "$binary" ] || die "$binary doesn't exist"
-	for f in pihole-rbac.service env.example; do
+	for f in pihole-rbac.service env.example "${UPDATE_UNITS[@]}"; do
 		[ -f "$script_dir/$f" ] || die "$f isn't beside this script; run it from deploy/lxc in a checkout of the repo"
 	done
 	warn "installing $binary as given: it was not signature-checked"
 	cp "$binary" "$tmp/pihole-rbac"
-	cp "$script_dir/pihole-rbac.service" "$tmp/pihole-rbac.service"
-	cp "$script_dir/env.example" "$tmp/env.example"
+	for f in pihole-rbac.service env.example "${UPDATE_UNITS[@]}"; do
+		cp "$script_dir/$f" "$tmp/$f"
+	done
 }
 
 # check_binary refuses a binary that doesn't run here or was built without the frontend.
@@ -258,13 +268,26 @@ install_binary() {
 	echo changed
 }
 
-# install_unit puts the unit in place. Prints "changed" if it was new or different.
+# install_unit NAME puts the unit from $tmp in /etc/systemd/system. Prints "changed" if it was new or different.
 install_unit() {
-	if [ -f "$UNIT" ] && cmp -s "$tmp/pihole-rbac.service" "$UNIT"; then
+	local dst="/etc/systemd/system/$1"
+	if [ -f "$dst" ] && cmp -s "$tmp/$1" "$dst"; then
 		return
 	fi
-	install -o root -g root -m 0644 "$tmp/pihole-rbac.service" "$UNIT"
+	install -o root -g root -m 0644 "$tmp/$1" "$dst"
 	echo changed
+}
+
+# install_update_units installs the updater's units when the release has them. Prints "changed" if any changed.
+install_update_units() {
+	local f changed=""
+	for f in "${UPDATE_UNITS[@]}"; do
+		[ -f "$tmp/$f" ] || return 0
+	done
+	for f in "${UPDATE_UNITS[@]}"; do
+		[ -z "$(install_unit "$f")" ] || changed=changed
+	done
+	echo "$changed"
 }
 
 # wait_healthy waits up to 60 seconds for /healthz, reading the listen address from the env file.
@@ -303,9 +326,7 @@ show_setup() {
 		echo
 		echo "    $token"
 		echo
-		echo "    For a new token later:"
-		echo "    sudo systemd-run --quiet --pipe --wait --collect --uid=$APP --gid=$APP \\"
-		echo "      --property=EnvironmentFile=$ENV_FILE $BIN setup --print-token"
+		echo "    For a new token later: sudo $APP setup --print-token"
 		echo
 	else
 		info "First-run setup is already complete"
@@ -326,15 +347,22 @@ do_install() {
 	ensure_dirs
 	ensure_env
 
-	local bin_changed unit_changed
+	local bin_changed unit_changed update_changed
 	bin_changed="$(install_binary)"
-	unit_changed="$(install_unit)"
+	unit_changed="$(install_unit pihole-rbac.service)"
+	update_changed="$(install_update_units)"
 	if [ -n "$bin_changed" ]; then info "Installed $BIN"; else info "$BIN is already this version"; fi
-	if [ -n "$unit_changed" ]; then
-		info "Installed $UNIT"
+	if [ -n "$unit_changed" ]; then info "Installed $UNIT"; fi
+	if [ -n "$update_changed" ]; then info "Installed the updater's units (${UPDATE_UNITS[*]})"; fi
+	if [ -n "$unit_changed" ] || [ -n "$update_changed" ]; then
 		systemctl daemon-reload
 	fi
 	systemctl enable --quiet "$APP"
+	if [ -f "/etc/systemd/system/${UPDATE_UNITS[0]}" ]; then
+		systemctl enable --now --quiet "${UPDATE_UNITS[0]}"
+	else
+		warn "this release has no updater units, so Update now won't work until a newer release is installed"
+	fi
 
 	if ! systemctl is-active --quiet "$APP"; then
 		info "Starting $APP"
@@ -351,6 +379,7 @@ do_install() {
 	info "$APP is running: $("$BIN" version | head -n 1)"
 	show_setup
 	echo "Logs: journalctl -u $APP, and $LOG_DIR. Settings: $ENV_FILE."
+	echo "Updates: Update now on the System page, or sudo $APP update."
 }
 
 do_uninstall() {
@@ -364,9 +393,14 @@ do_uninstall() {
 		[ "$answer" = yes ] || die "not purging"
 	fi
 	if [ -d /run/systemd/system ]; then
+		systemctl disable --now --quiet "${UPDATE_UNITS[0]}" 2>/dev/null || true
+		systemctl stop --quiet "${UPDATE_UNITS[1]}" 2>/dev/null || true
 		systemctl disable --now --quiet "$APP" 2>/dev/null || true
 	fi
 	rm -f "$UNIT"
+	for f in "${UPDATE_UNITS[@]}"; do
+		rm -f "/etc/systemd/system/$f"
+	done
 	if $purge; then
 		# Local drop-ins (systemctl edit) are config too, so they go only with --purge.
 		rm -rf "/etc/systemd/system/$APP.service.d"
@@ -374,8 +408,8 @@ do_uninstall() {
 	if [ -d /run/systemd/system ]; then
 		systemctl daemon-reload
 	fi
-	rm -f "$BIN" "$BIN.new" "$BIN.prev"
-	info "Removed the service and $BIN"
+	rm -f "$BIN" "$BIN.new" "$BIN.new.tmp" "$BIN.prev" "$BIN.prev.tmp"
+	info "Removed the services and $BIN"
 	if $purge; then
 		rm -rf "$CONF_DIR" "$DATA_DIR" "$LOG_DIR"
 		if getent passwd "$APP" >/dev/null; then userdel "$APP"; fi

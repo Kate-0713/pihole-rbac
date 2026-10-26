@@ -358,7 +358,7 @@ func TestAnnounce(t *testing.T) {
 	e.current = "v2.1.0"
 	done := e.addRequest(e.now.Add(-time.Hour), "", "done", "verified v2.1.0\nhealthy\n")
 	e.addRequest(e.now.Add(-50*time.Minute), "v2.2.0", "failed", "downloading\nchecking the signature of v2.2.0's checksums: not valid\n")
-	e.addRequest(e.now.Add(-40*time.Minute), "v2.3.0", "rolled_back", "restarted\nnot healthy after 60s; restored v2.1.0\n")
+	e.addRequest(e.now.Add(-40*time.Minute), "v2.3.0", "rolled_back", "12:00:00 restarted\n12:01:00 not healthy after 60s; restored v2.1.0\n")
 	e.addRequest(e.now.Add(-time.Minute), "", "pending", "")
 
 	if err := e.svc.Announce(ctx); err != nil {
@@ -380,7 +380,7 @@ func TestAnnounce(t *testing.T) {
 			d["summary"] != w.summary {
 			t.Errorf("row %d = %s %s %s %v", i, rows[i].Action, rows[i].Result, rows[i].Username, d)
 		}
-		if errText, _ := d["error"].(string); !strings.Contains(errText, w.errText) {
+		if errText, _ := d["error"].(string); !strings.Contains(errText, w.errText) || strings.HasPrefix(errText, "12:") {
 			t.Errorf("row %d error = %q, want %q", i, errText, w.errText)
 		}
 	}

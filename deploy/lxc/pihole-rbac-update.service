@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Installed to /etc/systemd/system by deploy/lxc/install.sh and started by pihole-rbac-update.path. Runs the
+# installed binary as root to carry out an update request: it verifies the release's signature with the key built
+# into the binary, backs up the database, replaces /usr/local/bin/pihole-rbac, restarts pihole-rbac.service and rolls
+# back if the new version doesn't become healthy. It takes no URL or key from the app. Progress is in the System
+# page, and in journalctl -u pihole-rbac-update.
+
+[Unit]
+Description=pihole-rbac: carry out an update request
+Documentation=https://github.com/Kate-0713/pihole-rbac
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The service's environment, for PIHOLE_RBAC_DATA_DIR and PIHOLE_RBAC_LISTEN (the health check).
+EnvironmentFile=/etc/pihole-rbac/env
+ExecStart=/usr/local/bin/pihole-rbac updater
+# The updater gives up after 15 minutes; this leaves time for a rollback.
+TimeoutStartSec=20min
+UMask=0077
+
+# Root, but only what an update needs: write the binary, the data directory (backups, a restored database) and the
+# request file; give files to the pihole-rbac user; ask systemd to restart the service.
+CapabilityBoundingSet=CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/usr/local/bin /var/lib/pihole-rbac -/run/pihole-rbac
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native

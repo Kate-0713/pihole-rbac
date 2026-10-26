@@ -102,7 +102,7 @@ type Client struct {
 func NewClient(timeout time.Duration) *Client {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.Proxy = http.ProxyFromEnvironment
-	return &Client{
+	c := &Client{
 		http: &http.Client{
 			Transport: t,
 			Timeout:   timeout,
@@ -122,6 +122,8 @@ func NewClient(timeout time.Duration) *Client {
 		download: downloadBase,
 		key:      Key(),
 	}
+	testOverride(c)
+	return c
 }
 
 // Latest returns the newest published release that isn't a prerelease or a draft. It returns ErrNoRelease when

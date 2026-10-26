@@ -45,6 +45,10 @@ func run(args []string) error {
 	cmd := "serve"
 	if len(args) > 0 {
 		cmd = args[0]
+		// On an LXC install, root's commands that touch the data directory run as the service user.
+		if err := reexecAsService(cmd, args[1:]); err != nil {
+			return err
+		}
 	}
 	switch cmd {
 	case "serve":
@@ -62,6 +66,10 @@ func run(args []string) error {
 		return cmdImportJSON(args[1:])
 	case "healthcheck":
 		return cmdHealthcheck(args[1:])
+	case "update":
+		return cmdUpdate(args[1:])
+	case "updater":
+		return cmdUpdater(args[1:])
 	case "help", "--help", "-h":
 		fmt.Fprint(stdout, usage)
 		return nil
@@ -84,8 +92,15 @@ commands:
   import-json --config <config.json> [--permissions <file>] [--users <file>] [--instance-name <name>]
               [--time-zone <zone>] [--offline] [--apply]
                                show what would be imported from v1's files; --apply imports it into a new database
+  update [--no-wait] [vX.Y.Z]  LXC installs: update to the latest release, or to the one given (a prerelease only
+                               when named), and follow the update until it finishes
+  updater                      carry out a pending update request; run as root by pihole-rbac-update.service
   healthcheck                  exit 0 if the server on PIHOLE_RBAC_LISTEN answers /healthz, 1 otherwise
   version                      print the version, build details and source location
+
+On an LXC install, setup, user, rotate-key, import-json and update run as root (sudo pihole-rbac ...) re-run
+themselves as the pihole-rbac user with /etc/pihole-rbac/env, so files they create keep the right owner. File paths
+given to rotate-key and import-json must be readable by that user.
 `
 
 // versionText is checked by CI and the release build: a release must report "frontend: embedded".
@@ -94,7 +109,11 @@ func versionText() string {
 	if _, built := web.Dist(); built {
 		frontend = "embedded"
 	}
-	return buildinfo.String() + "\nfrontend: " + frontend + "\nsource: " + buildinfo.Source + " (" + buildinfo.License + ")"
+	text := buildinfo.String() + "\nfrontend: " + frontend + "\nsource: " + buildinfo.Source + " (" + buildinfo.License + ")"
+	if release.TestBuild {
+		text += "\nTEST BUILD (updatertest): releases can come from PIHOLE_RBAC_TEST_RELEASES_URL; never deploy this binary"
+	}
+	return text
 }
 
 // loadFrontend returns the embedded SPA, or nil for a binary built without it, which then serves a placeholder page.

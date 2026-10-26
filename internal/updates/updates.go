@@ -476,9 +476,16 @@ func (s *Service) outcome(r db.UpdateRequest, now time.Time) audit.Entry {
 }
 
 // lastLine is the last non-empty line of an updater log, which says why it stopped, or def.
+// The updater starts each line with the UTC time ("12:04:05 "), which the audit entry has already.
 func lastLine(log, def string) string {
 	lines := strings.Split(strings.TrimSpace(log), "\n")
-	if l := strings.TrimSpace(lines[len(lines)-1]); l != "" {
+	l := strings.TrimSpace(lines[len(lines)-1])
+	if len(l) > 9 && l[8] == ' ' {
+		if _, err := time.Parse("15:04:05", l[:8]); err == nil {
+			l = strings.TrimSpace(l[9:])
+		}
+	}
+	if l != "" {
 		return l
 	}
 	return def
