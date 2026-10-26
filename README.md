@@ -5,11 +5,7 @@ control. Only this app holds Pi-hole credentials; every action is
 permission-checked before it reaches Pi-hole.
 
 v2 is a rebuild of v1: a Go JSON API with an embedded SvelteKit SPA and a
-SQLite database, shipped as one static binary. The architecture document in
-the pihole-rbac-v2 project is the source of truth for design decisions.
-
-> Status: repo skeleton - The binary serves `/healthz` and
-> reports its version; nothing else works yet.
+SQLite database, shipped as one static binary.
 
 ## Layout
 
