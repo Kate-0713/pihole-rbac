@@ -70,6 +70,11 @@ var actions = []ActionInfo{
 	{ActionSettingsUpdate, GroupSettings, "Settings changed (login methods, LDAP, sessions, audit retention)"},
 	{ActionConfigReload, GroupSettings, "Secrets reloaded"},
 	{ActionRotateKey, GroupSettings, "The master key was rotated on the command line"},
+	{ActionAppRestart, GroupSettings, "The app was restarted"},
+	{ActionUpdateRequest, GroupSettings, "An update was requested"},
+	{ActionUpdateDone, GroupSettings, "An update finished and the new version is running"},
+	{ActionUpdateFailed, GroupSettings, "An update failed before anything was replaced"},
+	{ActionUpdateRolledBack, GroupSettings, "An update was rolled back because the new version didn't start"},
 	{ActionAuditPrune, GroupSettings, "Old audit entries and client reset runs deleted"},
 	{ActionClientResetRules, GroupSettings, "The client reset rules changed"},
 

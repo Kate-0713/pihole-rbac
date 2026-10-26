@@ -106,7 +106,14 @@ const (
 	ActionConfigReload = "config_reload" // secrets were reloaded; the detail lists the names that changed or failed
 	// `pihole-rbac rotate-key` re-encrypted the stored secrets under a new master key; the detail lists them by table and
 	// name, never a value.
-	ActionRotateKey = "rotate_key"
+	ActionRotateKey  = "rotate_key"
+	ActionAppRestart = "app_restart" // the app was restarted from the System page
+	// Updates. A request names the version asked for, or "latest". The outcomes are written by the app as SystemUser
+	// once the updater has finished, since the updater itself writes only update_requests.
+	ActionUpdateRequest    = "update_request"
+	ActionUpdateDone       = "update_done"
+	ActionUpdateFailed     = "update_failed"      // the updater stopped before replacing anything
+	ActionUpdateRolledBack = "update_rolled_back" // the new version didn't become healthy; the previous one is back
 	// Notification channels. The detail lists what changed; a secret shows as stored or confirmed, never its value.
 	ActionChannelCreate = "channel_create"
 	ActionChannelUpdate = "channel_update"

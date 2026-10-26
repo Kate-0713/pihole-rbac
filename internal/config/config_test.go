@@ -24,7 +24,7 @@ func TestLoadDefaults(t *testing.T) {
 	wantDir, _ := filepath.Abs(DefaultDataDir)
 	if c.Listen != ":8080" || c.DataDir != wantDir || c.CookieSecure != CookieSecureAuto ||
 		!c.UpdateCheck || c.LogLevel != slog.LevelInfo || len(c.TrustedProxies) != 0 || c.LDAPCAFile != "" ||
-		c.LogDir != "" || c.LogRetentionDays != DefaultLogRetentionDays {
+		c.LogDir != "" || c.LogRetentionDays != DefaultLogRetentionDays || c.Install != InstallOther {
 		t.Fatalf("defaults = %+v", c)
 	}
 }
@@ -76,6 +76,20 @@ func TestLoad(t *testing.T) {
 				}
 			}},
 		{name: "update check invalid", env: map[string]string{"PIHOLE_RBAC_UPDATE_CHECK": "nah"}, wantErr: "PIHOLE_RBAC_UPDATE_CHECK"},
+		{name: "install lxc", env: map[string]string{"PIHOLE_RBAC_INSTALL": "lxc"},
+			check: func(t *testing.T, c *Config) {
+				if c.Install != InstallLXC {
+					t.Errorf("Install = %q", c.Install)
+				}
+			}},
+		{name: "install docker, any case", env: map[string]string{"PIHOLE_RBAC_INSTALL": " Docker "},
+			check: func(t *testing.T, c *Config) {
+				if c.Install != InstallDocker {
+					t.Errorf("Install = %q", c.Install)
+				}
+			}},
+		{name: "install other isn't a value", env: map[string]string{"PIHOLE_RBAC_INSTALL": "other"}, wantErr: "PIHOLE_RBAC_INSTALL"},
+		{name: "install invalid", env: map[string]string{"PIHOLE_RBAC_INSTALL": "k8s"}, wantErr: "PIHOLE_RBAC_INSTALL"},
 		{name: "log level", env: map[string]string{"PIHOLE_RBAC_LOG_LEVEL": "DEBUG"},
 			check: func(t *testing.T, c *Config) {
 				if c.LogLevel != slog.LevelDebug {

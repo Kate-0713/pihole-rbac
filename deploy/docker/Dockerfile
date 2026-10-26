@@ -66,8 +66,10 @@ COPY --from=go /src/web/build/app/THIRD_PARTY_NOTICES.txt /usr/share/doc/pihole-
 
 # distroless :nonroot is UID/GID 65532. Logs go to stdout unless PIHOLE_RBAC_LOG_DIR is set.
 USER 65532:65532
+# PIHOLE_RBAC_INSTALL=docker: the app never updates itself here; the System page shows the docker compose commands.
 ENV PIHOLE_RBAC_LISTEN=:8080 \
-    PIHOLE_RBAC_DATA_DIR=/var/lib/pihole-rbac
+    PIHOLE_RBAC_DATA_DIR=/var/lib/pihole-rbac \
+    PIHOLE_RBAC_INSTALL=docker
 EXPOSE 8080
 
 # distroless has no curl, so the binary checks its own /healthz. The start period covers migrations on a first start

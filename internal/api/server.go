@@ -30,6 +30,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
+	"github.com/Kate-0713/pihole-rbac/internal/updates"
 )
 
 // MaxBodyBytes caps every request body, as in v1.
@@ -50,17 +51,21 @@ func contentSecurityPolicy(scriptHashes []string) string {
 
 // Options holds the server's dependencies.
 type Options struct {
-	Store          *store.Store
-	Sessions       *auth.Sessions
-	Auth           auth.Authenticator
-	Audit          *audit.Logger
-	Secrets        *secrets.Manager
-	Instances      *instances.Service     // instance changes, and the client pool for health and secret reloads
-	Drift          *instances.Drift       // mirrored groups' drift reports; nil in tests that don't need them
-	Roles          *rbac.Manager          // changes to roles, grants, user roles, LDAP mappings and users
-	LoginSettings  *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
-	Notifications  *notifications.Service // notification channels; nil in tests that don't need them
-	ClientReset    *clientreset.Service   // client reset rules and runs; nil in tests that don't need them
+	Store         *store.Store
+	Sessions      *auth.Sessions
+	Auth          auth.Authenticator
+	Audit         *audit.Logger
+	Secrets       *secrets.Manager
+	Instances     *instances.Service     // instance changes, and the client pool for health and secret reloads
+	Drift         *instances.Drift       // mirrored groups' drift reports; nil in tests that don't need them
+	Roles         *rbac.Manager          // changes to roles, grants, user roles, LDAP mappings and users
+	LoginSettings *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
+	Notifications *notifications.Service // notification channels; nil in tests that don't need them
+	ClientReset   *clientreset.Service   // client reset rules and runs; nil in tests that don't need them
+	Updates       *updates.Service       // the update check and update requests; nil in tests that don't need them
+	// Restart asks the process to shut down cleanly, as SIGTERM does, so its service manager starts it again. nil in
+	// tests that don't need it.
+	Restart        func()
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables

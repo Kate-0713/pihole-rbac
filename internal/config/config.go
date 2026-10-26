@@ -29,6 +29,13 @@ const (
 	maxLogRetentionDays     = 3650
 )
 
+// The values of PIHOLE_RBAC_INSTALL. InstallOther is what an unset variable means.
+const (
+	InstallLXC    = "lxc"
+	InstallDocker = "docker"
+	InstallOther  = "other"
+)
+
 // CookieSecure decides when the session cookie gets the Secure flag.
 type CookieSecure int
 
@@ -51,7 +58,10 @@ type Config struct {
 	CookieSecure   CookieSecure
 	LDAPCAFile     string // optional CA bundle for LDAPS
 	UpdateCheck    bool
-	LogLevel       slog.Level
+	// Install is how the app was installed, which decides what updating offers: InstallLXC (set by the systemd
+	// unit), InstallDocker (set in the image) or InstallOther.
+	Install  string
+	LogLevel slog.Level
 	// LogDir, when set (absolute), gets one log file per day as well as stdout; LogRetentionDays of them are kept,
 	// 0 meaning all.
 	LogDir           string
@@ -117,6 +127,15 @@ func Load(getenv func(string) string) (*Config, error) {
 			bad("UPDATE_CHECK", fmt.Errorf("%q is not true or false", v))
 		}
 		c.UpdateCheck = b
+	}
+	c.Install = InstallOther
+	if v := get("INSTALL"); v != "" {
+		switch v = strings.ToLower(v); v {
+		case InstallLXC, InstallDocker:
+			c.Install = v
+		default:
+			bad("INSTALL", fmt.Errorf("%q is not lxc or docker (leave it unset for anything else)", v))
+		}
 	}
 	if v := get("LOG_LEVEL"); v != "" {
 		if err := c.LogLevel.UnmarshalText([]byte(v)); err != nil {

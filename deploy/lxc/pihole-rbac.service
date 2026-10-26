@@ -14,6 +14,8 @@ Wants=network-online.target
 Type=simple
 User=pihole-rbac
 Group=pihole-rbac
+# Tells the app it can ask the updater (pihole-rbac-update.path) for updates.
+Environment=PIHOLE_RBAC_INSTALL=lxc
 EnvironmentFile=/etc/pihole-rbac/env
 ExecStart=/usr/local/bin/pihole-rbac serve
 # POST /api/v1/system/restart exits cleanly and relies on this to come back.

@@ -981,6 +981,54 @@ func (e TargetHealthState) Valid() bool {
 	}
 }
 
+// Defines values for UpdateRequestStatus.
+const (
+	UpdateRequestStatusDone       UpdateRequestStatus = "done"
+	UpdateRequestStatusFailed     UpdateRequestStatus = "failed"
+	UpdateRequestStatusPending    UpdateRequestStatus = "pending"
+	UpdateRequestStatusRolledBack UpdateRequestStatus = "rolled_back"
+	UpdateRequestStatusRunning    UpdateRequestStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the UpdateRequestStatus enum.
+func (e UpdateRequestStatus) Valid() bool {
+	switch e {
+	case UpdateRequestStatusDone:
+		return true
+	case UpdateRequestStatusFailed:
+		return true
+	case UpdateRequestStatusPending:
+		return true
+	case UpdateRequestStatusRolledBack:
+		return true
+	case UpdateRequestStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateStatusInstall.
+const (
+	Docker UpdateStatusInstall = "docker"
+	Lxc    UpdateStatusInstall = "lxc"
+	Other  UpdateStatusInstall = "other"
+)
+
+// Valid indicates whether the value is a known member of the UpdateStatusInstall enum.
+func (e UpdateStatusInstall) Valid() bool {
+	switch e {
+	case Docker:
+		return true
+	case Lxc:
+		return true
+	case Other:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UserSource.
 const (
 	UserSourceLdap  UserSource = "ldap"
@@ -2111,6 +2159,17 @@ type LDAPUserTestInput struct {
 	Username string `json:"username"`
 }
 
+// LatestRelease The newest published release that isn't a prerelease. Absent until one is found.
+type LatestRelease struct {
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+
+	// Url The release's page on GitHub, with its changelog.
+	Url string `json:"url"`
+
+	// Version The tag, such as v2.1.0.
+	Version string `json:"version"`
+}
+
 // LiveCounters Counters since FTL last started.
 type LiveCounters struct {
 	ActiveClients int `json:"active_clients"`
@@ -2653,6 +2712,70 @@ type TestedPermissions struct {
 	Targets []TargetPermissions `json:"targets"`
 }
 
+// UpdateRequest defines model for UpdateRequest.
+type UpdateRequest struct {
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Id         int64      `json:"id"`
+
+	// Log The updater's progress, one line per step.
+	Log         string    `json:"log"`
+	RequestedAt time.Time `json:"requested_at"`
+
+	// RequestedBy The user who asked, or (cli) for sudo pihole-rbac update. Kept when the user is deleted.
+	RequestedBy string `json:"requested_by"`
+
+	// Status pending until the updater takes it; failed when it stopped before replacing anything; rolled_back when the new version didn't become healthy and the previous one was restored. A request not taken within 10 minutes, or not finished within an hour, is marked failed.
+	Status UpdateRequestStatus `json:"status"`
+
+	// TargetVersion The version asked for. Absent for the latest release.
+	TargetVersion *string `json:"target_version,omitempty"`
+}
+
+// UpdateRequestStatus pending until the updater takes it; failed when it stopped before replacing anything; rolled_back when the new version didn't become healthy and the previous one was restored. A request not taken within 10 minutes, or not finished within an hour, is marked failed.
+type UpdateRequestStatus string
+
+// UpdateRequestInput defines model for UpdateRequestInput.
+type UpdateRequestInput struct {
+	// TargetVersion A release tag newer than the running version, such as v2.1.0, or a prerelease such as v2.1.0-rc.1. Absent or empty for the latest release.
+	TargetVersion *string `json:"target_version,omitempty"`
+}
+
+// UpdateStatus defines model for UpdateStatus.
+type UpdateStatus struct {
+	// CanRequest An update can be requested now (an LXC install, a release build, nothing pending or running).
+	CanRequest bool `json:"can_request"`
+
+	// CheckEnabled False when PIHOLE_RBAC_UPDATE_CHECK is false.
+	CheckEnabled bool `json:"check_enabled"`
+
+	// CheckError Why the last check failed. The release found before it, if any, is still given.
+	CheckError *string `json:"check_error,omitempty"`
+
+	// CheckedAt When GitHub was last asked. Absent if never.
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+
+	// CurrentVersion The running version as built (see VersionInfo).
+	CurrentVersion string `json:"current_version"`
+
+	// Development The running version can't be compared with releases, so no update is ever reported available.
+	Development bool `json:"development"`
+
+	// Install From PIHOLE_RBAC_INSTALL. lxc can request updates here; docker is updated with docker compose pull and up -d; other is updated however it was installed.
+	Install UpdateStatusInstall `json:"install"`
+
+	// Latest The newest published release that isn't a prerelease. Absent until one is found.
+	Latest *LatestRelease `json:"latest,omitempty"`
+
+	// Requests The latest update requests, newest first (at most 10).
+	Requests []UpdateRequest `json:"requests"`
+
+	// UpdateAvailable The latest release is newer than the running version.
+	UpdateAvailable bool `json:"update_available"`
+}
+
+// UpdateStatusInstall From PIHOLE_RBAC_INSTALL. lxc can request updates here; docker is updated with docker compose pull and up -d; other is updated however it was installed.
+type UpdateStatusInstall string
+
 // User defines model for User.
 type User struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -2704,6 +2827,19 @@ type UserPassword struct {
 type UserRoles struct {
 	// RoleIds Every role the user should have; an empty list takes them all away and ends the user's sessions.
 	RoleIds []int64 `json:"role_ids"`
+}
+
+// VersionInfo defines model for VersionInfo.
+type VersionInfo struct {
+	// BuildDate As built (RFC 3339 for releases), or "unknown".
+	BuildDate string `json:"build_date"`
+	Commit    string `json:"commit"`
+
+	// Development The version can't be compared with releases (a development, snapshot or git-describe build).
+	Development bool `json:"development"`
+
+	// Version As built, without a leading v for a release ("2.1.0"); "dev" or a git-describe string otherwise.
+	Version string `json:"version"`
 }
 
 // WriteError Why an instance failed or was skipped. Present exactly when the status isn't ok.
@@ -3066,6 +3202,9 @@ type SetLDAPSettingsJSONRequestBody = LDAPSettingsInput
 // CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
 type CompleteSetupJSONRequestBody = SetupRequest
 
+// RequestUpdateJSONRequestBody defines body for RequestUpdate for application/json ContentType.
+type RequestUpdateJSONRequestBody = UpdateRequestInput
+
 // SetBlockingJSONRequestBody defines body for SetBlocking for application/json ContentType.
 type SetBlockingJSONRequestBody = BlockingInput
 
@@ -3275,9 +3414,24 @@ type ServerInterface interface {
 	// ReloadSecrets Reload the secrets
 	// (POST /api/v1/system/reload)
 	ReloadSecrets(w http.ResponseWriter, r *http.Request)
+	// RestartApp Restart the app
+	// (POST /api/v1/system/restart)
+	RestartApp(w http.ResponseWriter, r *http.Request)
 	// ListSecrets List the secrets
 	// (GET /api/v1/system/secrets)
 	ListSecrets(w http.ResponseWriter, r *http.Request)
+	// GetUpdateStatus Update status
+	// (GET /api/v1/system/update)
+	GetUpdateStatus(w http.ResponseWriter, r *http.Request)
+	// RequestUpdate Request an update
+	// (POST /api/v1/system/update)
+	RequestUpdate(w http.ResponseWriter, r *http.Request)
+	// CheckForUpdate Check for a new release now
+	// (POST /api/v1/system/update/check)
+	CheckForUpdate(w http.ResponseWriter, r *http.Request)
+	// GetVersion The running version
+	// (GET /api/v1/system/version)
+	GetVersion(w http.ResponseWriter, r *http.Request)
 	// ListTargets The instances the user can act on
 	// (GET /api/v1/targets)
 	ListTargets(w http.ResponseWriter, r *http.Request)
@@ -4868,11 +5022,81 @@ func (siw *ServerInterfaceWrapper) ReloadSecrets(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// RestartApp operation middleware
+func (siw *ServerInterfaceWrapper) RestartApp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestartApp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSecrets operation middleware
 func (siw *ServerInterfaceWrapper) ListSecrets(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListSecrets(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUpdateStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetUpdateStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUpdateStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestUpdate operation middleware
+func (siw *ServerInterfaceWrapper) RequestUpdate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestUpdate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CheckForUpdate operation middleware
+func (siw *ServerInterfaceWrapper) CheckForUpdate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckForUpdate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetVersion(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVersion(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5830,6 +6054,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/password", wrapper.ChangePassword)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/secrets", wrapper.ListSecrets)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/reload", wrapper.ReloadSecrets)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/version", wrapper.GetVersion)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/update", wrapper.GetUpdateStatus)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/update", wrapper.RequestUpdate)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/update/check", wrapper.CheckForUpdate)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/restart", wrapper.RestartApp)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets", wrapper.ListTargets)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instances", wrapper.ListInstances)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instances", wrapper.CreateInstance)
@@ -11277,6 +11506,63 @@ func (response ReloadSecrets503JSONResponse) VisitReloadSecretsResponse(w http.R
 	return err
 }
 
+type RestartAppRequestObject struct {
+}
+
+type RestartAppResponseObject interface {
+	VisitRestartAppResponse(w http.ResponseWriter) error
+}
+
+type RestartApp202Response struct {
+}
+
+func (response RestartApp202Response) VisitRestartAppResponse(w http.ResponseWriter) error {
+	w.WriteHeader(202)
+	return nil
+}
+
+type RestartApp401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RestartApp401JSONResponse) VisitRestartAppResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartApp403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RestartApp403JSONResponse) VisitRestartAppResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestartApp503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RestartApp503JSONResponse) VisitRestartAppResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSecretsRequestObject struct {
 }
 
@@ -11329,6 +11615,303 @@ func (response ListSecrets403JSONResponse) VisitListSecretsResponse(w http.Respo
 type ListSecrets503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response ListSecrets503JSONResponse) VisitListSecretsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUpdateStatusRequestObject struct {
+}
+
+type GetUpdateStatusResponseObject interface {
+	VisitGetUpdateStatusResponse(w http.ResponseWriter) error
+}
+
+type GetUpdateStatus200JSONResponse UpdateStatus
+
+func (response GetUpdateStatus200JSONResponse) VisitGetUpdateStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUpdateStatus401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetUpdateStatus401JSONResponse) VisitGetUpdateStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUpdateStatus403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetUpdateStatus403JSONResponse) VisitGetUpdateStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUpdateStatus503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetUpdateStatus503JSONResponse) VisitGetUpdateStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestUpdateRequestObject struct {
+	Body *RequestUpdateJSONRequestBody
+}
+
+type RequestUpdateResponseObject interface {
+	VisitRequestUpdateResponse(w http.ResponseWriter) error
+}
+
+type RequestUpdate202JSONResponse UpdateRequest
+
+func (response RequestUpdate202JSONResponse) VisitRequestUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestUpdate400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response RequestUpdate400JSONResponse) VisitRequestUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestUpdate401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RequestUpdate401JSONResponse) VisitRequestUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestUpdate403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RequestUpdate403JSONResponse) VisitRequestUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestUpdate409JSONResponse Error
+
+func (response RequestUpdate409JSONResponse) VisitRequestUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestUpdate415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response RequestUpdate415JSONResponse) VisitRequestUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestUpdate503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RequestUpdate503JSONResponse) VisitRequestUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckForUpdateRequestObject struct {
+}
+
+type CheckForUpdateResponseObject interface {
+	VisitCheckForUpdateResponse(w http.ResponseWriter) error
+}
+
+type CheckForUpdate200JSONResponse UpdateStatus
+
+func (response CheckForUpdate200JSONResponse) VisitCheckForUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckForUpdate401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CheckForUpdate401JSONResponse) VisitCheckForUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckForUpdate403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CheckForUpdate403JSONResponse) VisitCheckForUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckForUpdate409JSONResponse Error
+
+func (response CheckForUpdate409JSONResponse) VisitCheckForUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckForUpdate503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response CheckForUpdate503JSONResponse) VisitCheckForUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVersionRequestObject struct {
+}
+
+type GetVersionResponseObject interface {
+	VisitGetVersionResponse(w http.ResponseWriter) error
+}
+
+type GetVersion200JSONResponse VersionInfo
+
+func (response GetVersion200JSONResponse) VisitGetVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVersion401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetVersion401JSONResponse) VisitGetVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVersion503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetVersion503JSONResponse) VisitGetVersionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -14237,9 +14820,24 @@ type StrictServerInterface interface {
 	// ReloadSecrets Reload the secrets
 	// (POST /api/v1/system/reload)
 	ReloadSecrets(ctx context.Context, request ReloadSecretsRequestObject) (ReloadSecretsResponseObject, error)
+	// RestartApp Restart the app
+	// (POST /api/v1/system/restart)
+	RestartApp(ctx context.Context, request RestartAppRequestObject) (RestartAppResponseObject, error)
 	// ListSecrets List the secrets
 	// (GET /api/v1/system/secrets)
 	ListSecrets(ctx context.Context, request ListSecretsRequestObject) (ListSecretsResponseObject, error)
+	// GetUpdateStatus Update status
+	// (GET /api/v1/system/update)
+	GetUpdateStatus(ctx context.Context, request GetUpdateStatusRequestObject) (GetUpdateStatusResponseObject, error)
+	// RequestUpdate Request an update
+	// (POST /api/v1/system/update)
+	RequestUpdate(ctx context.Context, request RequestUpdateRequestObject) (RequestUpdateResponseObject, error)
+	// CheckForUpdate Check for a new release now
+	// (POST /api/v1/system/update/check)
+	CheckForUpdate(ctx context.Context, request CheckForUpdateRequestObject) (CheckForUpdateResponseObject, error)
+	// GetVersion The running version
+	// (GET /api/v1/system/version)
+	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
 	// ListTargets The instances the user can act on
 	// (GET /api/v1/targets)
 	ListTargets(ctx context.Context, request ListTargetsRequestObject) (ListTargetsResponseObject, error)
@@ -16044,6 +16642,30 @@ func (sh *strictHandler) ReloadSecrets(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// RestartApp operation middleware
+func (sh *strictHandler) RestartApp(w http.ResponseWriter, r *http.Request) {
+	var request RestartAppRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestartApp(ctx, request.(RestartAppRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestartApp")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestartAppResponseObject); ok {
+		if err := validResponse.VisitRestartAppResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListSecrets operation middleware
 func (sh *strictHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
 	var request ListSecretsRequestObject
@@ -16061,6 +16683,109 @@ func (sh *strictHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListSecretsResponseObject); ok {
 		if err := validResponse.VisitListSecretsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetUpdateStatus operation middleware
+func (sh *strictHandler) GetUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetUpdateStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUpdateStatus(ctx, request.(GetUpdateStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUpdateStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUpdateStatusResponseObject); ok {
+		if err := validResponse.VisitGetUpdateStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RequestUpdate operation middleware
+func (sh *strictHandler) RequestUpdate(w http.ResponseWriter, r *http.Request) {
+	var request RequestUpdateRequestObject
+
+	var body RequestUpdateJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RequestUpdate(ctx, request.(RequestUpdateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RequestUpdate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RequestUpdateResponseObject); ok {
+		if err := validResponse.VisitRequestUpdateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CheckForUpdate operation middleware
+func (sh *strictHandler) CheckForUpdate(w http.ResponseWriter, r *http.Request) {
+	var request CheckForUpdateRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CheckForUpdate(ctx, request.(CheckForUpdateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CheckForUpdate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CheckForUpdateResponseObject); ok {
+		if err := validResponse.VisitCheckForUpdateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetVersion operation middleware
+func (sh *strictHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
+	var request GetVersionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetVersion(ctx, request.(GetVersionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetVersion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetVersionResponseObject); ok {
+		if err := validResponse.VisitGetVersionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

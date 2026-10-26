@@ -295,6 +295,139 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/system/version:
+    get:
+      summary: The running version
+      description: >-
+        The version, commit and build date of the running build. Behind a session (unlike `about`), so anonymous
+        visitors can't tell which release is running.
+      operationId: getVersion
+      x-permission: session
+      responses:
+        "200":
+          description: The running build.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/system/update:
+    get:
+      summary: Update status
+      description: >-
+        The running version, how the app was installed, the last update check's result, whether a newer release is
+        out, whether an update can be requested now, and the latest update requests with the updater's log. Reading
+        changes nothing.
+      operationId: getUpdateStatus
+      x-permission: app.update
+      responses:
+        "200":
+          description: The update status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Request an update
+      description: >-
+        LXC installs only (`PIHOLE_RBAC_INSTALL=lxc`). Records a request and wakes the updater service, which runs as
+        root, verifies the release's signature, backs up the database, replaces the binary, restarts the app and rolls
+        back if it doesn't become healthy. The app passes no URL: at most a version, checked here and again by the
+        updater. Answers 202 with the pending request; follow it with `GET /system/update`. The app is restarted
+        during the update, so requests fail for a while. Audited as `update_request`; the outcome is audited as
+        `update_done`, `update_failed` or `update_rolled_back` by `(system)`.
+      operationId: requestUpdate
+      x-permission: app.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequestInput"
+      responses:
+        "202":
+          description: The request is recorded and the updater has been told.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateRequest"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: >-
+            The update can't be requested (code conflict): this isn't an LXC install, it's a development build,
+            another request is pending or running, or the updater couldn't be told. The message says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/system/update/check:
+    post:
+      summary: Check for a new release now
+      description: >-
+        Asks GitHub for the latest release, as the daily check does, and answers with the new status. GitHub is asked
+        at most once a minute; a sooner request answers with the stored result. A failed check is a 200 with
+        `check_error`. Not audited: it changes nothing but the stored result.
+      operationId: checkForUpdate
+      x-permission: app.update
+      responses:
+        "200":
+          description: The update status after the check.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The update check is off (`PIHOLE_RBAC_UPDATE_CHECK=false`; code conflict).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/system/restart:
+    post:
+      summary: Restart the app
+      description: >-
+        Answers 202, then shuts down cleanly as on SIGTERM: in-flight requests finish and every Pi-hole session is
+        logged out. systemd (`Restart=always`) or Docker's restart policy starts it again; anything else (such as
+        `go run`) leaves it stopped. Audited as `app_restart`.
+      operationId: restartApp
+      x-permission: app.update
+      responses:
+        "202":
+          description: The app is shutting down and will be restarted by its service manager.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/targets:
     get:
       summary: The instances the user can act on
@@ -3209,6 +3342,122 @@ components:
         message:
           type: string
           description: Why the secret couldn't be loaded. Never contains the value.
+
+    VersionInfo:
+      type: object
+      additionalProperties: false
+      required: [version, commit, build_date, development]
+      properties:
+        version:
+          type: string
+          description: As built, without a leading v for a release ("2.1.0"); "dev" or a git-describe string otherwise.
+        commit:
+          type: string
+        build_date:
+          type: string
+          description: As built (RFC 3339 for releases), or "unknown".
+        development:
+          type: boolean
+          description: The version can't be compared with releases (a development, snapshot or git-describe build).
+
+    UpdateStatus:
+      type: object
+      additionalProperties: false
+      required: [current_version, development, install, check_enabled, update_available, can_request, requests]
+      properties:
+        current_version:
+          type: string
+          description: The running version as built (see VersionInfo).
+        development:
+          type: boolean
+          description: The running version can't be compared with releases, so no update is ever reported available.
+        install:
+          type: string
+          enum: [lxc, docker, other]
+          description: >-
+            From PIHOLE_RBAC_INSTALL. lxc can request updates here; docker is updated with docker compose pull and
+            up -d; other is updated however it was installed.
+        check_enabled:
+          type: boolean
+          description: False when PIHOLE_RBAC_UPDATE_CHECK is false.
+        checked_at:
+          type: string
+          format: date-time
+          description: When GitHub was last asked. Absent if never.
+        check_error:
+          type: string
+          description: Why the last check failed. The release found before it, if any, is still given.
+        latest:
+          $ref: "#/components/schemas/LatestRelease"
+        update_available:
+          type: boolean
+          description: The latest release is newer than the running version.
+        can_request:
+          type: boolean
+          description: An update can be requested now (an LXC install, a release build, nothing pending or running).
+        requests:
+          type: array
+          description: The latest update requests, newest first (at most 10).
+          items:
+            $ref: "#/components/schemas/UpdateRequest"
+
+    LatestRelease:
+      type: object
+      additionalProperties: false
+      description: The newest published release that isn't a prerelease. Absent until one is found.
+      required: [version, url]
+      properties:
+        version:
+          type: string
+          description: The tag, such as v2.1.0.
+        published_at:
+          type: string
+          format: date-time
+        url:
+          type: string
+          description: The release's page on GitHub, with its changelog.
+
+    UpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [id, requested_at, requested_by, status, log]
+      properties:
+        id:
+          type: integer
+          format: int64
+        requested_at:
+          type: string
+          format: date-time
+        requested_by:
+          type: string
+          description: The user who asked, or (cli) for sudo pihole-rbac update. Kept when the user is deleted.
+        target_version:
+          type: string
+          description: The version asked for. Absent for the latest release.
+        status:
+          type: string
+          enum: [pending, running, done, failed, rolled_back]
+          description: >-
+            pending until the updater takes it; failed when it stopped before replacing anything; rolled_back when
+            the new version didn't become healthy and the previous one was restored. A request not taken within 10
+            minutes, or not finished within an hour, is marked failed.
+        log:
+          type: string
+          description: The updater's progress, one line per step.
+        finished_at:
+          type: string
+          format: date-time
+
+    UpdateRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        target_version:
+          type: string
+          maxLength: 64
+          description: >-
+            A release tag newer than the running version, such as v2.1.0, or a prerelease such as v2.1.0-rc.1.
+            Absent or empty for the latest release.
 
     TargetList:
       type: object

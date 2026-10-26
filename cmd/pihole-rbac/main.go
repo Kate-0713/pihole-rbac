@@ -26,9 +26,11 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/notify"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
+	"github.com/Kate-0713/pihole-rbac/internal/release"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
+	"github.com/Kate-0713/pihole-rbac/internal/updates"
 	"github.com/Kate-0713/pihole-rbac/web"
 )
 
@@ -196,6 +198,17 @@ func serve() error {
 		return err
 	}
 
+	// The daily update check, update requests for the LXC updater, and announcing how each update ended: at once, so
+	// a version that has just been installed reports itself, then every minute.
+	var releases updates.Releases
+	if cfg.UpdateCheck {
+		releases = release.NewClient(time.Minute)
+	}
+	updateService := &updates.Service{
+		Store: st, Audit: auditLog, Releases: releases, Install: updates.Install(cfg.Install), Logger: logger,
+	}
+	go updateService.Run(ctx)
+
 	server := api.New(api.Options{
 		Store:          st,
 		Sessions:       sessions,
@@ -203,6 +216,7 @@ func serve() error {
 		LoginSettings:  login,
 		Notifications:  channels,
 		ClientReset:    resets,
+		Updates:        updateService,
 		Audit:          auditLog,
 		Secrets:        sec,
 		Instances:      instanceService,
@@ -213,6 +227,7 @@ func serve() error {
 		LoginByUser:    byUser,
 		Frontend:       frontend,
 		Logger:         logger,
+		Restart:        stop, // the same clean shutdown as SIGTERM; systemd or Docker starts the app again
 	})
 	go pruneSessions(ctx, sessions, logger)
 	// Audit rows older than the retention go at startup, daily, and soon after the retention is changed.
@@ -244,7 +259,8 @@ func serve() error {
 
 	errc := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", cfg.Listen, "version", buildinfo.Version, "data_dir", cfg.DataDir, "log_dir", cfg.LogDir)
+		logger.Info("listening", "addr", cfg.Listen, "version", buildinfo.Version, "data_dir", cfg.DataDir, "log_dir", cfg.LogDir,
+			"install", cfg.Install, "update_check", cfg.UpdateCheck)
 		errc <- srv.ListenAndServe()
 	}()
 

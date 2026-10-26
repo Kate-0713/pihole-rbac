@@ -42,8 +42,13 @@ var routePermission = map[string]string{
 
 	"GET /api/v1/targets": accessSession,
 
-	"GET /api/v1/system/secrets": string(rbac.ConfigReload),
-	"POST /api/v1/system/reload": string(rbac.ConfigReload),
+	"GET /api/v1/system/secrets":       string(rbac.ConfigReload),
+	"POST /api/v1/system/reload":       string(rbac.ConfigReload),
+	"GET /api/v1/system/version":       accessSession,
+	"GET /api/v1/system/update":        string(rbac.AppUpdate),
+	"POST /api/v1/system/update":       string(rbac.AppUpdate),
+	"POST /api/v1/system/update/check": string(rbac.AppUpdate),
+	"POST /api/v1/system/restart":      string(rbac.AppUpdate),
 
 	"GET /api/v1/instances":                         string(rbac.InstancesManage),
 	"POST /api/v1/instances":                        string(rbac.InstancesManage),

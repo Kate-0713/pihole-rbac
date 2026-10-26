@@ -224,6 +224,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The running version
+         * @description The version, commit and build date of the running build. Behind a session (unlike `about`), so anonymous visitors can't tell which release is running.
+         */
+        get: operations["getVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Update status
+         * @description The running version, how the app was installed, the last update check's result, whether a newer release is out, whether an update can be requested now, and the latest update requests with the updater's log. Reading changes nothing.
+         */
+        get: operations["getUpdateStatus"];
+        put?: never;
+        /**
+         * Request an update
+         * @description LXC installs only (`PIHOLE_RBAC_INSTALL=lxc`). Records a request and wakes the updater service, which runs as root, verifies the release's signature, backs up the database, replaces the binary, restarts the app and rolls back if it doesn't become healthy. The app passes no URL: at most a version, checked here and again by the updater. Answers 202 with the pending request; follow it with `GET /system/update`. The app is restarted during the update, so requests fail for a while. Audited as `update_request`; the outcome is audited as `update_done`, `update_failed` or `update_rolled_back` by `(system)`.
+         */
+        post: operations["requestUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/update/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check for a new release now
+         * @description Asks GitHub for the latest release, as the daily check does, and answers with the new status. GitHub is asked at most once a minute; a sooner request answers with the stored result. A failed check is a 200 with `check_error`. Not audited: it changes nothing but the stored result.
+         */
+        post: operations["checkForUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart the app
+         * @description Answers 202, then shuts down cleanly as on SIGTERM: in-flight requests finish and every Pi-hole session is logged out. systemd (`Restart=always`) or Docker's restart policy starts it again; anything else (such as `go run`) leaves it stopped. Audited as `app_restart`.
+         */
+        post: operations["restartApp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/targets": {
         parameters: {
             query?: never;
@@ -1528,6 +1612,74 @@ export interface components {
             name: string;
             /** @description Why the secret couldn't be loaded. Never contains the value. */
             message: string;
+        };
+        VersionInfo: {
+            /** @description As built, without a leading v for a release ("2.1.0"); "dev" or a git-describe string otherwise. */
+            version: string;
+            commit: string;
+            /** @description As built (RFC 3339 for releases), or "unknown". */
+            build_date: string;
+            /** @description The version can't be compared with releases (a development, snapshot or git-describe build). */
+            development: boolean;
+        };
+        UpdateStatus: {
+            /** @description The running version as built (see VersionInfo). */
+            current_version: string;
+            /** @description The running version can't be compared with releases, so no update is ever reported available. */
+            development: boolean;
+            /**
+             * @description From PIHOLE_RBAC_INSTALL. lxc can request updates here; docker is updated with docker compose pull and up -d; other is updated however it was installed.
+             * @enum {string}
+             */
+            install: "lxc" | "docker" | "other";
+            /** @description False when PIHOLE_RBAC_UPDATE_CHECK is false. */
+            check_enabled: boolean;
+            /**
+             * Format: date-time
+             * @description When GitHub was last asked. Absent if never.
+             */
+            checked_at?: string;
+            /** @description Why the last check failed. The release found before it, if any, is still given. */
+            check_error?: string;
+            latest?: components["schemas"]["LatestRelease"];
+            /** @description The latest release is newer than the running version. */
+            update_available: boolean;
+            /** @description An update can be requested now (an LXC install, a release build, nothing pending or running). */
+            can_request: boolean;
+            /** @description The latest update requests, newest first (at most 10). */
+            requests: components["schemas"]["UpdateRequest"][];
+        };
+        /** @description The newest published release that isn't a prerelease. Absent until one is found. */
+        LatestRelease: {
+            /** @description The tag, such as v2.1.0. */
+            version: string;
+            /** Format: date-time */
+            published_at?: string;
+            /** @description The release's page on GitHub, with its changelog. */
+            url: string;
+        };
+        UpdateRequest: {
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            requested_at: string;
+            /** @description The user who asked, or (cli) for sudo pihole-rbac update. Kept when the user is deleted. */
+            requested_by: string;
+            /** @description The version asked for. Absent for the latest release. */
+            target_version?: string;
+            /**
+             * @description pending until the updater takes it; failed when it stopped before replacing anything; rolled_back when the new version didn't become healthy and the previous one was restored. A request not taken within 10 minutes, or not finished within an hour, is marked failed.
+             * @enum {string}
+             */
+            status: "pending" | "running" | "done" | "failed" | "rolled_back";
+            /** @description The updater's progress, one line per step. */
+            log: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
+        UpdateRequestInput: {
+            /** @description A release tag newer than the running version, such as v2.1.0, or a prerelease such as v2.1.0-rc.1. Absent or empty for the latest release. */
+            target_version?: string;
         };
         TargetList: {
             targets: components["schemas"]["Target"][];
@@ -3194,6 +3346,142 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ReloadResult"];
                 };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The running build. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionInfo"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getUpdateStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The update status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    requestUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRequestInput"];
+            };
+        };
+        responses: {
+            /** @description The request is recorded and the updater has been told. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateRequest"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description The update can't be requested (code conflict): this isn't an LXC install, it's a development build, another request is pending or running, or the updater couldn't be told. The message says which. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    checkForUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The update status after the check. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description The update check is off (`PIHOLE_RBAC_UPDATE_CHECK=false`; code conflict). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    restartApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The app is shutting down and will be restarted by its service manager. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
