@@ -8,6 +8,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { can } from '#lib/permissions.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
+	import { session } from '#lib/stores/session.svelte.js';
 	import { targets } from '#lib/stores/targets.svelte.js';
 	import HealthDot from './health-dot.svelte';
 
@@ -27,9 +28,10 @@
 		void goto(url.pathname + url.search, { reset: false });
 	}
 
-	// The health beside each name changes over time, so the list is fetched again whenever the picker opens.
+	// The health beside each name changes over time, so the list is fetched again whenever the picker opens, with the
+	// permissions on each target (another admin may have added a group, or changed a grant, since this page loaded).
 	function opened(open: boolean) {
-		if (open) targets.refresh().catch((e: unknown) => notices.error(e, "Couldn't refresh your instances"));
+		if (open) session.refreshTargets().catch((e: unknown) => notices.error(e, "Couldn't refresh your instances"));
 	}
 </script>
 

@@ -14,7 +14,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { errorLabel, type Instance } from '#lib/instances.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
-	import { targets } from '#lib/stores/targets.svelte.js';
+	import { session } from '#lib/stores/session.svelte.js';
 	import { _instancesKey as instancesKey } from './+page.js';
 	import type { PageProps } from './$types';
 
@@ -35,7 +35,7 @@
 	async function reload() {
 		await invalidate(instancesKey);
 		try {
-			await targets.refresh();
+			await session.refreshTargets();
 		} catch {
 			// The picker keeps its old list; the page itself is up to date.
 		}

@@ -11,7 +11,7 @@
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import type { Group } from '#lib/groups.js';
-	import { targets } from '#lib/stores/targets.svelte.js';
+	import { session } from '#lib/stores/session.svelte.js';
 	import { _groupsKey as groupsKey } from './+page.js';
 	import type { PageProps } from './$types';
 
@@ -22,11 +22,12 @@
 	let deleteOpen = $state(false);
 	let deleting = $state<Group | null>(null);
 
-	// After a change, read the groups again, and the header's target list too: mirrored groups are targets.
+	// After a change, read the groups again, and the header's targets and the permissions on them too: mirrored groups
+	// are targets.
 	async function reload() {
 		await invalidate(groupsKey);
 		try {
-			await targets.refresh();
+			await session.refreshTargets();
 		} catch {
 			// The picker keeps its old list; the page itself is up to date.
 		}

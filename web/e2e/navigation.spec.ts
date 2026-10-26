@@ -3,7 +3,8 @@
 
 // The app shell: the nav built from permissions, the target picker and the target kept in the URL. Against the
 // seeded server, as three users: the admin, a user with one instance, and a user with none.
-import { expect, openAs, picker, test } from './fixtures.js';
+import type { Page } from '@playwright/test';
+import { apiWrite, expect, openAs, picker, test } from './fixtures.js';
 
 const mainNav = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Main' });
 
@@ -96,4 +97,68 @@ test('the header fits a phone screen without sideways scrolling', async ({ page,
 	await expect(picker(page)).toBeVisible();
 	const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 	expect(overflow).toBeLessThanOrEqual(0);
+});
+
+// The nav is built from the session's permissions, which are listed per target. A mirrored group (or instance) that
+// is new since the page loaded used to have no entry there until a reload, so picking it showed no pages at all.
+// These tests never reload: a mark on the window would be lost if they did.
+const markWindow = (page: Page) => page.evaluate(() => ((window as unknown as { mark?: boolean }).mark = true));
+const stillMarked = (page: Page) => page.evaluate(() => (window as unknown as { mark?: boolean }).mark === true);
+
+async function expectGroupPages(page: Page, id: number) {
+	const nav = mainNav(page);
+	for (const name of ['Dashboard', 'Domains', 'Clients', 'Query log', 'Drift']) {
+		await expect(nav.getByRole('link', { name })).toHaveAttribute('href', new RegExp(`\\?target=g-${id}$`));
+	}
+}
+
+test('a mirrored group added on the Groups page is offered with its pages, without a reload', async ({ page, state }) => {
+	await openAs(page, state.seeded.fixture.admin, '/dashboard');
+	await markWindow(page);
+	await mainNav(page).getByRole('button', { name: 'Admin' }).click();
+	await page.getByRole('menuitem', { name: 'Groups' }).click();
+
+	await page.getByRole('button', { name: 'Add a group' }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Name', { exact: true }).fill('e2e new mirror');
+	await dialog.getByRole('combobox', { name: 'Mode' }).click();
+	await page.getByRole('option', { name: 'Mirrored' }).click();
+	await dialog.getByRole('checkbox', { name: 'pihole1' }).check();
+	await dialog.getByRole('button', { name: 'Add' }).click();
+	await expect(page.getByText('e2e new mirror added.')).toBeVisible();
+
+	await page.getByRole('link', { name: 'pihole-rbac', exact: true }).click();
+	await picker(page).click();
+	await page.getByRole('option', { name: /e2e new mirror/ }).click();
+	await expect(page).toHaveURL(/\?target=g-\d+$/);
+	const id = Number(/g-(\d+)$/.exec(page.url())![1]);
+	try {
+		await expectGroupPages(page, id);
+		expect(await stillMarked(page)).toBe(true);
+	} finally {
+		await apiWrite(page, 'DELETE', `/api/v1/instance-groups/${id}`);
+	}
+});
+
+test('a mirrored group added elsewhere is offered with its pages once the picker is opened', async ({ page, state }) => {
+	const [one] = state.seeded.fixture.instances;
+	await openAs(page, state.seeded.fixture.admin, '/dashboard');
+	await markWindow(page);
+	// Another admin, say: the page knows nothing of it.
+	const res = await apiWrite(page, 'POST', '/api/v1/instance-groups', {
+		name: 'e2e other mirror',
+		mode: 'mirrored',
+		members: [one.id],
+		primary_instance_id: one.id
+	});
+	const id = (await res.json()).id as number;
+	try {
+		await picker(page).click();
+		await page.getByRole('option', { name: /e2e other mirror/ }).click();
+		await expect(page).toHaveURL(new RegExp(`\\?target=g-${id}$`));
+		await expectGroupPages(page, id);
+		expect(await stillMarked(page)).toBe(true);
+	} finally {
+		await apiWrite(page, 'DELETE', `/api/v1/instance-groups/${id}`);
+	}
 });

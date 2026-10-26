@@ -57,6 +57,16 @@ class SessionStore {
 		await this.init(globalThis.fetch);
 	}
 
+	// Asks again for the targets and for the permissions on them, together. The permissions are keyed by target, so a
+	// target that is new to this page (an instance or mirrored group added, or a group made mirrored, since login)
+	// has none until the session is read again, and the nav would offer nothing on it. Both are asked even if one
+	// fails; the first failure is thrown.
+	async refreshTargets(): Promise<void> {
+		const [t, s] = await Promise.allSettled([targets.refresh(), this.refresh()]);
+		if (t.status === 'rejected') throw t.reason;
+		if (s.status === 'rejected') throw s.reason;
+	}
+
 	// Login and setup are state-changing requests made before there is a session, so they need the anonymous CSRF
 	// token first. Fetched fresh each time: an anonymous token stops working once there is a session.
 	async #anonymousCSRF(): Promise<void> {
