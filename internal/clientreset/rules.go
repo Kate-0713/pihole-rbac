@@ -196,6 +196,14 @@ func checkInput(in []RuleInput) ([]RuleInput, error) {
 	return out, nil
 }
 
+// CheckRules validates rules as SetRules does, and returns them cleaned.
+func CheckRules(in []RuleInput) ([]RuleInput, error) { return checkInput(in) }
+
+// Describe names a rule as its audit row does.
+func Describe(prefix string, match Match, groups []string, on string) string {
+	return describe(prefix, match, groups, on)
+}
+
 // describe is how a rule is named in its audit row: "TEST- → AUTOSET-lab, AUTOSET-x on pihole1", with "prefixes"
 // when its groups are name prefixes.
 func describe(prefix string, match Match, groups []string, on string) string {

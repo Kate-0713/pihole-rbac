@@ -160,6 +160,10 @@ func (in Input) normalize() (Input, error) {
 	return in, nil
 }
 
+// Normalize checks the settings as Create does, without saving or contacting anything, and returns them in
+// canonical form.
+func (in Input) Normalize() (Input, error) { return in.normalize() }
+
 func hasControl(s string) bool {
 	if !utf8.ValidString(s) {
 		return true

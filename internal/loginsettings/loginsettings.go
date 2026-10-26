@@ -305,6 +305,13 @@ type LDAPInput struct {
 	BindPassword *secrets.Value
 }
 
+// NormalizeLDAP checks LDAP settings as SaveLDAP does, without saving or contacting anything, and returns them in
+// canonical form.
+func NormalizeLDAP(ls auth.LDAPSettings) (auth.LDAPSettings, error) { return normalize(ls) }
+
+// BindPasswordAAD is the associated data the stored LDAP bind password is sealed with.
+var BindPasswordAAD = passwordAAD
+
 func normalize(ls auth.LDAPSettings) (auth.LDAPSettings, error) {
 	ls.URL = strings.TrimSpace(ls.URL)
 	ls.BindDN = strings.TrimSpace(ls.BindDN)

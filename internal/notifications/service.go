@@ -220,6 +220,29 @@ func (in Input) normalize() (Input, error) {
 	return in, nil
 }
 
+// Normalize checks the settings as Create does, without saving anything, and returns them in canonical form, a
+// Discord webhook URL included.
+func (in Input) Normalize() (Input, error) { return in.normalize() }
+
+// ConfigJSON is what Create stores in notification_channels.config for normalized settings: the Matrix settings, or
+// the webhook ID of a Discord channel's secret (none without a secret).
+func ConfigJSON(in Input) (string, error) {
+	webhookID := ""
+	if in.Kind == notify.Discord && in.Secret != nil {
+		_, webhookID, _ = checkSecret(in.Kind, *in.Secret)
+	}
+	return configJSON(in, webhookID)
+}
+
+// AuditDetail fills an audit row's detail for a new channel as Create does: its settings, never its secret.
+func (in Input) AuditDetail(d map[string]any) {
+	webhookID := ""
+	if in.Kind == notify.Discord && in.Secret != nil {
+		_, webhookID, _ = checkSecret(in.Kind, *in.Secret)
+	}
+	in.auditDetail(d, webhookID)
+}
+
 // checkSecret checks a secret for its kind, and returns it in canonical form with the webhook ID for Discord.
 func checkSecret(kind notify.Kind, v secrets.Value) (secrets.Value, string, error) {
 	if v.Len() > maxSecret {

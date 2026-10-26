@@ -55,6 +55,8 @@ func run(args []string) error {
 		return cmdUser(args[1:])
 	case "rotate-key":
 		return cmdRotateKey(args[1:])
+	case "import-json":
+		return cmdImportJSON(args[1:])
 	case "help", "--help", "-h":
 		fmt.Fprint(stdout, usage)
 		return nil
@@ -74,6 +76,9 @@ commands:
                                re-encrypt the stored secrets (instance passwords, the LDAP bind password, notification
                                channel secrets) from the old master key in the file to the new one in
                                PIHOLE_RBAC_SECRET_KEY; then reload secrets or restart
+  import-json --config <config.json> [--permissions <file>] [--users <file>] [--instance-name <name>]
+              [--time-zone <zone>] [--offline] [--apply]
+                               show what would be imported from v1's files; --apply imports it into a new database
   version                      print the version, build details and source location
 `
 
