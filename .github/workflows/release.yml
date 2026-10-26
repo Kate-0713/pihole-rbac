@@ -1,0 +1,156 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Publishes a release when a vX.Y.Z tag (or vX.Y.Z-rc.N, a prerelease) is pushed: all of CI first, then GoReleaser
+# (Linux amd64 and arm64 archives, checksums.txt signed with minisign, install.sh and minisign.pub), then the
+# multi-arch image on GHCR.
+#
+# Repository secrets: MINISIGN_SECRET_KEY (the whole secret key file made by `minisign -G`) and MINISIGN_PASSWORD.
+# Only this workflow reads them.
+
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  goreleaser:
+    name: goreleaser
+    needs: ci
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write # create the release and upload its files
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # install.sh checks downloads against the key written into it, so it must be the key that signs.
+      - name: Check install.sh holds the committed public key
+        run: |
+          pub="$(sed -n 2p minisign.pub)"
+          [ -n "$pub" ] || { echo "minisign.pub has no key on its second line" >&2; exit 1; }
+          grep -qxF "readonly MINISIGN_PUBKEY=\"$pub\"" deploy/lxc/install.sh \
+            || { echo "MINISIGN_PUBKEY in deploy/lxc/install.sh isn't the key in minisign.pub" >&2; exit 1; }
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install minisign
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+
+      - name: Write the signing key
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          [ -n "$MINISIGN_SECRET_KEY" ] || { echo "the MINISIGN_SECRET_KEY secret isn't set" >&2; exit 1; }
+          umask 077
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MINISIGN_KEY_FILE: ${{ runner.temp }}/minisign.key
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+
+      # The same check install.sh makes, on what was just published.
+      - name: Verify the signature
+        run: |
+          trusted="$(minisign -VQm dist/checksums.txt -p minisign.pub)"
+          echo "trusted comment: $trusted"
+          [ "$trusted" = "pihole-rbac $GITHUB_REF_NAME" ]
+
+      - name: Remove the signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/minisign.key"
+
+  docker:
+    name: docker image
+    needs: goreleaser
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+    env:
+      IMAGE: ghcr.io/kate-0713/pihole-rbac # GHCR names are lower case
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 1.2.3 and 1.2 for a release, plus latest; only 1.2.3-rc.1 for a prerelease.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - id: date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the amd64 image to test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: pihole-rbac:release-test
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.date.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the image
+        run: bash deploy/docker/smoke-test.sh pihole-rbac:release-test
+
+      - name: Build and push both architectures
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.date.outputs.value }}
+          cache-from: type=gha

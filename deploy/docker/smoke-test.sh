@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Smoke-tests a built image: the frontend is embedded, the container starts read-only as the non-root user with no
-# capabilities, reports healthy, serves /healthz and /api/v1/about, logs the setup token, and the documented
-# `setup --print-token` works through docker exec. Used by CI; runs anywhere with Docker, curl and openssl.
+# capabilities, reports healthy, serves /healthz, /api/v1/about, the SPA and the third-party notices, logs the setup
+# token, and the documented `setup --print-token` works through docker exec. Used by CI; runs anywhere with Docker,
+# curl and openssl.
 #
 #   deploy/docker/smoke-test.sh pihole-rbac:dev
 
@@ -55,6 +56,9 @@ base="http://127.0.0.1:$port"
 [ "$(curl -fsS "$base/healthz")" = ok ] || fail "/healthz did not answer ok"
 curl -fsS "$base/api/v1/about" | grep -q '"license":"AGPL-3.0-or-later"' || fail "/api/v1/about is wrong"
 curl -fsS "$base/" | grep -qi '<!doctype html>' || fail "the SPA is not served"
+# Read into a variable first: grep -q stops reading early, which would fail curl on a large file under pipefail.
+notices="$(curl -fsS "$base/THIRD_PARTY_NOTICES.txt")" || fail "THIRD_PARTY_NOTICES.txt is not served"
+grep -q '^Third-party notices for pihole-rbac' <<<"$notices" || fail "THIRD_PARTY_NOTICES.txt is wrong"
 
 user="$(docker inspect -f '{{.Config.User}}' "$image")"
 [ "$user" = "65532:65532" ] || fail "the image runs as '$user', not 65532:65532"

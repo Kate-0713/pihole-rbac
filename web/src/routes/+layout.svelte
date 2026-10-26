@@ -41,6 +41,8 @@
 	<!-- AGPL-3.0 section 13: every page, including login and setup, offers the source of the running build. Lives in the root layout so no page can forget it. -->
 	<footer class="text-muted-foreground border-t px-4 py-3 text-center text-xs">
 		<a class="underline-offset-4 hover:underline" href={data.about.source_url} rel="noopener noreferrer">Source code</a>
-		· {data.about.license}
+		· {data.about.license} ·
+		<!-- A file served beside the SPA, not a route: data-sveltekit-reload makes the browser load it instead of the client router. Release builds include it; a dev build answers with the app's not-found page. -->
+		<a class="underline-offset-4 hover:underline" href="/THIRD_PARTY_NOTICES.txt" data-sveltekit-reload>Third-party notices</a>
 	</footer>
 </div>

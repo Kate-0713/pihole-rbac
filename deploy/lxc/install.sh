@@ -18,10 +18,10 @@ set -euo pipefail
 umask 022
 
 readonly REPO="Kate-0713/pihole-rbac"
-# The release signing key (minisign). Written into the script so a download is checked against a key that didn't
-# come from the same place as the download. Empty until the first signed release exists; until then only --binary
-# installs are possible.
-readonly MINISIGN_PUBKEY=""
+# The release signing key (minisign), the second line of minisign.pub. Written into the script so a download is checked
+# against a key that didn't come from the same place as the download. The release workflow refuses to run unless the
+# two match.
+readonly MINISIGN_PUBKEY="RWSiTwpzJ1fyeg5FbD9k+fgdn1h28wLmH8lid3NJsRYxw5iv7iHhzUI/"
 
 readonly APP=pihole-rbac
 readonly BIN=/usr/local/bin/pihole-rbac
@@ -167,8 +167,12 @@ fetch_release() {
 	done
 
 	info "Verifying the signature and checksum"
-	minisign -Vqm "$tmp/checksums.txt" -P "$MINISIGN_PUBKEY" >/dev/null ||
+	local trusted
+	trusted="$(minisign -VQm "$tmp/checksums.txt" -P "$MINISIGN_PUBKEY")" ||
 		die "the signature of checksums.txt doesn't match the release key: not installing"
+	# The release workflow signs with the trusted comment "pihole-rbac <tag>", which the signature covers.
+	[ "$trusted" = "pihole-rbac $tag" ] ||
+		die "the signature is for '$trusted', not pihole-rbac $tag: not installing"
 	# The archive name carries the version, so a signed checksums file from another release can't vouch for it.
 	local line
 	line="$(grep -E "^[0-9a-f]{64}  ${archive//./\\.}\$" "$tmp/checksums.txt")" ||

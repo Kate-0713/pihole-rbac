@@ -20,7 +20,8 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-RUN npm run build && test -f build/app/index.html
+# Also writes build/notices-web.txt, the bundled packages' licences.
+RUN npm run build && test -f build/app/index.html && test -f build/notices-web.txt
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-trixie AS go
 ARG TARGETOS
@@ -32,7 +33,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /src/web/build/app ./web/build/app
+COPY --from=web /src/web/build/ ./web/build/
+# THIRD_PARTY_NOTICES.txt into web/build/app before the build embeds it (go-licenses comes from tools/go.mod).
+RUN bash deploy/notices/notices.sh
 # /out/lib/pihole-rbac becomes the data directory (0750, owned by the image's non-root user below), so a new named
 # volume mounted there takes that owner. Copying its parent keeps the directory's own mode.
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
@@ -59,6 +62,7 @@ LABEL org.opencontainers.image.title="pihole-rbac" \
 COPY --from=go /out/pihole-rbac /usr/local/bin/pihole-rbac
 COPY --from=go --chown=65532:65532 /out/lib/ /var/lib/
 COPY LICENCE.md README.md /usr/share/doc/pihole-rbac/
+COPY --from=go /src/web/build/app/THIRD_PARTY_NOTICES.txt /usr/share/doc/pihole-rbac/
 
 # distroless :nonroot is UID/GID 65532. Logs go to stdout unless PIHOLE_RBAC_LOG_DIR is set.
 USER 65532:65532

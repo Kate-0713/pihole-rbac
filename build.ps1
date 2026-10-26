@@ -150,7 +150,8 @@ try {
                 '--build-arg', "VERSION=$version", '--build-arg', "COMMIT=$commit", '--build-arg', "DATE=$date", '.')
         }
         'snapshot' {
-            Invoke-Native 'goreleaser' @('release', '--snapshot', '--clean')
+            # Unsigned: signing needs the release key. The notices step needs bash (Git Bash or WSL).
+            Invoke-Native 'goreleaser' @('release', '--snapshot', '--clean', '--skip=sign')
         }
         'clean' {
             foreach ($p in @('bin', 'dist', 'web\build\app', 'web\test-results', 'web\playwright-report')) {

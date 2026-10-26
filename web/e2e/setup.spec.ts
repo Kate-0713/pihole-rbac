@@ -25,6 +25,10 @@ test('every page leads to setup until it is done, with the source link shown', a
 	const source = page.getByRole('link', { name: 'Source code' });
 	await expect(source).toHaveAttribute('href', /^https:\/\//);
 	await expect(page.getByText('AGPL-3.0-or-later')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Third-party notices' })).toHaveAttribute(
+		'href',
+		'/THIRD_PARTY_NOTICES.txt'
+	);
 });
 
 test('the form only submits once the password is typed twice and long enough', async ({ page, state }) => {

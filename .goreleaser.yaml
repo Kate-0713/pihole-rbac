@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Kate O'Grady
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# GoReleaser config.
-# Docker images and minisign signatures come later.
+# GoReleaser config. A vX.Y.Z tag runs it in .github/workflows/release.yml, which also builds and pushes the images
+# (deploy/docker/Dockerfile). CI runs it as a snapshot with --skip=sign.
 version: 2
 
 project_name: pihole-rbac
@@ -11,6 +11,8 @@ before:
   hooks:
     - npm --prefix web ci
     - npm --prefix web run build
+    # THIRD_PARTY_NOTICES.txt into web/build/app, so every binary embeds and serves it.
+    - bash deploy/notices/notices.sh
 
 builds:
   - id: pihole-rbac
@@ -43,9 +45,39 @@ archives:
       # The LXC install script takes the unit and env template from the verified archive, not from the network.
       - deploy/lxc/pihole-rbac.service
       - deploy/lxc/env.example
+      - src: web/build/app/THIRD_PARTY_NOTICES.txt
+        dst: THIRD_PARTY_NOTICES.txt
 
 checksum:
   name_template: checksums.txt
+
+# checksums.txt is signed with minisign; install.sh (and later the updater) verify it with the public key in
+# minisign.pub, then each archive against its checksum. The trusted comment names the tag, and install.sh checks it,
+# so a signature can't be passed off as another release's. The key file and its password come from repository
+# secrets, written to a file by the release workflow.
+signs:
+  - id: minisign
+    cmd: minisign
+    artifacts: checksum
+    signature: "${artifact}.minisig"
+    stdin: "{{ .Env.MINISIGN_PASSWORD }}\n"
+    args:
+      - -S
+      - -s
+      - "{{ .Env.MINISIGN_KEY_FILE }}"
+      - -t
+      - "pihole-rbac {{ .Tag }}"
+      - -m
+      - "${artifact}"
+      - -x
+      - "${signature}"
+
+release:
+  prerelease: auto
+  # Beside the archives: the install script, which holds the same public key, and the key itself.
+  extra_files:
+    - glob: deploy/lxc/install.sh
+    - glob: minisign.pub
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"

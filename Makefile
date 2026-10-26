@@ -86,8 +86,8 @@ docker: ## Build the Docker image for this machine's platform as pihole-rbac:dev
 	docker build -f deploy/docker/Dockerfile -t pihole-rbac:dev \
 		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) .
 
-snapshot: ## GoReleaser snapshot build into dist/
-	goreleaser release --snapshot --clean
+snapshot: ## GoReleaser snapshot build into dist/ (unsigned; needs bash, as the notices script does)
+	goreleaser release --snapshot --clean --skip=sign
 
 clean: ## Remove build output
 	rm -rf bin dist web/build/app web/test-results web/playwright-report
