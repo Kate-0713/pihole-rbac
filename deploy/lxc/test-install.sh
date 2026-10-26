@@ -59,7 +59,9 @@ expect_stat /etc/pihole-rbac/secrets root:pihole-rbac 750
 expect_stat /etc/pihole-rbac/env root:pihole-rbac 640
 expect_stat /var/lib/pihole-rbac pihole-rbac:pihole-rbac 750
 expect_stat /var/log/pihole-rbac pihole-rbac:pihole-rbac 750
-expect_stat /var/lib/pihole-rbac/pihole-rbac.db pihole-rbac:pihole-rbac 640
+# The store creates the database 0600 itself, whatever the umask; session.key is 0600 too.
+expect_stat /var/lib/pihole-rbac/pihole-rbac.db pihole-rbac:pihole-rbac 600
+expect_stat /var/lib/pihole-rbac/session.key pihole-rbac:pihole-rbac 600
 log_file="/var/log/pihole-rbac/pihole-rbac-$(date +%F).log"
 expect_stat "$log_file" pihole-rbac:pihole-rbac 640
 grep -q 'msg=listening' "$log_file" || fail "the log file has no listening line"
