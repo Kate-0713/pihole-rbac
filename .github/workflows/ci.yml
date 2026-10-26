@@ -160,7 +160,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: ShellCheck
-        run: shellcheck deploy/lxc/install.sh deploy/lxc/test-install.sh deploy/docker/smoke-test.sh
+        run: shellcheck deploy/lxc/install.sh deploy/lxc/test-install.sh deploy/lxc/test-update.sh deploy/docker/smoke-test.sh
 
       - name: Build the binary
         run: |
@@ -170,6 +170,21 @@ jobs:
 
       - name: Install, check, uninstall and purge
         run: sudo bash deploy/lxc/test-install.sh bin/pihole-rbac
+
+      # Two binaries built with -tags updatertest, so the updater takes releases from the test's local server, signed
+      # with a throwaway key. Release builds never have the tag (GoReleaser refuses a binary that reports it).
+      - name: Build the update test binaries
+        run: |
+          pkg=github.com/Kate-0713/pihole-rbac/internal/buildinfo
+          for v in 2.0.0 2.0.1; do
+            go build -tags updatertest -trimpath -ldflags "-X $pkg.Version=$v" -o "bin/test-$v" ./cmd/pihole-rbac
+          done
+
+      - name: Update, refuse a downgrade, roll back a broken update
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends minisign
+          sudo bash deploy/lxc/test-update.sh bin/test-2.0.0 bin/test-2.0.1
 
   snapshot:
     name: goreleaser snapshot
