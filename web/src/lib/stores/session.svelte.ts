@@ -12,6 +12,7 @@ import { goto } from '$app/navigation';
 import { ApiError, api, onSessionResponses, setCSRFToken, unwrap, type Schemas } from '#lib/api/client.js';
 import { notices } from '#lib/stores/notices.svelte.js';
 import { targets } from '#lib/stores/targets.svelte.js';
+import { updates } from '#lib/stores/updates.svelte.js';
 import { writeResults } from '#lib/stores/write-results.svelte.js';
 
 export type CurrentSession = Schemas['CurrentSession'];
@@ -93,6 +94,7 @@ class SessionStore {
 	#clear(status: Exclude<SessionStatus, 'authenticated'>): void {
 		// What one user saw (their instances, their errors) mustn't carry over to whoever logs in next.
 		targets.reset();
+		updates.reset();
 		notices.clear();
 		writeResults.dismiss();
 		this.current = null;

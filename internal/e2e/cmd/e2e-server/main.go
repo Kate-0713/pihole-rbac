@@ -272,6 +272,8 @@ func appEnv(addr, dataDir string, extra map[string]string) []string {
 		"PIHOLE_RBAC_DATA_DIR="+dataDir,
 		"PIHOLE_RBAC_COOKIE_SECURE=false", // plain HTTP on localhost
 		"PIHOLE_RBAC_LOG_LEVEL=warn",
+		// No test may depend on GitHub: the System page's tests answer the update endpoints themselves.
+		"PIHOLE_RBAC_UPDATE_CHECK=false",
 	)
 	for k, v := range extra {
 		env = append(env, k+"="+v)
