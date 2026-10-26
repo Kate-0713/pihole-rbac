@@ -404,6 +404,11 @@ func (j *job) backup(ctx context.Context, cur release.Version) (string, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", err
 	}
+	// MkdirAll's mode is narrowed by the umask, which is 0077 under pihole-rbac-update.service; the app creates the
+	// directory 0750 (its umask is 0027), so the updater sets the same mode whoever created it.
+	if err := os.Chmod(dir, 0o750); err != nil {
+		return "", err
+	}
 	if err := u.System.Chown(dir); err != nil {
 		return "", err
 	}
