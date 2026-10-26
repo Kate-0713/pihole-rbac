@@ -62,11 +62,16 @@ wait_log() {
 
 [ "$(id -u)" -eq 0 ] || fail "run as root"
 command -v minisign >/dev/null || fail "minisign is needed to sign the test releases"
+# Output is read into a variable before grep -q looks at it, never piped: under pipefail, grep -q stopping at the
+# first match can fail the check with SIGPIPE although the text was there.
 for b in "$base" "$next"; do
-	"$b" version | grep -q '^TEST BUILD' || fail "$b wasn't built with -tags updatertest"
+	out="$("$b" version)"
+	grep -q '^TEST BUILD' <<<"$out" || fail "$b wasn't built with -tags updatertest"
 done
-"$base" version | grep -q '^pihole-rbac 2\.0\.0 ' || fail "$base isn't version 2.0.0"
-"$next" version | grep -q '^pihole-rbac 2\.0\.1 ' || fail "$next isn't version 2.0.1"
+out="$("$base" version)"
+grep -q '^pihole-rbac 2\.0\.0 ' <<<"$out" || fail "$base isn't version 2.0.0"
+out="$("$next" version)"
+grep -q '^pihole-rbac 2\.0\.1 ' <<<"$out" || fail "$next isn't version 2.0.1"
 
 case "$(uname -m)" in
 x86_64) arch=amd64 ;;
@@ -127,7 +132,8 @@ systemd-analyze verify /etc/systemd/system/pihole-rbac-update.path /etc/systemd/
 systemd-analyze security --no-pager pihole-rbac-update.service | tail -n 1
 
 step "root's commands run as the service user"
-/usr/local/bin/pihole-rbac setup | grep -q 'First-run setup is open' || fail "sudo pihole-rbac setup didn't report setup open"
+out="$(/usr/local/bin/pihole-rbac setup)"
+grep -q 'First-run setup is open' <<<"$out" || fail "sudo pihole-rbac setup didn't report setup open"
 [ -z "$(find /var/lib/pihole-rbac -user root)" ] || fail "root-owned files in the data directory: $(find /var/lib/pihole-rbac -user root)"
 
 step "a downgrade is refused before anything happens"

@@ -58,9 +58,12 @@ port="$(docker port "$name" 8080/tcp | head -n 1 | sed 's/.*://')"
 base="http://127.0.0.1:$port"
 
 [ "$(curl -fsS "$base/healthz")" = ok ] || fail "/healthz did not answer ok"
-curl -fsS "$base/api/v1/about" | grep -q '"license":"AGPL-3.0-or-later"' || fail "/api/v1/about is wrong"
-curl -fsS "$base/" | grep -qi '<!doctype html>' || fail "the SPA is not served"
-# Read into a variable first: grep -q stops reading early, which would fail curl on a large file under pipefail.
+# Output is read into a variable before grep -q looks at it, never piped: grep -q stops reading at the first match,
+# so under pipefail a writer still writing gets SIGPIPE and the check fails although the text was there.
+about="$(curl -fsS "$base/api/v1/about")" || fail "/api/v1/about did not answer"
+grep -q '"license":"AGPL-3.0-or-later"' <<<"$about" || fail "/api/v1/about is wrong"
+spa="$(curl -fsS "$base/")" || fail "the SPA is not served"
+grep -qi '<!doctype html>' <<<"$spa" || fail "the SPA is not served"
 notices="$(curl -fsS "$base/THIRD_PARTY_NOTICES.txt")" || fail "THIRD_PARTY_NOTICES.txt is not served"
 grep -q '^Third-party notices for pihole-rbac' <<<"$notices" || fail "THIRD_PARTY_NOTICES.txt is wrong"
 
@@ -70,7 +73,8 @@ user="$(docker inspect -f '{{.Config.User}}' "$image")"
 uids="$(docker top "$name" -o pid,uid | awk 'NR > 1 { print $2 }' | sort -u)"
 [ "$uids" = 65532 ] || fail "processes run as UID(s) $uids"
 
-docker logs "$name" 2>&1 | grep -q 'first-run setup is open' || fail "the setup token was not logged"
+logs="$(docker logs "$name" 2>&1)"
+grep -q 'first-run setup is open' <<<"$logs" || fail "the setup token was not logged"
 docker exec "$name" pihole-rbac setup --print-token >/dev/null || fail "setup --print-token failed"
 
 echo "smoke test passed: $image"
