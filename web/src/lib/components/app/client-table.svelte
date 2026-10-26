@@ -87,6 +87,10 @@
 	$effect(() => table.getColumn('groups')?.setFilterValue(groupFilter === 'all' ? undefined : [Number(groupFilter)]));
 
 	let rows = $derived(table.getRowModel().rows);
+	// The name is the hostname Pi-hole resolved for the client, which it often doesn't have (a MAC address or subnet, or
+	// no reverse DNS). The column is only shown when at least one client has one.
+	let hasNames = $derived(clients.some((c) => !!c.name));
+	let columnCount = $derived(4 + (hasNames ? 1 : 0) + (canEdit ? 1 : 0));
 	let filtering = $derived(search.trim() !== '' || groupFilter !== 'all');
 	let groupLabel = $derived(groups.find((g) => String(g.id) === groupFilter)?.name ?? 'All groups');
 
@@ -124,7 +128,7 @@
 			id="client-search"
 			type="search"
 			bind:value={search}
-			placeholder="Address, name or comment"
+			placeholder={hasNames ? 'Address, name or comment' : 'Address or comment'}
 			autocomplete="off"
 		/>
 	</div>
@@ -148,7 +152,7 @@
 		<Table.Header>
 			<Table.Row>
 				{@render sortHeader('client', 'Client')}
-				{@render sortHeader('name', 'Name')}
+				{#if hasNames}{@render sortHeader('name', 'Name')}{/if}
 				<Table.Head>Groups</Table.Head>
 				{@render sortHeader('comment', 'Comment')}
 				{@render sortHeader('added', 'Added')}
@@ -160,7 +164,7 @@
 				{@const c = row.original}
 				<Table.Row>
 					<Table.Cell><span class="font-mono text-sm break-all">{c.client}</span></Table.Cell>
-					<Table.Cell class="text-sm">{c.name ?? ''}</Table.Cell>
+					{#if hasNames}<Table.Cell class="text-sm">{c.name ?? ''}</Table.Cell>{/if}
 					<Table.Cell class="text-sm">{groupNames(c.groups, groups).join(', ') || '—'}</Table.Cell>
 					<Table.Cell class="text-muted-foreground max-w-64 text-sm break-words whitespace-normal">
 						{c.comment}
@@ -176,7 +180,7 @@
 				</Table.Row>
 			{:else}
 				<Table.Row>
-					<Table.Cell colspan={canEdit ? 6 : 5} class="text-muted-foreground py-6 text-center">
+					<Table.Cell colspan={columnCount} class="text-muted-foreground py-6 text-center">
 						{filtering ? 'Nothing matches.' : 'No clients are set up on this Pi-hole.'}
 					</Table.Cell>
 				</Table.Row>

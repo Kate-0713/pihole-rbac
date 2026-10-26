@@ -8,6 +8,18 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<!-- Light or dark, applied before anything is drawn so a dark page doesn't flash white while the app loads. The
+		     same rule as src/lib/stores/theme.svelte.ts, which takes over once the app runs. The CSP allows this script
+		     by its hash, which the server works out from this page at startup. -->
+		<script>
+			try {
+				var t = localStorage.getItem('pihole-rbac-theme');
+				if (t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+					document.documentElement.classList.add('dark');
+					document.documentElement.style.colorScheme = 'dark';
+				}
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

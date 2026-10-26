@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { mode } from "mode-watcher";
 	import { Toaster as Sonner, type ToasterProps as SonnerProps } from "svelte-sonner";
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
@@ -10,8 +9,10 @@
 	let { ...restProps }: SonnerProps = $props();
 </script>
 
+<!-- The theme comes from the caller (the root layout passes the app's own theme store), rather than from
+     mode-watcher as generated, which reads localStorage unguarded and throws where site data is blocked. -->
 <Sonner
-	theme={mode.current}
+	theme="system"
 	class="toaster group"
 	style="--normal-bg: var(--color-popover); --normal-text: var(--color-popover-foreground); --normal-border: var(--color-border);"
 	toastOptions={{

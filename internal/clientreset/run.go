@@ -439,7 +439,7 @@ func (s *Service) protected(ctx context.Context, res InstanceResult) []notify.Pr
 	var out []notify.ProtectedClient
 	for _, ch := range res.Reset {
 		if added := notifications.ProtectedAdded(ch.Before, ch.After, names); len(added) > 0 {
-			out = append(out, notify.ProtectedClient{Client: ch.Client, Groups: added})
+			out = append(out, notify.ProtectedClient{Client: ch.Client, Comment: ch.Comment, Groups: added})
 		}
 	}
 	return out

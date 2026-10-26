@@ -380,8 +380,12 @@ func TestRunInstance(t *testing.T) {
 	sent := e.sunk.all()
 	last := sent[len(sent)-1]
 	alerts := notify.ProtectedAlerts(last)
-	if len(alerts) != 1 || alerts[0].Client != "10.0.0.3" || !slices.Equal(alerts[0].Groups, []string{"AUTOSET-staff"}) {
+	if len(alerts) != 1 || alerts[0].Client != "10.0.0.3" || alerts[0].Comment != "NINJA-tv" ||
+		!slices.Equal(alerts[0].Groups, []string{"AUTOSET-staff"}) {
 		t.Errorf("alerts %+v", alerts)
+	}
+	if m := notify.ForProtectedAlert(last, alerts[0]).Plain(); m != "🚨 rita added client 10.0.0.3 (NINJA-tv) to protected group AUTOSET-staff on gamma" {
+		t.Errorf("alert %q", m)
 	}
 	if m := notify.ForEntry(last).Plain(); m != "rita client reset on i-3 (gamma): 2 clients reset — succeeded" {
 		t.Errorf("message %q", m)

@@ -15,6 +15,7 @@
 	import { cn } from '#lib/utils.js';
 	import ChangePasswordDialog from './change-password-dialog.svelte';
 	import TargetPicker from './target-picker.svelte';
+	import ThemeToggle from './theme-toggle.svelte';
 
 	let { target }: { target: string | null } = $props();
 
@@ -116,6 +117,8 @@
 			{#if usesTarget(page.url.pathname)}
 				<TargetPicker current={target} />
 			{/if}
+
+			<ThemeToggle />
 
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>

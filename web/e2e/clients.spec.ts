@@ -22,6 +22,24 @@ test('lists the clients with their names and groups', async ({ page, state }) =>
 	await expect(printer).toContainText('kids');
 });
 
+test("the Name column only shows when Pi-hole has resolved a client's name", async ({ page, state }) => {
+	await openAs(page, state.seeded.fixture.admin, '/clients?target=i-1');
+	await expect(page.getByRole('columnheader', { name: 'Name' })).toBeVisible();
+
+	// The same list with no names, as Pi-hole often answers for MAC addresses and subnets.
+	await page.route('**/api/v1/targets/i-1/clients', async (route) => {
+		const res = await route.fetch();
+		const body = await res.json();
+		for (const c of body.clients) delete c.name;
+		await route.fulfill({ response: res, json: body });
+	});
+	await page.reload();
+	await expect(clientCells(page)).toHaveText(['10.0.0.0/24', '10.0.1.5']);
+	await expect(page.getByRole('columnheader', { name: 'Name' })).toHaveCount(0);
+	await expect(page.getByRole('columnheader')).toHaveText(['Client', 'Groups', 'Comment', 'Added', 'Actions']);
+	await expect(page.getByLabel('Search')).toHaveAttribute('placeholder', 'Address or comment');
+});
+
 test('search and the group filter narrow the list', async ({ page, state }) => {
 	await openAs(page, state.seeded.fixture.admin, '/clients?target=i-1');
 	await page.getByLabel('Search').fill('printer'); // matches the name

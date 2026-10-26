@@ -151,6 +151,9 @@ func ForEntry(e audit.Entry) *Message {
 	for _, k := range itemKeys {
 		if v, ok := e.Detail[k].(string); ok && v != "" {
 			m.Text(": ").Code(v)
+			if k == "client" {
+				m.clientComment(e.Detail["comment"])
+			}
 			break
 		}
 	}
@@ -158,6 +161,16 @@ func ForEntry(e audit.Entry) *Message {
 		m.Text(" — ").Bold("failed").Text(" (" + ErrorCode(e) + ")")
 	} else {
 		m.Text(" — succeeded")
+	}
+	return m
+}
+
+// clientComment adds a client's comment in brackets, when it has one: a MAC or IP address on its own often doesn't
+// say whose device it is. The comment is Pi-hole's free text, so like every value it is made one short line and
+// escaped for the destination.
+func (m *Message) clientComment(v any) *Message {
+	if c, ok := v.(string); ok && strings.TrimSpace(c) != "" {
+		m.Text(" (").Text(strings.TrimSpace(c)).Text(")")
 	}
 	return m
 }
@@ -201,14 +214,16 @@ func stringList(v any) []string {
 
 // ProtectedAlert is one client added to protected Pi-hole groups.
 type ProtectedAlert struct {
-	Client string
-	Groups []string
+	Client  string
+	Comment string // the client's comment, if it has one
+	Groups  []string
 }
 
 // ProtectedClient is how a client_reset row lists a client its run put in protected groups, under "protected".
 type ProtectedClient struct {
-	Client string   `json:"client"`
-	Groups []string `json:"groups"`
+	Client  string   `json:"client"`
+	Comment string   `json:"comment,omitempty"`
+	Groups  []string `json:"groups"`
 }
 
 // ProtectedAlerts returns an alert for each client an entry added to protected Pi-hole groups: the client of a
@@ -219,7 +234,8 @@ func ProtectedAlerts(e audit.Entry) []ProtectedAlert {
 	case audit.ActionClientUpdate:
 		if groups := ProtectedGroups(e); len(groups) > 0 {
 			client, _ := e.Detail["client"].(string)
-			return []ProtectedAlert{{Client: client, Groups: groups}}
+			comment, _ := e.Detail["comment"].(string)
+			return []ProtectedAlert{{Client: client, Comment: comment, Groups: groups}}
 		}
 	case audit.ActionClientReset:
 		var out []ProtectedAlert
@@ -227,15 +243,16 @@ func ProtectedAlerts(e audit.Entry) []ProtectedAlert {
 		case []ProtectedClient:
 			for _, p := range v {
 				if len(p.Groups) > 0 {
-					out = append(out, ProtectedAlert{Client: p.Client, Groups: p.Groups})
+					out = append(out, ProtectedAlert{Client: p.Client, Comment: p.Comment, Groups: p.Groups})
 				}
 			}
 		case []any:
 			for _, item := range v {
 				m, _ := item.(map[string]any)
 				client, _ := m["client"].(string)
+				comment, _ := m["comment"].(string)
 				if groups := stringList(m["groups"]); len(groups) > 0 {
-					out = append(out, ProtectedAlert{Client: client, Groups: groups})
+					out = append(out, ProtectedAlert{Client: client, Comment: comment, Groups: groups})
 				}
 			}
 		}
@@ -247,15 +264,16 @@ func ProtectedAlerts(e audit.Entry) []ProtectedAlert {
 // ForProtectedGroup is the alert for a client_update that added its client to protected groups.
 func ForProtectedGroup(e audit.Entry, groups []string) *Message {
 	client, _ := e.Detail["client"].(string)
-	return ForProtectedAlert(e, ProtectedAlert{Client: client, Groups: groups})
+	comment, _ := e.Detail["comment"].(string)
+	return ForProtectedAlert(e, ProtectedAlert{Client: client, Comment: comment, Groups: groups})
 }
 
 // ForProtectedAlert is the alert for one client added to protected groups.
 func ForProtectedAlert(e audit.Entry, a ProtectedAlert) *Message {
 	m := &Message{}
-	m.Text("🚨 ").Bold(e.Username).Text(" added client ")
+	m.Text("User ").Bold(e.Username).Text(" added client ")
 	client, groups := a.Client, a.Groups
-	m.Code(client).Text(" to protected group")
+	m.Code(client).clientComment(a.Comment).Text(" to protected group")
 	if len(groups) > 1 {
 		m.Text("s")
 	}

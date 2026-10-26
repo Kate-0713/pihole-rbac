@@ -150,6 +150,22 @@ func TestForEntry(t *testing.T) {
 	if got := ok.Plain(); got != "alice domain add on i-1 (pihole1): ads.example.com — succeeded" {
 		t.Errorf("success: %s", got)
 	}
+	// A client is named with its comment, which says whose it is; a domain's comment isn't added.
+	client := ForEntry(audit.Entry{
+		Username: "alice", Action: audit.ActionClientUpdate, Target: "i-1", InstanceName: "pihole1",
+		Detail: map[string]any{"client": "aa:bb:cc:dd:ee:ff", "comment": " Kate's laptop\n*kids* "},
+	})
+	if got := client.Plain(); got != "alice client update on i-1 (pihole1): aa:bb:cc:dd:ee:ff (Kate's laptop *kids*) — succeeded" {
+		t.Errorf("client: %s", got)
+	}
+	if d := client.Discord(); !strings.Contains(d, `Kate's laptop \*kids\*`) || strings.Contains(d, "*kids*") {
+		t.Errorf("client comment isn't escaped for Discord: %s", d)
+	}
+	noComment := ForEntry(audit.Entry{Username: "alice", Action: audit.ActionClientUpdate,
+		Detail: map[string]any{"client": "10.0.0.9", "comment": "  "}})
+	if got := noComment.Plain(); got != "alice client update: 10.0.0.9 — succeeded" {
+		t.Errorf("client without a comment: %s", got)
+	}
 	failed := ForEntry(audit.Entry{
 		Username: "alice", Action: audit.ActionBlockingSet, Target: "g-2", InstanceName: "pihole2",
 		Err:    errors.New("dial tcp 10.0.0.7:443: connection refused"),
@@ -198,9 +214,13 @@ func TestProtectedGroups(t *testing.T) {
 
 func TestProtectedAlerts(t *testing.T) {
 	update := audit.Entry{Username: "alice", Action: audit.ActionClientUpdate, InstanceName: "pihole1",
-		Detail: map[string]any{"client": "10.0.0.9", "protected_added": []string{"Kids"}}}
-	if a := ProtectedAlerts(update); len(a) != 1 || a[0].Client != "10.0.0.9" || a[0].Groups[0] != "Kids" {
+		Detail: map[string]any{"client": "10.0.0.9", "comment": "Sam's tablet", "protected_added": []string{"Kids"}}}
+	a := ProtectedAlerts(update)
+	if len(a) != 1 || a[0].Client != "10.0.0.9" || a[0].Comment != "Sam's tablet" || a[0].Groups[0] != "Kids" {
 		t.Errorf("client_update: %+v", a)
+	}
+	if m := ForProtectedAlert(update, a[0]).Plain(); m != "🚨 alice added client 10.0.0.9 (Sam's tablet) to protected group Kids on pihole1" {
+		t.Errorf("alert with a comment: %s", m)
 	}
 
 	// A client reset lists every client it put in a protected group; it alerts for each, even when other clients
@@ -208,10 +228,10 @@ func TestProtectedAlerts(t *testing.T) {
 	reset := audit.Entry{Username: audit.SystemUser, Action: audit.ActionClientReset, InstanceName: "pihole2",
 		Err: errors.New("1 client reset, 1 failed"),
 		Detail: map[string]any{"protected": []ProtectedClient{
-			{Client: "10.0.0.1", Groups: []string{"Kids"}}, {Client: "10.0.0.2", Groups: []string{"Kids", "Guests"}}, {Client: "x"},
+			{Client: "10.0.0.1", Groups: []string{"Kids"}}, {Client: "10.0.0.2", Comment: "Sam's tablet", Groups: []string{"Kids", "Guests"}}, {Client: "x"},
 		}}}
 	alerts := ProtectedAlerts(reset)
-	if len(alerts) != 2 || alerts[1].Client != "10.0.0.2" || len(alerts[1].Groups) != 2 {
+	if len(alerts) != 2 || alerts[1].Client != "10.0.0.2" || alerts[1].Comment != "Sam's tablet" || len(alerts[1].Groups) != 2 {
 		t.Fatalf("client_reset: %+v", alerts)
 	}
 	if m := ForProtectedAlert(reset, alerts[0]).Plain(); m != "🚨 (system) added client 10.0.0.1 to protected group Kids on pihole2" {
@@ -219,9 +239,9 @@ func TestProtectedAlerts(t *testing.T) {
 	}
 	// As read back from JSON.
 	var d map[string]any
-	_ = json.Unmarshal([]byte(`{"protected":[{"client":"10.0.0.1","groups":["Kids"]},{"client":"bad","groups":"Kids"}]}`), &d)
+	_ = json.Unmarshal([]byte(`{"protected":[{"client":"10.0.0.1","comment":"hall TV","groups":["Kids"]},{"client":"bad","groups":"Kids"}]}`), &d)
 	reset.Detail = d
-	if a := ProtectedAlerts(reset); len(a) != 1 || a[0].Client != "10.0.0.1" || a[0].Groups[0] != "Kids" {
+	if a := ProtectedAlerts(reset); len(a) != 1 || a[0].Client != "10.0.0.1" || a[0].Comment != "hall TV" || a[0].Groups[0] != "Kids" {
 		t.Errorf("from JSON: %+v", a)
 	}
 	reset.Action = audit.ActionDomainAdd
