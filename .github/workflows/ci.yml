@@ -134,6 +134,41 @@ jobs:
             COMMIT=${{ github.sha }}
           cache-from: type=gha
 
+  # The LXC install script, run for real on the runner (a VM with systemd, Ubuntu 26.04 being a supported system)
+  # against a binary built from this commit: install, a second run, a crash, uninstall, reinstall and purge.
+  install:
+    name: lxc install
+    runs-on: ubuntu-26.04
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: ShellCheck
+        run: shellcheck deploy/lxc/install.sh deploy/lxc/test-install.sh deploy/docker/smoke-test.sh
+
+      - name: Build the binary
+        run: |
+          npm --prefix web ci
+          npm --prefix web run build
+          go build -trimpath -o bin/pihole-rbac ./cmd/pihole-rbac
+
+      - name: Install, check, uninstall and purge
+        run: sudo bash deploy/lxc/test-install.sh bin/pihole-rbac
+
   snapshot:
     name: goreleaser snapshot
     runs-on: ubuntu-26.04

@@ -40,6 +40,9 @@ archives:
     files:
       - LICENCE.md
       - README.md
+      # The LXC install script takes the unit and env template from the verified archive, not from the network.
+      - deploy/lxc/pihole-rbac.service
+      - deploy/lxc/env.example
 
 checksum:
   name_template: checksums.txt

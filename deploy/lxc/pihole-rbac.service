@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Installed to /etc/systemd/system by deploy/lxc/install.sh. Local changes belong in a drop-in
+# (systemctl edit pihole-rbac), which install.sh leaves alone; this file is replaced when it changes.
+
+[Unit]
+Description=pihole-rbac: role-based access control for the Pi-hole v6 API
+Documentation=https://github.com/Kate-0713/pihole-rbac
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pihole-rbac
+Group=pihole-rbac
+EnvironmentFile=/etc/pihole-rbac/env
+ExecStart=/usr/local/bin/pihole-rbac serve
+# POST /api/v1/system/restart exits cleanly and relies on this to come back.
+Restart=always
+RestartSec=5
+# The app allows 15 seconds for requests to finish and 5 for logging out of each Pi-hole.
+TimeoutStopSec=30
+UMask=0027
+
+# /run/pihole-rbac, where the updater's request file goes; systemd creates it and makes it writable.
+RuntimeDirectory=pihole-rbac
+RuntimeDirectoryMode=0750
+
+# Hardening. Everything is read-only except the data and log directories. The mount namespaces these need are
+# available in an unprivileged Proxmox LXC with nesting on (the default for new containers).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/pihole-rbac /var/log/pihole-rbac
+CapabilityBoundingSet=
+AmbientCapabilities=
+# To listen on a port below 1024 without a reverse proxy, override in a drop-in:
+#   CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+#   AmbientCapabilities=CAP_NET_BIND_SERVICE
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
