@@ -229,20 +229,30 @@ func withFrontend(t *testing.T, files fstest.MapFS) func(*Options) {
 	return func(o *Options) { o.Frontend = h }
 }
 
-// firstInlineScriptHash finds the first <script> without attributes and hashes its text, independently of the spa
-// package, so the test checks the header against the page rather than the code against itself.
-func firstInlineScriptHash(t *testing.T, page string) string {
+// inlineScriptHashes hashes the text of every <script> without attributes, in the order they appear, independently of
+// the spa package, so the tests check the header against the page rather than the code against itself. The built
+// page has two: app.html's theme script in the head, and SvelteKit's bootstrap in the body.
+func inlineScriptHashes(t *testing.T, page string) string {
 	t.Helper()
-	_, after, ok := strings.Cut(page, "<script>")
-	if !ok {
+	var hashes []string
+	rest := page
+	for {
+		_, after, ok := strings.Cut(rest, "<script>")
+		if !ok {
+			break
+		}
+		text, tail, ok := strings.Cut(after, "</script>")
+		if !ok {
+			t.Fatal("unterminated <script>")
+		}
+		sum := sha256.Sum256([]byte(strings.ReplaceAll(text, "\r\n", "\n")))
+		hashes = append(hashes, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
+		rest = tail
+	}
+	if len(hashes) == 0 {
 		t.Fatal("page has no inline <script>")
 	}
-	text, _, ok := strings.Cut(after, "</script>")
-	if !ok {
-		t.Fatal("unterminated <script>")
-	}
-	sum := sha256.Sum256([]byte(strings.ReplaceAll(text, "\r\n", "\n")))
-	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	return strings.Join(hashes, " ")
 }
 
 func scriptSrc(t *testing.T, csp string) string {
@@ -263,7 +273,7 @@ func TestFrontendServed(t *testing.T) {
 		"_app/immutable/app.js": {Data: []byte("x")},
 	}))
 	c := e.client("10.0.0.1:1")
-	want := "script-src 'self' " + firstInlineScriptHash(t, page)
+	want := "script-src 'self' " + inlineScriptHashes(t, page)
 
 	for _, path := range []string{"/", "/login", "/domains?target=i-1", "/_app/immutable/app.js", "/api/v1/about", "/healthz"} {
 		res := c.do(http.MethodGet, path, nil)
@@ -297,7 +307,7 @@ func TestFrontendNotBuilt(t *testing.T) {
 	}
 }
 
-// The header served with the real embedded build must allow exactly that page's bootstrap script.
+// The header served with the real embedded build must allow exactly that page's inline scripts.
 func TestCSPMatchesEmbeddedPage(t *testing.T) {
 	dist, built := web.Dist()
 	if !built {
@@ -309,7 +319,11 @@ func TestCSPMatchesEmbeddedPage(t *testing.T) {
 	}
 	e := newTestEnv(t, func(o *Options) { o.Frontend = h })
 	res := e.client("10.0.0.1:1").do(http.MethodGet, "/", nil)
-	want := "script-src 'self' " + firstInlineScriptHash(t, res.Body.String())
+	want := "script-src 'self' " + inlineScriptHashes(t, res.Body.String())
+	if n := strings.Count(want, "'sha256-"); n != 2 {
+		t.Errorf("the built page has %d inline scripts, want 2 (the theme script and the bootstrap); if web/build is "+
+			"older than web/src/app.html, rebuild it (make web or .\\build.ps1 web)", n)
+	}
 	if got := scriptSrc(t, res.Header().Get("Content-Security-Policy")); got != want {
 		t.Fatalf("%s, want %s", got, want)
 	}

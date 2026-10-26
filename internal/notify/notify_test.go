@@ -192,7 +192,7 @@ func TestProtectedGroups(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("groups %v", got)
 	}
-	if m := ForProtectedGroup(e, got).Plain(); m != "🚨 alice added client 10.0.0.9 to protected groups Kids, Guests on pihole1" {
+	if m := ForProtectedGroup(e, got).Plain(); m != "User alice added client 10.0.0.9 to protected groups Kids, Guests on pihole1" {
 		t.Errorf("alert: %s", m)
 	}
 	// As read back from JSON.
@@ -219,7 +219,7 @@ func TestProtectedAlerts(t *testing.T) {
 	if len(a) != 1 || a[0].Client != "10.0.0.9" || a[0].Comment != "Sam's tablet" || a[0].Groups[0] != "Kids" {
 		t.Errorf("client_update: %+v", a)
 	}
-	if m := ForProtectedAlert(update, a[0]).Plain(); m != "🚨 alice added client 10.0.0.9 (Sam's tablet) to protected group Kids on pihole1" {
+	if m := ForProtectedAlert(update, a[0]).Plain(); m != "User alice added client 10.0.0.9 (Sam's tablet) to protected group Kids on pihole1" {
 		t.Errorf("alert with a comment: %s", m)
 	}
 
@@ -234,7 +234,7 @@ func TestProtectedAlerts(t *testing.T) {
 	if len(alerts) != 2 || alerts[1].Client != "10.0.0.2" || alerts[1].Comment != "Sam's tablet" || len(alerts[1].Groups) != 2 {
 		t.Fatalf("client_reset: %+v", alerts)
 	}
-	if m := ForProtectedAlert(reset, alerts[0]).Plain(); m != "🚨 (system) added client 10.0.0.1 to protected group Kids on pihole2" {
+	if m := ForProtectedAlert(reset, alerts[0]).Plain(); m != "User (system) added client 10.0.0.1 to protected group Kids on pihole2" {
 		t.Errorf("alert: %s", m)
 	}
 	// As read back from JSON.

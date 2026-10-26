@@ -179,7 +179,8 @@ func TestNotBuilt(t *testing.T) {
 	}
 }
 
-// The real build must load, and its bootstrap script must be the one inline script found.
+// The real build must load, with its two inline scripts found: app.html's theme script, which applies light or dark
+// mode before the page is drawn, and SvelteKit's bootstrap. A third would be a new inline script that needs a reason.
 func TestEmbeddedBuild(t *testing.T) {
 	dist, built := web.Dist()
 	if !built {
@@ -189,7 +190,8 @@ func TestEmbeddedBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(h.ScriptHashes()); n != 1 {
-		t.Fatalf("found %d inline scripts in the built index.html, want 1 (the SvelteKit bootstrap)", n)
+	if n := len(h.ScriptHashes()); n != 2 {
+		t.Fatalf("found %d inline scripts in the built index.html, want 2 (the theme script and the SvelteKit bootstrap); "+
+			"if web/build is older than web/src/app.html, rebuild it (make web or .\\build.ps1 web)", n)
 	}
 }

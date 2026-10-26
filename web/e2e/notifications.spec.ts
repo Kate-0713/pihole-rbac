@@ -183,7 +183,7 @@ test('protected groups: an alert when a client joins one, and a warning when it 
 	try {
 		// The client's comment says whose it is.
 		expect(await nthReceived(request, room, 1)).toBe(
-			`🚨 admin added client 10.0.0.0/24 (lab subnet) to protected group kids on ${pihole1.name}`
+			`User admin added client 10.0.0.0/24 (lab subnet) to protected group kids on ${pihole1.name}`
 		);
 
 		// Taking it away warns the channel first.

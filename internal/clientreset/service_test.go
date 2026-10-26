@@ -384,7 +384,7 @@ func TestRunInstance(t *testing.T) {
 		!slices.Equal(alerts[0].Groups, []string{"AUTOSET-staff"}) {
 		t.Errorf("alerts %+v", alerts)
 	}
-	if m := notify.ForProtectedAlert(last, alerts[0]).Plain(); m != "🚨 rita added client 10.0.0.3 (NINJA-tv) to protected group AUTOSET-staff on gamma" {
+	if m := notify.ForProtectedAlert(last, alerts[0]).Plain(); m != "User rita added client 10.0.0.3 (NINJA-tv) to protected group AUTOSET-staff on gamma" {
 		t.Errorf("alert %q", m)
 	}
 	if m := notify.ForEntry(last).Plain(); m != "rita client reset on i-3 (gamma): 2 clients reset — succeeded" {
