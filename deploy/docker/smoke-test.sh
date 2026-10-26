@@ -66,7 +66,8 @@ grep -q '^Third-party notices for pihole-rbac' <<<"$notices" || fail "THIRD_PART
 
 user="$(docker inspect -f '{{.Config.User}}' "$image")"
 [ "$user" = "65532:65532" ] || fail "the image runs as '$user', not 65532:65532"
-uids="$(docker top "$name" -o uid | tail -n +2 | sort -u)"
+# docker top needs the PID column in the ps output it parses, so ask for it and keep only the UIDs.
+uids="$(docker top "$name" -o pid,uid | awk 'NR > 1 { print $2 }' | sort -u)"
 [ "$uids" = 65532 ] || fail "processes run as UID(s) $uids"
 
 docker logs "$name" 2>&1 | grep -q 'first-run setup is open' || fail "the setup token was not logged"
