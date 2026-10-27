@@ -215,7 +215,8 @@ func (h *hostSystem) BinaryVersion(ctx context.Context, path string) (string, er
 	return string(out), nil
 }
 
-func (h *hostSystem) Chown(path string) error {
+// Chown uses Lchown inside dir: never following a symlink, and never leaving dir. See updater.System.
+func (h *hostSystem) Chown(dir *os.Root, name string) error {
 	if !h.looked {
 		u, err := user.Lookup(serviceUser)
 		if err != nil {
@@ -229,5 +230,5 @@ func (h *hostSystem) Chown(path string) error {
 		}
 		h.looked = true
 	}
-	return os.Chown(path, h.uid, h.gid)
+	return dir.Lchown(name, h.uid, h.gid)
 }

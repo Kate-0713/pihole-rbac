@@ -107,8 +107,11 @@ func (f *fakeSystem) BinaryVersion(_ context.Context, path string) (string, erro
 	return f.version, nil
 }
 
-func (f *fakeSystem) Chown(path string) error {
-	f.chowned = append(f.chowned, filepath.Base(path))
+func (f *fakeSystem) Chown(dir *os.Root, name string) error {
+	if _, err := dir.Lstat(name); err != nil {
+		return err
+	}
+	f.chowned = append(f.chowned, filepath.Base(name))
 	return nil
 }
 
@@ -479,7 +482,12 @@ func TestPruneBackups(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := pruneBackups(dir, 5); err != nil {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := pruneBackups(root, ".", 5); err != nil {
 		t.Fatal(err)
 	}
 	var left []string

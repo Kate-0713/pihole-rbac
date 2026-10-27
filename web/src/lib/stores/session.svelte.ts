@@ -144,9 +144,19 @@ export function loginURL(next: string): string {
 }
 
 // safeNext only accepts a path on this site, so a crafted link (/login?next=https://evil.example, or //evil.example)
-// can't send someone elsewhere after they log in.
+// can't send someone elsewhere after they log in. Checking the string's start isn't enough: the URL parser drops tabs
+// and newlines, so "/\t/evil.example" (?next=/%09/evil.example) becomes //evil.example. So the value is resolved as
+// the browser would resolve it, against a placeholder origin, and kept only if it stays there.
+const nextBase = 'https://pihole-rbac.invalid';
 export function safeNext(next: string | null): string {
-	if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return '/';
-	if (next === '/login' || next.startsWith('/login?') || next.startsWith('/setup')) return '/';
-	return next;
+	if (!next || !next.startsWith('/')) return '/';
+	let url: URL;
+	try {
+		url = new URL(next, nextBase);
+	} catch {
+		return '/';
+	}
+	if (url.origin !== nextBase) return '/';
+	if (url.pathname === '/login' || url.pathname.startsWith('/setup')) return '/';
+	return url.pathname + url.search + url.hash;
 }

@@ -46,8 +46,9 @@ type System interface {
 	Health(ctx context.Context) error
 	// BinaryVersion runs `<path> version` and returns its output.
 	BinaryVersion(ctx context.Context, path string) (string, error)
-	// Chown gives path to the service user and group.
-	Chown(path string) error
+	// Chown gives name, inside dir, to the service user and group. It never follows a symlink: the data directory
+	// belongs to the service user, so anything in it may have been replaced by a compromised app.
+	Chown(dir *os.Root, name string) error
 }
 
 // Updater carries out one request. The zero values of the optional fields are the defaults.
@@ -91,6 +92,27 @@ func (u *Updater) out() io.Writer {
 
 func (u *Updater) dbPath() string { return filepath.Join(u.DataDir, store.FileName) }
 
+// The updater runs as root, but the data directory and everything in it belong to the service user, so a compromised
+// app could have replaced any entry in it with a symlink: backups pointing at /usr/local/bin, say, which a chown would
+// then hand to the app, and with it the binary root runs. So every file operation in the data directory goes through
+// an os.Root opened on it, which refuses to resolve a path outside it, and ownership changes never follow a symlink.
+// The directory itself can't be swapped, since its parent is root's.
+
+// backupsName is the backups directory's name inside the data directory.
+func (u *Updater) backupsName() string { return filepath.Base(store.BackupDir(u.DataDir)) }
+
+// regularFile reports an error unless name, inside dir, is a regular file rather than a symlink or anything else.
+func regularFile(dir *os.Root, name string) error {
+	fi, err := dir.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s isn't a regular file (%s): refusing to use it", name, fi.Mode().Type())
+	}
+	return nil
+}
+
 // Run takes the oldest pending request and carries it out. It returns the request's outcome, or "" when there was
 // no pending request. An error means the request couldn't be read or recorded at all; an update that fails is an
 // outcome, not an error.
@@ -100,7 +122,12 @@ func (u *Updater) Run(ctx context.Context) (string, error) {
 			fmt.Fprintf(u.out(), "removing %s: %v\n", u.RequestFile, err)
 		}
 	}
-	j := &job{u: u}
+	root, err := os.OpenRoot(u.DataDir)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	j := &job{u: u, root: root}
 	if err := j.open(ctx); err != nil {
 		return "", err
 	}
@@ -135,15 +162,21 @@ func (u *Updater) Run(ctx context.Context) (string, error) {
 
 // job is one request being carried out.
 type job struct {
-	u  *Updater
-	d  *sql.DB
-	q  *db.Queries
-	id int64
+	u    *Updater
+	root *os.Root // the data directory; see backupsName
+	d    *sql.DB
+	q    *db.Queries
+	id   int64
 	// lines is every log line written, so lines lost when the database is restored from a backup can be written again.
 	lines []string
 }
 
 func (j *job) open(ctx context.Context) error {
+	// SQLite opens the database by path, so check first that it is the file itself and not a symlink to one root can
+	// write elsewhere.
+	if err := regularFile(j.root, store.FileName); err != nil {
+		return fmt.Errorf("opening the database: %w", err)
+	}
 	d, err := store.OpenUnmigrated(ctx, j.u.DataDir)
 	if err != nil {
 		return err
@@ -378,62 +411,88 @@ func (j *job) rollback(ctx context.Context, cause string, cur release.Version, p
 // restoreDB replaces the database with the backup: copied beside it, given to the service user, then renamed into
 // place, with the old WAL and shared-memory files removed so they can't be replayed onto it.
 func (j *job) restoreDB(backup string) error {
-	dst := j.u.dbPath()
-	tmp := dst + ".restore"
-	if err := copyFile(backup, tmp, 0o600); err != nil {
+	name, err := filepath.Rel(j.u.DataDir, backup)
+	if err != nil {
 		return err
 	}
-	if err := j.u.System.Chown(tmp); err != nil {
-		_ = os.Remove(tmp)
+	if err := regularFile(j.root, name); err != nil {
+		return err
+	}
+	b, err := j.root.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	tmp := store.FileName + ".restore"
+	if err := writeFileAtomicIn(j.root, tmp, b, 0o600); err != nil {
+		return err
+	}
+	if err := j.u.System.Chown(j.root, tmp); err != nil {
+		_ = j.root.Remove(tmp)
 		return err
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
-		if err := os.Remove(dst + suffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			_ = os.Remove(tmp)
+		if err := j.root.Remove(store.FileName + suffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			_ = j.root.Remove(tmp)
 			return err
 		}
 	}
-	return os.Rename(tmp, dst)
+	return j.root.Rename(tmp, store.FileName)
 }
 
 // backup writes the database to backups/<version>-<time>.db with VACUUM INTO, owned by the service user, and keeps
 // the newest KeepBackups of the updater's backups. The app's own pre-migrate-* backups are left alone.
 func (j *job) backup(ctx context.Context, cur release.Version) (string, error) {
 	u := j.u
-	dir := store.BackupDir(u.DataDir)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	dirName := u.backupsName()
+	if err := j.root.Mkdir(dirName, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
 		return "", err
 	}
-	// MkdirAll's mode is narrowed by the umask, which is 0077 under pihole-rbac-update.service; the app creates the
+	if fi, err := j.root.Lstat(dirName); err != nil {
+		return "", err
+	} else if !fi.IsDir() {
+		return "", fmt.Errorf("%s isn't a directory (%s): refusing to use it", store.BackupDir(u.DataDir), fi.Mode().Type())
+	}
+	// Mkdir's mode is narrowed by the umask, which is 0077 under pihole-rbac-update.service; the app creates the
 	// directory 0750 (its umask is 0027), so the updater sets the same mode whoever created it.
-	if err := os.Chmod(dir, 0o750); err != nil {
+	if err := j.root.Chmod(dirName, 0o750); err != nil {
 		return "", err
 	}
-	if err := u.System.Chown(dir); err != nil {
+	if err := u.System.Chown(j.root, dirName); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, cur.Tag()+"-"+u.now().UTC().Format(store.BackupTimeFormat)+".db")
-	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("%s already exists", path)
+	name := filepath.Join(dirName, cur.Tag()+"-"+u.now().UTC().Format(store.BackupTimeFormat)+".db")
+	if _, err := j.root.Lstat(name); err == nil {
+		return "", fmt.Errorf("%s already exists", name)
 	}
+	path := filepath.Join(u.DataDir, name)
 	if _, err := j.d.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
 		return "", err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	// SQLite wrote the file by path; make sure what is there now is that file before changing it.
+	if err := regularFile(j.root, name); err != nil {
 		return "", err
 	}
-	if err := u.System.Chown(path); err != nil {
+	if err := j.root.Chmod(name, 0o600); err != nil {
 		return "", err
 	}
-	if err := pruneBackups(dir, cmp.Or(u.KeepBackups, 5)); err != nil {
+	if err := u.System.Chown(j.root, name); err != nil {
+		return "", err
+	}
+	if err := pruneBackups(j.root, dirName, cmp.Or(u.KeepBackups, 5)); err != nil {
 		j.logf("Removing old update backups: %v", err)
 	}
 	return path, nil
 }
 
-// pruneBackups keeps the newest keep of the updater's backups (v<version>-<time>.db), by the time in their names.
-func pruneBackups(dir string, keep int) error {
-	entries, err := os.ReadDir(dir)
+// pruneBackups keeps the newest keep of the updater's backups (v<version>-<time>.db) in dir, inside root, by the time
+// in their names.
+func pruneBackups(root *os.Root, dir string, keep int) error {
+	d, err := root.Open(dir)
+	if err != nil {
+		return err
+	}
+	entries, err := d.ReadDir(-1)
+	d.Close()
 	if err != nil {
 		return err
 	}
@@ -463,9 +522,31 @@ func pruneBackups(dir string, keep int) error {
 	slices.SortFunc(names, func(a, b string) int { return cmp.Compare(timeOf(a), timeOf(b)) })
 	var errs []error
 	for _, n := range names[:len(names)-keep] {
-		errs = append(errs, os.Remove(filepath.Join(dir, n)))
+		errs = append(errs, root.Remove(filepath.Join(dir, n)))
 	}
 	return errors.Join(errs...)
+}
+
+// writeFileAtomicIn is writeFileAtomic for a file inside root. The temporary file is created exclusively, so a
+// symlink planted under its name makes it fail rather than write through it, and its mode is set on the open file.
+func writeFileAtomicIn(root *os.Root, name string, b []byte, mode fs.FileMode) error {
+	tmp := name + ".tmp"
+	if err := root.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(b)
+	merr := f.Chmod(mode) // the umask may have narrowed it
+	serr := f.Sync()
+	cerr := f.Close()
+	if err := errors.Join(werr, merr, serr, cerr); err != nil {
+		_ = root.Remove(tmp)
+		return err
+	}
+	return root.Rename(tmp, name)
 }
 
 // writeFileAtomic writes b to a temporary file beside path and renames it into place.

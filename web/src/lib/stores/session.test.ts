@@ -20,6 +20,10 @@ describe('safeNext', () => {
 		['https://evil.example/'],
 		['//evil.example/path'], // protocol-relative
 		['/\\evil.example'], // some browsers treat a backslash like a slash
+		['/\t/evil.example'], // the URL parser drops tabs and newlines, which leaves //evil.example
+		['/\n/evil.example'],
+		['/\r\n/evil.example'],
+		['/\\\t\\evil.example'],
 		['javascript:alert(1)']
 	])('refuses anything that could leave the site: %j', (next) => {
 		expect(safeNext(next)).toBe('/');
