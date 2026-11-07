@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	activeRequest,
+	bannerFromVersion,
 	bannerVersion,
 	describeReload,
 	describeSource,
@@ -77,6 +78,13 @@ describe('bannerVersion', () => {
 		expect(bannerVersion(status(), null)).toBe('v2.1.0');
 		expect(bannerVersion(status(), 'v2.1.0')).toBeNull();
 		expect(bannerVersion(status(), 'v2.0.5')).toBe('v2.1.0');
+	});
+	it('works from the version endpoint too', () => {
+		const v = { version: '2.0.0', commit: 'c', build_date: 'd', development: false };
+		const latest = { version: 'v2.1.0', url: 'https://example.invalid/v2.1.0' };
+		expect(bannerVersion(bannerFromVersion({ ...v, latest, update_available: true }), null)).toBe('v2.1.0');
+		expect(bannerVersion(bannerFromVersion({ ...v, latest, update_available: false }), null)).toBeNull();
+		expect(bannerVersion(bannerFromVersion(v), null)).toBeNull();
 	});
 	it('shows nothing without an update', () => {
 		expect(bannerVersion(null, null)).toBeNull();

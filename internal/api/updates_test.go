@@ -127,6 +127,52 @@ func TestGetVersion(t *testing.T) {
 	}
 }
 
+// TestVersionShowsLatestRelease: any user can see from GET /system/version that a newer release is out, as the last
+// check found it, without being able to read the update status, and reading it never asks GitHub.
+func TestVersionShowsLatestRelease(t *testing.T) {
+	ue := newUpdatesEnv(t, updates.InstallLXC)
+	ue.addRoleUser("reader", "reader-password-1", rbac.DomainsView) // nothing global
+	reader := ue.loggedIn("reader", "reader-password-1")
+
+	res := reader.do(http.MethodGet, "/api/v1/system/version", nil)
+	mustStatus(t, res, http.StatusOK)
+	if v := decode[gen.VersionInfo](t, res); v.Latest != nil || v.UpdateAvailable != nil {
+		t.Fatalf("before any check: %+v", v)
+	}
+
+	mustStatus(t, ue.loggedIn("admin", "admin-password-1").do(http.MethodPost, "/api/v1/system/update/check", nil), http.StatusOK)
+
+	res = reader.do(http.MethodGet, "/api/v1/system/version", nil)
+	mustStatus(t, res, http.StatusOK)
+	v := decode[gen.VersionInfo](t, res)
+	if v.Latest == nil || v.Latest.Version != "v2.1.0" || v.Latest.Url != "https://github.com/Kate-0713/pihole-rbac/releases/tag/v2.1.0" ||
+		v.Latest.PublishedAt == nil || v.UpdateAvailable == nil || !*v.UpdateAvailable {
+		t.Fatalf("after a check: %+v", v)
+	}
+	// Only the release: nothing about the install or who asked for updates.
+	for _, field := range []string{`"install"`, `"requests"`, `"can_request"`, `"check_error"`, `"checked_at"`} {
+		if strings.Contains(res.Body.String(), field) {
+			t.Errorf("version response has %s: %s", field, res.Body)
+		}
+	}
+	if ue.releases.calls != 1 {
+		t.Errorf("GitHub asked %d times, want only the admin's check", ue.releases.calls)
+	}
+	if res := reader.do(http.MethodGet, "/api/v1/system/update", nil); res.Code != http.StatusForbidden {
+		t.Errorf("update status without app.update: %d", res.Code)
+	}
+
+	// Running the latest release: it is named, but no update is available.
+	ue.releases.rel.Version = mustVersion(t, "v2.0.0")
+	ue.releases.rel.PublishedAt = time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	ue.srv.Updates.Now = func() time.Time { return time.Now().Add(time.Hour) } // past the once-a-minute limit
+	mustStatus(t, ue.loggedIn("admin", "admin-password-1").do(http.MethodPost, "/api/v1/system/update/check", nil), http.StatusOK)
+	v = decode[gen.VersionInfo](t, reader.do(http.MethodGet, "/api/v1/system/version", nil))
+	if v.Latest == nil || v.Latest.Version != "v2.0.0" || v.UpdateAvailable == nil || *v.UpdateAvailable {
+		t.Errorf("running the latest: %+v", v)
+	}
+}
+
 func TestUpdateStatusAndCheck(t *testing.T) {
 	ue := newUpdatesEnv(t, updates.InstallLXC)
 	admin := ue.loggedIn("admin", "admin-password-1")

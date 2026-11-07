@@ -232,8 +232,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The running version
-         * @description The version, commit and build date of the running build. Behind a session (unlike `about`), so anonymous visitors can't tell which release is running.
+         * The running version, and whether a newer release is out
+         * @description The version, commit and build date of the running build, and the latest release found by the last update check with whether it is newer, so every user can be told an update is out. Behind a session (unlike `about`), so anonymous visitors can't tell which release is running. Reading changes nothing and never asks GitHub. How the app was installed and its update requests are only in `GET /system/update` (`app.update`).
          */
         get: operations["getVersion"];
         put?: never;
@@ -1621,6 +1621,9 @@ export interface components {
             build_date: string;
             /** @description The version can't be compared with releases (a development, snapshot or git-describe build). */
             development: boolean;
+            latest?: components["schemas"]["LatestRelease"];
+            /** @description The latest release is newer than the running version. Present only with `latest`; always false for a development build. */
+            update_available?: boolean;
         };
         UpdateStatus: {
             /** @description The running version as built (see VersionInfo). */

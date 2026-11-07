@@ -2838,6 +2838,12 @@ type VersionInfo struct {
 	// Development The version can't be compared with releases (a development, snapshot or git-describe build).
 	Development bool `json:"development"`
 
+	// Latest The newest published release that isn't a prerelease. Absent until one is found.
+	Latest *LatestRelease `json:"latest,omitempty"`
+
+	// UpdateAvailable The latest release is newer than the running version. Present only with `latest`; always false for a development build.
+	UpdateAvailable *bool `json:"update_available,omitempty"`
+
 	// Version As built, without a leading v for a release ("2.1.0"); "dev" or a git-describe string otherwise.
 	Version string `json:"version"`
 }
@@ -3429,7 +3435,7 @@ type ServerInterface interface {
 	// CheckForUpdate Check for a new release now
 	// (POST /api/v1/system/update/check)
 	CheckForUpdate(w http.ResponseWriter, r *http.Request)
-	// GetVersion The running version
+	// GetVersion The running version, and whether a newer release is out
 	// (GET /api/v1/system/version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
 	// ListTargets The instances the user can act on
@@ -14835,7 +14841,7 @@ type StrictServerInterface interface {
 	// CheckForUpdate Check for a new release now
 	// (POST /api/v1/system/update/check)
 	CheckForUpdate(ctx context.Context, request CheckForUpdateRequestObject) (CheckForUpdateResponseObject, error)
-	// GetVersion The running version
+	// GetVersion The running version, and whether a newer release is out
 	// (GET /api/v1/system/version)
 	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
 	// ListTargets The instances the user can act on

@@ -257,6 +257,37 @@ type Status struct {
 	Requests   []Request // newest first
 }
 
+// Available is the part of the status anyone logged in may see: the latest release found and whether it is newer
+// than the running version. Nothing about the install or its update requests.
+type Available struct {
+	Latest      *release.Version // nil when not known, or when no release has been published
+	PublishedAt time.Time
+	// UpdateAvailable: the latest release is newer than the running version.
+	UpdateAvailable bool
+}
+
+// LatestRelease reads the stored result of the last check. It changes nothing and never asks GitHub.
+func (s *Service) LatestRelease(ctx context.Context) (Available, error) {
+	st, err := loadState(ctx, s.Store.Read())
+	if err != nil {
+		return Available{}, err
+	}
+	return s.available(st), nil
+}
+
+func (s *Service) available(st state) Available {
+	var out Available
+	if v, err := release.ParseTag(st.Latest); err == nil {
+		out.Latest = &v
+		if st.PublishedAt != 0 {
+			out.PublishedAt = store.FromMillis(st.PublishedAt)
+		}
+		cur, ok := s.current()
+		out.UpdateAvailable = ok && v.Compare(cur) > 0
+	}
+	return out
+}
+
 // Status reads the update status. It changes nothing.
 func (s *Service) Status(ctx context.Context, buildVersion string) (Status, error) {
 	q := s.Store.Read()
@@ -268,20 +299,15 @@ func (s *Service) Status(ctx context.Context, buildVersion string) (Status, erro
 	if err != nil {
 		return Status{}, err
 	}
-	cur, ok := s.current()
+	_, ok := s.current()
+	av := s.available(st)
 	out := Status{
 		Current: buildVersion, Development: !ok, Install: s.Install, CheckEnabled: s.CheckEnabled(),
 		CheckError: st.CheckError, Requests: make([]Request, 0, len(rows)),
+		Latest: av.Latest, PublishedAt: av.PublishedAt, UpdateAvailable: av.UpdateAvailable,
 	}
 	if st.CheckedAt != 0 {
 		out.CheckedAt = store.FromMillis(st.CheckedAt)
-	}
-	if v, err := release.ParseTag(st.Latest); err == nil {
-		out.Latest = &v
-		if st.PublishedAt != 0 {
-			out.PublishedAt = store.FromMillis(st.PublishedAt)
-		}
-		out.UpdateAvailable = ok && v.Compare(cur) > 0
 	}
 	active := false
 	for _, r := range rows {

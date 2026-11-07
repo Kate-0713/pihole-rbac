@@ -154,6 +154,44 @@ test('an update on LXC: the banner, Update now, its progress and the result', as
 	await expect(updates.getByRole('button', { name: 'Update now' })).toBeVisible();
 });
 
+test('everyone sees that an update is out; only app.update gets the System page link', async ({ page, state }) => {
+	// The seeded server's check is off, so the version endpoint is answered here with a newer release found.
+	await page.route('**/api/v1/system/version', async (route) => {
+		const res = await route.fetch();
+		const body = (await res.json()) as Record<string, unknown>;
+		await route.fulfill({
+			response: res,
+			json: {
+				...body,
+				version: '2.0.0',
+				development: false,
+				latest: { version: 'v2.1.0', url: 'https://github.com/Kate-0713/pihole-rbac/releases/tag/v2.1.0' },
+				update_available: true
+			}
+		});
+	});
+	let asked = false;
+	await page.route('**/api/v1/system/update', (route) => {
+		asked = true;
+		return route.continue();
+	});
+
+	// one_instance holds Pi-hole permissions on pihole1 and nothing global.
+	await openAs(page, state.seeded.fixture.one_instance, '/dashboard?target=i-1');
+	const banner = page.getByRole('alert', { name: 'Update available' });
+	await expect(banner).toContainText('pihole-rbac v2.1.0 is available (this is v2.0.0). An administrator can install it.');
+	await expect(banner.getByRole('link', { name: "What's new" })).toHaveAttribute('href', /releases\/tag\/v2\.1\.0$/);
+	await expect(banner.getByRole('link', { name: 'Update on the System page' })).toHaveCount(0);
+	expect(asked, 'the full update status was asked for without app.update').toBe(false);
+
+	// Dismissing works the same way: gone for this release, in this browser.
+	await banner.getByRole('button', { name: 'Dismiss until the next release' }).click();
+	await expect(banner).toHaveCount(0);
+	await page.reload();
+	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+	await expect(banner).toHaveCount(0);
+});
+
 test('a prerelease can be asked for by name', async ({ page, state }) => {
 	const updater = await fakeUpdater(page, { current_version: '2.0.0', update_available: false, latest: undefined });
 	await openAs(page, state.seeded.fixture.admin, '/admin/system');

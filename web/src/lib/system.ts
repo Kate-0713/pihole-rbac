@@ -77,9 +77,31 @@ export function requestTarget(r: UpdateRequest): string {
 	return r.target_version ?? 'the latest release';
 }
 
-// The update banner shows a newer release to people who can update, until they dismiss that version. A newer release
-// than the one dismissed shows the banner again.
-export function bannerVersion(status: UpdateStatus | null, dismissed: string | null): string | null {
+// What the update banner needs, from either the full update status (app.update holders) or the version endpoint
+// (everyone else).
+export type BannerInfo = Pick<UpdateStatus, 'current_version' | 'development' | 'latest' | 'update_available'>;
+
+export function bannerFromVersion(v: VersionInfo): BannerInfo {
+	return {
+		current_version: v.version,
+		development: v.development,
+		latest: v.latest,
+		update_available: v.update_available ?? false
+	};
+}
+
+export function bannerFromStatus(s: UpdateStatus): BannerInfo {
+	return {
+		current_version: s.current_version,
+		development: s.development,
+		latest: s.latest,
+		update_available: s.update_available
+	};
+}
+
+// The update banner shows a newer release to every user, until they dismiss that version. A newer release than the
+// one dismissed shows the banner again.
+export function bannerVersion(status: BannerInfo | null, dismissed: string | null): string | null {
 	if (!status?.update_available || !status.latest) return null;
 	if (status.latest.version === dismissed) return null;
 	return status.latest.version;

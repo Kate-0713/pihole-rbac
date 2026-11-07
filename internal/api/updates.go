@@ -20,12 +20,38 @@ var (
 	errNoRestart = errors.New("api: no restart function configured")
 )
 
-// GetVersion reports the running build. Any session may ask; the unauthenticated about endpoint never says.
-func (s *Server) GetVersion(context.Context, gen.GetVersionRequestObject) (gen.GetVersionResponseObject, error) {
+// GetVersion reports the running build and, from the last update check, the latest release, so every user's banner
+// can say an update is out. Any session may ask; the unauthenticated about endpoint never says. Nothing about the
+// install or its update requests is given here: that stays behind app.update in GetUpdateStatus.
+func (s *Server) GetVersion(ctx context.Context, _ gen.GetVersionRequestObject) (gen.GetVersionResponseObject, error) {
 	_, ok := release.Current()
-	return gen.GetVersion200JSONResponse{
+	out := gen.GetVersion200JSONResponse{
 		Version: buildinfo.Version, Commit: buildinfo.Commit, BuildDate: buildinfo.Date, Development: !ok,
-	}, nil
+	}
+	if s.Updates == nil {
+		return out, nil
+	}
+	av, err := s.Updates.LatestRelease(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out.Latest = latestReleaseOut(av)
+	if out.Latest != nil {
+		out.UpdateAvailable = &av.UpdateAvailable
+	}
+	return out, nil
+}
+
+// latestReleaseOut is the latest release as the API gives it, or nil when none is known.
+func latestReleaseOut(av updates.Available) *gen.LatestRelease {
+	if av.Latest == nil {
+		return nil
+	}
+	out := &gen.LatestRelease{Version: av.Latest.Tag(), Url: release.PageURL(*av.Latest)}
+	if !av.PublishedAt.IsZero() {
+		out.PublishedAt = &av.PublishedAt
+	}
+	return out
 }
 
 // GetUpdateStatus reports the running version, the last check and the latest update requests.
@@ -115,12 +141,7 @@ func (s *Server) updateStatus(ctx context.Context) (gen.UpdateStatus, error) {
 	if st.CheckError != "" {
 		out.CheckError = &st.CheckError
 	}
-	if st.Latest != nil {
-		out.Latest = &gen.LatestRelease{Version: st.Latest.Tag(), Url: release.PageURL(*st.Latest)}
-		if !st.PublishedAt.IsZero() {
-			out.Latest.PublishedAt = &st.PublishedAt
-		}
-	}
+	out.Latest = latestReleaseOut(updates.Available{Latest: st.Latest, PublishedAt: st.PublishedAt})
 	for _, r := range st.Requests {
 		out.Requests = append(out.Requests, updateRequestOut(r))
 	}
