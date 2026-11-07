@@ -21,9 +21,13 @@
 		if (id !== undefined) void updates.ensure(id, canUpdate);
 	});
 
-	// Not on the System page, which says the same thing in more detail.
+	// Not on the System page, which says the same thing in more detail. Dismissing hides a release for the rest of
+	// this session only (see updates.dismissedFor), so the banner is back at the next login.
+	let sessionId = $derived(session.current?.public_id);
 	let version = $derived(
-		page.url.pathname !== '/admin/system' ? bannerVersion(updates.banner, updates.dismissed) : null
+		page.url.pathname !== '/admin/system'
+			? bannerVersion(updates.banner, updates.dismissedFor(sessionId))
+			: null
 	);
 	let running = $derived(
 		updates.banner ? displayVersion(updates.banner.current_version, updates.banner.development) : ''
@@ -46,8 +50,8 @@
 			variant="ghost"
 			size="icon-sm"
 			class="absolute top-1.5 right-1.5"
-			aria-label="Dismiss until the next release"
-			onclick={() => updates.dismiss(version!)}
+			aria-label="Dismiss until you next log in"
+			onclick={() => sessionId && updates.dismiss(version!, sessionId)}
 		>
 			<XIcon />
 		</Button>

@@ -43,20 +43,32 @@ const versionBody: VersionInfo = {
 };
 
 describe('UpdatesStore', () => {
-	it('remembers the dismissed release across page loads', () => {
+	it('remembers the dismissed release across page loads, for that session only', () => {
 		const storage = memoryStorage();
 		const a = new UpdatesStore(storage);
-		expect(a.dismissed).toBeNull();
-		a.dismiss('v2.1.0');
-		expect(a.dismissed).toBe('v2.1.0');
-		expect(new UpdatesStore(storage).dismissed).toBe('v2.1.0');
+		expect(a.dismissedFor('s1')).toBeNull();
+		a.dismiss('v2.1.0', 's1');
+		expect(a.dismissedFor('s1')).toBe('v2.1.0');
+		// A page load in the same session still has it.
+		expect(new UpdatesStore(storage).dismissedFor('s1')).toBe('v2.1.0');
+		// A new session (a login, or the session expiring and the user logging in again) doesn't.
+		expect(new UpdatesStore(storage).dismissedFor('s2')).toBeNull();
+		expect(a.dismissedFor(undefined)).toBeNull();
+	});
+
+	it('ignores what earlier releases stored, and anything unreadable', () => {
+		for (const raw of ['v2.1.0', '{"version":"v2.1.0"}', '{"version":1,"session":"s1"}', 'null', '{']) {
+			const storage = memoryStorage();
+			storage.setItem('pihole-rbac:update-banner-dismissed', raw);
+			expect(new UpdatesStore(storage).dismissedFor('s1'), raw).toBeNull();
+		}
 	});
 
 	it('still dismisses when storage is blocked', () => {
 		const s = new UpdatesStore(memoryStorage(true));
-		expect(s.dismissed).toBeNull();
-		s.dismiss('v2.1.0');
-		expect(s.dismissed).toBe('v2.1.0');
+		expect(s.dismissedFor('s1')).toBeNull();
+		s.dismiss('v2.1.0', 's1');
+		expect(s.dismissedFor('s1')).toBe('v2.1.0');
 	});
 
 	it('reads the status once per user', async () => {

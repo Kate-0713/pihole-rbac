@@ -6,7 +6,7 @@
 // update or a restart would take the shared server away, so those tests answer the update and restart endpoints
 // in the browser with page.route; the Go tests cover the endpoints themselves.
 import type { Page, Route } from '@playwright/test';
-import { expect, openAs, test } from './fixtures.js';
+import { expect, logIn, openAs, test } from './fixtures.js';
 
 type Request = {
 	id: number;
@@ -117,11 +117,11 @@ test('an update on LXC: the banner, Update now, its progress and the result', as
 	const updater = await fakeUpdater(page);
 	await openAs(page, state.seeded.fixture.admin, '/admin/audit');
 
-	// The banner, on any page, until it is dismissed for this release.
+	// The banner, on any page, until it is dismissed for this session.
 	const banner = page.getByRole('alert', { name: 'Update available' });
 	await expect(banner).toContainText('pihole-rbac v2.1.0 is available (this is v2.0.0).');
 	await expect(banner.getByRole('link', { name: "What's new" })).toHaveAttribute('href', /releases\/tag\/v2\.1\.0$/);
-	await banner.getByRole('button', { name: 'Dismiss until the next release' }).click();
+	await banner.getByRole('button', { name: 'Dismiss until you next log in' }).click();
 	await expect(banner).toHaveCount(0);
 	await page.reload();
 	await expect(page.getByRole('heading', { name: 'Audit log' })).toBeVisible();
@@ -155,8 +155,9 @@ test('an update on LXC: the banner, Update now, its progress and the result', as
 });
 
 test('everyone sees that an update is out; only app.update gets the System page link', async ({ page, state }) => {
-	// The seeded server's check is off, so the version endpoint is answered here with a newer release found.
-	await page.route('**/api/v1/system/version', async (route) => {
+	// The seeded server's check is off, so the version endpoint is answered here with a newer release found, for every
+	// tab in this browser context.
+	await page.context().route('**/api/v1/system/version', async (route) => {
 		const res = await route.fetch();
 		const body = (await res.json()) as Record<string, unknown>;
 		await route.fulfill({
@@ -171,7 +172,7 @@ test('everyone sees that an update is out; only app.update gets the System page 
 		});
 	});
 	let asked = false;
-	await page.route('**/api/v1/system/update', (route) => {
+	await page.context().route('**/api/v1/system/update', (route) => {
 		asked = true;
 		return route.continue();
 	});
@@ -184,12 +185,28 @@ test('everyone sees that an update is out; only app.update gets the System page 
 	await expect(banner.getByRole('link', { name: 'Update on the System page' })).toHaveCount(0);
 	expect(asked, 'the full update status was asked for without app.update').toBe(false);
 
-	// Dismissing works the same way: gone for this release, in this browser.
-	await banner.getByRole('button', { name: 'Dismiss until the next release' }).click();
+	// Dismissing hides it for the rest of this session, across page loads and new tabs.
+	await banner.getByRole('button', { name: 'Dismiss until you next log in' }).click();
 	await expect(banner).toHaveCount(0);
 	await page.reload();
 	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 	await expect(banner).toHaveCount(0);
+	const tab = await page.context().newPage();
+	// The version endpoint (which says an update is out) is read before the banner is checked.
+	const read = tab.waitForResponse('**/api/v1/system/version');
+	await tab.goto('/dashboard?target=i-1');
+	await read;
+	await expect(tab.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+	await expect(tab.getByRole('alert', { name: 'Update available' })).toHaveCount(0);
+	await tab.close();
+
+	// A new session brings it back, so an update isn't missed because it was dismissed once.
+	await page.getByRole('button', { name: `Account: ${state.seeded.fixture.one_instance.username}` }).click();
+	await page.getByRole('menuitem', { name: 'Log out' }).click();
+	await expect(page).toHaveURL('/login');
+	await logIn(page, state.seeded.fixture.one_instance);
+	await expect(page).not.toHaveURL(/\/login/);
+	await expect(banner).toContainText('pihole-rbac v2.1.0 is available');
 });
 
 test('a prerelease can be asked for by name', async ({ page, state }) => {

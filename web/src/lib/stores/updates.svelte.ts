@@ -13,13 +13,25 @@ import {
 	type VersionInfo
 } from '#lib/system.js';
 
-// Which release the banner was dismissed for. Per browser, and only a convenience: if storage isn't available
-// (a private window, say), the banner simply comes back on the next visit.
+// Which release the banner was dismissed for, and in which session (its public ID). A dismissal only counts in the
+// session it was made in, so the banner comes back whenever a session starts: an update, perhaps a security fix,
+// isn't missed because it was dismissed once. Per browser, and only a convenience: if storage isn't available (a
+// private window, say), the banner simply comes back on the next page load.
 const dismissedKey = 'pihole-rbac:update-banner-dismissed';
 
-function readDismissed(storage: Storage | undefined): string | null {
+export type Dismissal = { version: string; session: string };
+
+function readDismissed(storage: Storage | undefined): Dismissal | null {
 	try {
-		return storage?.getItem(dismissedKey) ?? null;
+		const raw = storage?.getItem(dismissedKey);
+		if (!raw) return null;
+		const d: unknown = JSON.parse(raw);
+		// Anything else (such as the bare version earlier releases stored) counts as not dismissed.
+		if (d && typeof d === 'object' && 'version' in d && 'session' in d) {
+			const { version, session } = d;
+			if (typeof version === 'string' && typeof session === 'string') return { version, session };
+		}
+		return null;
 	} catch {
 		return null;
 	}
@@ -38,7 +50,7 @@ export class UpdatesStore {
 	status = $state<UpdateStatus | null>(null);
 	// What the banner shows, for everyone.
 	banner = $state<BannerInfo | null>(null);
-	dismissed = $state<string | null>(null);
+	dismissed = $state<Dismissal | null>(null);
 
 	#storage: Storage | undefined;
 	#readStatus: () => Promise<UpdateStatus>;
@@ -83,10 +95,16 @@ export class UpdatesStore {
 		this.banner = status ? bannerFromStatus(status) : null;
 	}
 
-	dismiss(version: string): void {
-		this.dismissed = version;
+	// dismissedFor is the release dismissed in this session, if any. A dismissal from an earlier session doesn't count.
+	dismissedFor(session: string | undefined): string | null {
+		if (!session || this.dismissed?.session !== session) return null;
+		return this.dismissed.version;
+	}
+
+	dismiss(version: string, session: string): void {
+		this.dismissed = { version, session };
 		try {
-			this.#storage?.setItem(dismissedKey, version);
+			this.#storage?.setItem(dismissedKey, JSON.stringify(this.dismissed));
 		} catch {
 			// Not kept past this page load; nothing else to do.
 		}
