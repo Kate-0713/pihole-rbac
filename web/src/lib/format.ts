@@ -27,12 +27,16 @@ export function formatCountdown(seconds: number): string {
 	return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${rest}` : `${m}:${rest}`;
 }
 
-// formatDuration names a length of time in words, for messages: 30 is "30 seconds", 300 "5 minutes", 3600 "1 hour".
+// formatDuration names a length of time in words, for messages: 30 is "30 seconds", 300 "5 minutes", 3600 "1 hour",
+// and a custom length like 5400 "1 hour 30 minutes".
 export function formatDuration(seconds: number): string {
 	const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-	if (seconds % 3600 === 0) return unit(seconds / 3600, 'hour');
-	if (seconds % 60 === 0) return unit(seconds / 60, 'minute');
-	return unit(seconds, 'second');
+	const s = Math.max(0, Math.round(seconds));
+	const parts: string[] = [];
+	if (s >= 3600) parts.push(unit(Math.floor(s / 3600), 'hour'));
+	if (s % 3600 >= 60) parts.push(unit(Math.floor((s % 3600) / 60), 'minute'));
+	if (s % 60 > 0 || s === 0) parts.push(unit(s % 60, 'second'));
+	return parts.join(' ');
 }
 
 // formatDateTime shows an RFC 3339 time from the API as a short date and time in the browser's locale and time zone:

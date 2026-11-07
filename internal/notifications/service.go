@@ -150,14 +150,21 @@ func channelAAD(id int64) []byte { return secrets.AAD("notification_channels", i
 // EventInfo is an event a channel can receive.
 type EventInfo = audit.ActionInfo
 
-// Events lists every event a channel can receive: the audit actions, with protected_group_add after client_update.
+// Events lists every event a channel can receive: the audit actions, with protected_group_add after client_update,
+// and client_reset_scheduled after client_reset, which as an event covers manual runs only.
 func Events() []EventInfo {
 	var out []EventInfo
 	for _, a := range audit.Actions() {
-		out = append(out, a)
-		if a.Name == audit.ActionClientUpdate {
-			out = append(out, EventInfo{Name: notify.EventProtectedGroupAdd, Group: audit.GroupPihole,
+		switch a.Name {
+		case audit.ActionClientUpdate:
+			out = append(out, a, EventInfo{Name: notify.EventProtectedGroupAdd, Group: audit.GroupPihole,
 				Description: "A client added to a protected Pi-hole group"})
+		case audit.ActionClientReset:
+			a.Description = "Clients put back in their groups by a manual client reset, or a manual reset that failed"
+			out = append(out, a, EventInfo{Name: notify.EventClientResetScheduled, Group: audit.GroupPihole,
+				Description: "Clients put back in their groups by a scheduled client reset, or a scheduled reset that failed"})
+		default:
+			out = append(out, a)
 		}
 	}
 	return out

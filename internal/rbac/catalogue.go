@@ -17,25 +17,26 @@ type Permission string
 // The permission catalogue. A new permission also needs a migration that grants it to the builtin admin role; a test
 // checks the two stay in step.
 const (
-	DomainsView     Permission = "domains.view"
-	DomainsEdit     Permission = "domains.edit"
-	ClientsView     Permission = "clients.view"
-	ClientsEdit     Permission = "clients.edit"
-	QueryLogView    Permission = "querylog.view"
-	BlockingToggle  Permission = "blocking.toggle"
-	DNSRestart      Permission = "dns.restart"
-	ClientResetRun  Permission = "clientreset.run"
-	DriftView       Permission = "drift.view"
-	DriftReconcile  Permission = "drift.reconcile"
-	InstancesManage Permission = "instances.manage"
-	SettingsManage  Permission = "settings.manage"
-	NotifyManage    Permission = "notifications.manage"
-	UsersManage     Permission = "users.manage"
-	RolesManage     Permission = "roles.manage"
-	SessionsManage  Permission = "sessions.manage"
-	AuditView       Permission = "audit.view"
-	ConfigReload    Permission = "config.reload"
-	AppUpdate       Permission = "app.update"
+	DomainsView        Permission = "domains.view"
+	DomainsEdit        Permission = "domains.edit"
+	ClientsView        Permission = "clients.view"
+	ClientsEdit        Permission = "clients.edit"
+	QueryLogView       Permission = "querylog.view"
+	BlockingToggle     Permission = "blocking.toggle"
+	BlockingIndefinite Permission = "blocking.indefinite"
+	DNSRestart         Permission = "dns.restart"
+	ClientResetRun     Permission = "clientreset.run"
+	DriftView          Permission = "drift.view"
+	DriftReconcile     Permission = "drift.reconcile"
+	InstancesManage    Permission = "instances.manage"
+	SettingsManage     Permission = "settings.manage"
+	NotifyManage       Permission = "notifications.manage"
+	UsersManage        Permission = "users.manage"
+	RolesManage        Permission = "roles.manage"
+	SessionsManage     Permission = "sessions.manage"
+	AuditView          Permission = "audit.view"
+	ConfigReload       Permission = "config.reload"
+	AppUpdate          Permission = "app.update"
 )
 
 // Class says which scopes a permission can be granted at, and which targets it applies to.
@@ -78,6 +79,7 @@ var catalogue = []Info{
 	{ClientsEdit, ClassInstance, "Edit client groups and comments"},
 	{QueryLogView, ClassInstance, "View the query log"},
 	{BlockingToggle, ClassInstance, "Enable or disable blocking"},
+	{BlockingIndefinite, ClassInstance, "Disable blocking with no timer (also needs blocking.toggle)"},
 	{DNSRestart, ClassInstance, "Restart DNS"},
 	{ClientResetRun, ClassInstance, "Run client reset manually"},
 	{DriftView, ClassGroup, "View the drift report for a mirrored group"},

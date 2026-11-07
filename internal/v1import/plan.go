@@ -79,7 +79,7 @@ var eventMap = map[string][]string{
 	"add_domain":           {"domain_add"},
 	"update_domain_groups": {"domain_update"},
 	"update_client_groups": {"client_update"},
-	"client_reset":         {"client_reset"},
+	"client_reset":         {"client_reset", "client_reset_scheduled"}, // v1's covered manual and scheduled runs
 	"reload_config":        {"config_reload"},
 	"reload_permissions":   {"config_reload"},
 	"update_permissions":   {"role_create", "role_update", "role_grants", "role_delete"},

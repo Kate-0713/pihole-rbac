@@ -88,7 +88,7 @@ func (n *Notifier) SetRoutes(routes []Route) {
 	n.routes.Store(&r)
 }
 
-// Notify queues a message for every channel that wants the entry's event, and a protected-group alert for every
+// Notify queues a message for every channel that wants the entry's event (see EventOf), and a protected-group alert for every
 // channel that wants those. It's audit.Logger's sink, so it is called after the entry's transaction has committed,
 // and it never blocks.
 func (n *Notifier) Notify(e audit.Entry) {
@@ -97,9 +97,10 @@ func (n *Notifier) Notify(e audit.Entry) {
 		return
 	}
 	alerts := ProtectedAlerts(e)
+	event := EventOf(e)
 	for _, r := range *rp {
-		if r.Events[e.Action] {
-			n.Enqueue(Job{Destination: r.Destination, Message: ForEntry(e), Event: e.Action})
+		if r.Events[event] {
+			n.Enqueue(Job{Destination: r.Destination, Message: ForEntry(e), Event: event})
 		}
 		if r.Events[EventProtectedGroupAdd] {
 			for _, a := range alerts {

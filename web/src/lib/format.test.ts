@@ -36,9 +36,13 @@ describe('formatDuration', () => {
 		[30, '30 seconds'],
 		[60, '1 minute'],
 		[300, '5 minutes'],
-		[90, '90 seconds'],
+		[90, '1 minute 30 seconds'],
 		[3600, '1 hour'],
-		[7200, '2 hours']
+		[7200, '2 hours'],
+		[5400, '1 hour 30 minutes'],
+		[86400, '24 hours'],
+		[3661, '1 hour 1 minute 1 second'],
+		[0, '0 seconds']
 	])('%d seconds is %s', (seconds, want) => {
 		expect(formatDuration(seconds)).toBe(want);
 	});

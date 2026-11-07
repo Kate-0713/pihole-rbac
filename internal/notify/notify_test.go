@@ -466,6 +466,8 @@ func TestNotifier(t *testing.T) {
 		{Destination: hook("1"), Events: map[string]bool{audit.ActionLogin: true}},
 		{Destination: hook("2"), Events: map[string]bool{audit.ActionDomainAdd: true, EventProtectedGroupAdd: true}},
 		{Destination: hook("3"), Events: map[string]bool{EventProtectedGroupAdd: true}},
+		{Destination: hook("6"), Events: map[string]bool{audit.ActionClientReset: true}},
+		{Destination: hook("7"), Events: map[string]bool{EventClientResetScheduled: true}},
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -504,6 +506,15 @@ func TestNotifier(t *testing.T) {
 		t.Errorf("%d protected-group alerts, want 2", alerts)
 	}
 
+	// A manual client reset goes to hook 6, a scheduled one to hook 7, and neither to the other.
+	n.Notify(audit.Entry{Username: "alice", Action: audit.ActionClientReset, Detail: map[string]any{"trigger": "manual"}})
+	n.Notify(audit.Entry{Username: audit.SystemUser, Action: audit.ActionClientReset, Detail: map[string]any{"trigger": "schedule"}})
+	waitFor(func() bool { p := paths(); return p["6"] == 1 && p["7"] == 1 })
+	time.Sleep(50 * time.Millisecond)
+	if p := paths(); p["6"] != 1 || p["7"] != 1 {
+		t.Errorf("client reset requests %v: want 1 each to hooks 6 and 7", p)
+	}
+
 	// Two failures, then success: three requests, no Failed.
 	mu.Lock()
 	fails["/api/webhooks/2/tok"] = 2
@@ -539,6 +550,26 @@ func TestNotifier(t *testing.T) {
 	// After stopping, nothing is queued.
 	if n.Enqueue(Job{Destination: hook("1"), Message: &Message{}}) {
 		t.Error("queued after stopping")
+	}
+}
+
+func TestEventOf(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry audit.Entry
+		want  string
+	}{
+		{"manual reset", audit.Entry{Action: audit.ActionClientReset, Detail: map[string]any{"trigger": "manual"}}, audit.ActionClientReset},
+		{"scheduled reset", audit.Entry{Action: audit.ActionClientReset, Detail: map[string]any{"trigger": "schedule"}}, EventClientResetScheduled},
+		{"reset without a trigger", audit.Entry{Action: audit.ActionClientReset}, audit.ActionClientReset},
+		{"another action with a trigger", audit.Entry{Action: audit.ActionDomainAdd, Detail: map[string]any{"trigger": "schedule"}}, audit.ActionDomainAdd},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EventOf(tt.entry); got != tt.want {
+				t.Errorf("EventOf = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

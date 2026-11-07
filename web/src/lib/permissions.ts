@@ -25,6 +25,7 @@ export type TargetPermission =
 	| 'clients.edit'
 	| 'querylog.view'
 	| 'blocking.toggle'
+	| 'blocking.indefinite'
 	| 'dns.restart'
 	| 'clientreset.run'
 	| 'drift.view'

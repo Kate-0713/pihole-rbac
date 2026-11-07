@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -572,13 +573,26 @@ func TestUnreadableSecret(t *testing.T) {
 
 func TestEvents(t *testing.T) {
 	ev := Events()
-	for i, e := range ev {
-		if e.Name == audit.ActionClientUpdate {
-			if ev[i+1].Name != notify.EventProtectedGroupAdd {
-				t.Errorf("protected_group_add doesn't follow client_update: %s", ev[i+1].Name)
-			}
-			return
+	follows := map[string]string{
+		audit.ActionClientUpdate: notify.EventProtectedGroupAdd,
+		audit.ActionClientReset:  notify.EventClientResetScheduled,
+	}
+	for before, after := range follows {
+		i := slices.IndexFunc(ev, func(e EventInfo) bool { return e.Name == before })
+		if i < 0 || i+1 >= len(ev) {
+			t.Errorf("%s isn't listed, or is last", before)
+			continue
+		}
+		if ev[i+1].Name != after || ev[i+1].Group != ev[i].Group || ev[i+1].Description == "" {
+			t.Errorf("%s doesn't follow %s in its group: %+v", after, before, ev[i+1])
 		}
 	}
-	t.Error("client_update isn't listed")
+	// As an event, client_reset is manual runs only.
+	if i := slices.IndexFunc(ev, func(e EventInfo) bool { return e.Name == audit.ActionClientReset }); i >= 0 &&
+		!strings.Contains(ev[i].Description, "manual") {
+		t.Errorf("client_reset event description %q doesn't say it's manual runs", ev[i].Description)
+	}
+	if !knownEvents[notify.EventClientResetScheduled] {
+		t.Error("client_reset_scheduled isn't accepted in a channel's events")
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -278,6 +279,63 @@ func TestSummaryAndBlocking(t *testing.T) {
 	}
 	if te.auditCount() != n || len(te.piholeWrites()) != writes {
 		t.Error("an invalid blocking change was audited or sent")
+	}
+}
+
+// TestBlockingIndefinite: turning blocking off with no timer needs blocking.indefinite as well as blocking.toggle on
+// the target; a timer, or turning blocking on, needs blocking.toggle alone. A refusal reaches no Pi-hole and is
+// audited as permission_denied naming the missing permission.
+func TestBlockingIndefinite(t *testing.T) {
+	te := newTargetEnv(t)
+	te.addGrantUser("toggler", "toggler-password-1", grant(rbac.BlockingToggle, "instance", te.id))
+	te.addGrantUser("indefonly", "indefonly-password-1", grant(rbac.BlockingIndefinite, "instance", te.id))
+	te.addGrantUser("both", "both-password-1",
+		grant(rbac.BlockingToggle, "instance", te.id), grant(rbac.BlockingIndefinite, "all", 0))
+	users := map[string]*client{
+		"toggler":   te.loggedIn("toggler", "toggler-password-1"),
+		"indefonly": te.loggedIn("indefonly", "indefonly-password-1"),
+		"both":      te.loggedIn("both", "both-password-1"),
+	}
+	timer := 600
+	tests := []struct {
+		user    string
+		body    gen.BlockingInput
+		missing rbac.Permission // "" when allowed
+	}{
+		{"toggler", gen.BlockingInput{Enabled: false, Timer: &timer}, ""},
+		{"toggler", gen.BlockingInput{Enabled: true}, ""},
+		{"toggler", gen.BlockingInput{Enabled: false}, rbac.BlockingIndefinite},
+		{"indefonly", gen.BlockingInput{Enabled: false}, rbac.BlockingToggle},
+		{"indefonly", gen.BlockingInput{Enabled: false, Timer: &timer}, rbac.BlockingToggle},
+		{"both", gen.BlockingInput{Enabled: false}, ""},
+		{"both", gen.BlockingInput{Enabled: true}, ""},
+	}
+	for _, tt := range tests {
+		name := fmt.Sprintf("%s enabled=%v timer=%v", tt.user, tt.body.Enabled, tt.body.Timer != nil)
+		t.Run(name, func(t *testing.T) {
+			writes := len(te.piholeWrites())
+			res := users[tt.user].do(http.MethodPut, te.path("/blocking"), tt.body)
+			if tt.missing == "" {
+				mustStatus(t, res, http.StatusOK)
+				if len(te.piholeWrites()) != writes+1 {
+					t.Errorf("Pi-hole writes = %d, want %d", len(te.piholeWrites()), writes+1)
+				}
+				return
+			}
+			if res.Code != http.StatusForbidden || res.errorCode() != "forbidden" {
+				t.Fatalf("%d %s, want 403", res.Code, res.Body)
+			}
+			if d := errorDetails(t, res); d["permission"] != string(tt.missing) || d["target"] != te.target {
+				t.Errorf("forbidden details %v", d)
+			}
+			if len(te.piholeWrites()) != writes {
+				t.Error("a refused change reached Pi-hole")
+			}
+			row, detail := te.lastAudit()
+			if row.Action != audit.ActionPermissionDenied || row.Target != te.target || detail["permission"] != string(tt.missing) {
+				t.Errorf("audit %+v %v", row, detail)
+			}
+		})
 	}
 }
 

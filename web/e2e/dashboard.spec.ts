@@ -67,6 +67,85 @@ test('turning blocking off until turned back on has no countdown', async ({ page
 	await setBlocking(page, true);
 });
 
+test('turning blocking off for a custom length', async ({ page, state }) => {
+	await openAs(page, state.seeded.fixture.admin, '/dashboard?target=i-1');
+	await setBlocking(page, true);
+	await page.reload();
+
+	const card = blockingCard(page);
+	await card.getByRole('button', { name: 'Turn blocking off' }).click();
+	await page.getByRole('menuitem', { name: 'Custom…' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Turn blocking off for…' });
+
+	// Nothing to send: the form says so and waits.
+	await dialog.getByLabel('Hours').fill('0');
+	await dialog.getByLabel('Minutes').fill('0');
+	await expect(dialog.getByText('Turn it off for at least 1 minute.')).toBeVisible();
+	await expect(dialog.getByRole('button', { name: 'Turn blocking off' })).toBeDisabled();
+	// More than 24 hours isn't allowed either.
+	await dialog.getByLabel('Hours').fill('24');
+	await dialog.getByLabel('Minutes').fill('5');
+	await expect(dialog.getByText('at most 24 hours')).toBeVisible();
+
+	await dialog.getByLabel('Hours').fill('1');
+	await dialog.getByLabel('Minutes').fill('30');
+	await expect(dialog.getByText('Blocking comes back on after 1 hour 30 minutes.')).toBeVisible();
+	await dialog.getByRole('button', { name: 'Turn blocking off' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByText('Blocking turned off for 1 hour 30 minutes on pihole1.')).toBeVisible();
+	await expect(card).toContainText(/back on in 1:(30|29):\d\d/);
+	const status = await (await page.request.get('/api/v1/targets/i-1/blocking')).json();
+	expect(status).toEqual({ blocking: 'disabled', timer: 5400 });
+	await setBlocking(page, true);
+});
+
+test('without blocking.indefinite, blocking can only be turned off for a set time', async ({
+	page,
+	state,
+	browser
+}) => {
+	// A user who holds blocking.toggle on pihole1 and nothing else, made for this test and removed after it.
+	await openAs(page, state.seeded.fixture.admin, '/dashboard?target=i-1');
+	await setBlocking(page, true);
+	const role = await (
+		await apiWrite(page, 'POST', '/api/v1/roles', {
+			name: 'e2e timed blocking',
+			grants: [{ permission: 'blocking.toggle', scope: 'instance', id: 1 }]
+		})
+	).json();
+	const user = { username: 'tess', password: 'e2e-tess-password', about: 'blocking.toggle on pihole1' };
+	const created = await (
+		await apiWrite(page, 'POST', '/api/v1/users', { username: user.username, password: user.password, role_ids: [role.id] })
+	).json();
+
+	const context = await browser.newContext({ baseURL: state.seeded.url });
+	try {
+		const tess = await context.newPage();
+		await openAs(tess, user, '/dashboard?target=i-1');
+		const card = blockingCard(tess);
+		await card.getByRole('button', { name: 'Turn blocking off' }).click();
+		await expect(tess.getByRole('menuitem', { name: 'For 5 minutes' })).toBeVisible();
+		await expect(tess.getByRole('menuitem', { name: 'Custom…' })).toBeVisible();
+		await expect(tess.getByRole('menuitem', { name: 'Until turned back on' })).toHaveCount(0);
+		await tess.keyboard.press('Escape');
+
+		// The server refuses it too: hiding the choice is only for convenience.
+		const session = await (await tess.request.get('/api/v1/auth/session')).json();
+		const res = await tess.request.put('/api/v1/targets/i-1/blocking', {
+			data: { enabled: false },
+			headers: { 'X-CSRF-Token': session.csrf_token, Origin: new URL(tess.url()).origin }
+		});
+		expect(res.status()).toBe(403);
+		expect((await res.json()).error.details.permission).toBe('blocking.indefinite');
+	} finally {
+		await context.close();
+		await apiWrite(page, 'DELETE', `/api/v1/users/${created.id}`);
+		await apiWrite(page, 'DELETE', `/api/v1/roles/${role.id}`);
+	}
+	const status = await (await page.request.get('/api/v1/targets/i-1/blocking')).json();
+	expect(status).toEqual({ blocking: 'enabled' });
+});
+
 test('the countdown runs, and the dashboard refreshes itself', async ({ page, state }) => {
 	// Playwright's clock replaces the page's timers, so minutes can pass in an instant.
 	await page.clock.install();

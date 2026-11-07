@@ -182,6 +182,12 @@ func (s *Server) SetBlocking(ctx context.Context, req gen.SetBlockingRequestObje
 	if err != nil {
 		return nil, err
 	}
+	// Turning blocking off with no timer also needs blocking.indefinite on the same target.
+	if !b.Enabled && b.Timer == nil {
+		if err := s.authorize(ctx, rbac.BlockingIndefinite, tg.t); err != nil {
+			return nil, err
+		}
+	}
 	if tg, err = tg.only(req.Params.Members); err != nil {
 		return nil, err
 	}

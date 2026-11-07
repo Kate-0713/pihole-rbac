@@ -81,6 +81,7 @@
 						status={s.blocking}
 						fetchedAt={data.fetchedAt}
 						canToggle={can('blocking.toggle', data.target)}
+						canIndefinite={can('blocking.indefinite', data.target)}
 						onchange={refresh}
 					/>
 				</Card.Content>

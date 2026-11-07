@@ -18,6 +18,20 @@ import (
 // protected group carries protected_added in its detail, and channels can ask for that alone.
 const EventProtectedGroupAdd = "protected_group_add"
 
+// EventClientResetScheduled is the event for a client_reset row written by a scheduled run, so a channel can take
+// manual runs (client_reset) and scheduled ones separately.
+const EventClientResetScheduled = "client_reset_scheduled"
+
+// EventOf is the event a channel subscribes to for an audit entry: its action, except that a client_reset from a
+// scheduled run is EventClientResetScheduled.
+func EventOf(e audit.Entry) string {
+	// "schedule" is clientreset.TriggerSchedule, which this package can't import (clientreset imports notify).
+	if e.Action == audit.ActionClientReset && e.Detail["trigger"] == "schedule" {
+		return EventClientResetScheduled
+	}
+	return e.Action
+}
+
 type style int
 
 const (

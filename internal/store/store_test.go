@@ -45,18 +45,57 @@ func openTest(t *testing.T) *Store {
 	return s
 }
 
-// withExtraMigration is the real migrations plus a trivial 00002, to simulate an upgrade.
+// realMigrations returns the names of the shipped migrations, in order.
+func realMigrations(t *testing.T) []string {
+	t.Helper()
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("listing migrations: %v %v", names, err)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// latestVersion is the version of the newest shipped migration.
+func latestVersion(t *testing.T) int64 {
+	t.Helper()
+	names := realMigrations(t)
+	var v int64
+	if _, err := fmt.Sscanf(names[len(names)-1], "%05d_", &v); err != nil {
+		t.Fatalf("version of %s: %v", names[len(names)-1], err)
+	}
+	return v
+}
+
+// migrationsUpTo is the shipped migrations with versions up to and including v, to build a database as an older
+// release left it.
+func migrationsUpTo(t *testing.T, v int64) fs.FS {
+	t.Helper()
+	out := fstest.MapFS{}
+	for _, name := range realMigrations(t) {
+		var n int64
+		if _, err := fmt.Sscanf(name, "%05d_", &n); err != nil || n > v {
+			continue
+		}
+		data, err := fs.ReadFile(migrations.FS, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[name] = &fstest.MapFile{Data: data}
+	}
+	return out
+}
+
+// extraVersion is the trivial migration withExtraMigration adds, well past any real one.
+const extraVersion = 99999
+
+// withExtraMigration is the real migrations plus a trivial 99999, to simulate an upgrade.
 func withExtraMigration(t *testing.T) fs.FS {
 	t.Helper()
-	initial, err := fs.ReadFile(migrations.FS, "00001_initial.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fstest.MapFS{
-		"00001_initial.sql": {Data: initial},
-		"00002_extra.sql": {Data: []byte("-- +goose Up\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n\n" +
-			"-- +goose Down\nDROP TABLE extra;\n")},
-	}
+	out := migrationsUpTo(t, extraVersion).(fstest.MapFS)
+	out["99999_extra.sql"] = &fstest.MapFile{Data: []byte("-- +goose Up\nCREATE TABLE extra (id INTEGER PRIMARY KEY);\n\n" +
+		"-- +goose Down\nDROP TABLE extra;\n")}
+	return out
 }
 
 func schemaVersion(t *testing.T, d *sql.DB) int64 {
@@ -99,8 +138,8 @@ func TestOpenFreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if v := schemaVersion(t, s.w); v != 1 {
-		t.Errorf("schema version = %d, want 1", v)
+	if v, want := schemaVersion(t, s.w), latestVersion(t); v != want {
+		t.Errorf("schema version = %d, want %d", v, want)
 	}
 	if b := listBackups(t, dir); len(b) != 0 {
 		t.Errorf("fresh database was backed up: %v", b)
@@ -179,20 +218,22 @@ func TestPendingMigrationBacksUpFirst(t *testing.T) {
 		t.Fatalf("open with a pending migration: %v", err)
 	}
 	if !hasTable(t, s2.w, "extra") {
-		t.Error("migration 00002 wasn't applied")
+		t.Error("migration 99999 wasn't applied")
 	}
 
+	latest := latestVersion(t)
+	from := fmt.Sprintf("-from%d.db", latest)
 	backups := listBackups(t, dir)
-	if len(backups) != 1 || !strings.HasPrefix(backups[0], backupPrefix) || !strings.HasSuffix(backups[0], "-from1.db") {
-		t.Fatalf("backups = %v, want one pre-migrate-*-from1.db", backups)
+	if len(backups) != 1 || !strings.HasPrefix(backups[0], backupPrefix) || !strings.HasSuffix(backups[0], from) {
+		t.Fatalf("backups = %v, want one pre-migrate-*%s", backups, from)
 	}
 	b, err := sql.Open("sqlite", filepath.Join(dir, backupDirName, backups[0]))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	if v := schemaVersion(t, b); v != 1 {
-		t.Errorf("backup schema version = %d, want 1", v)
+	if v := schemaVersion(t, b); v != latest {
+		t.Errorf("backup schema version = %d, want %d", v, latest)
 	}
 	if hasTable(t, b, "extra") {
 		t.Error("backup was taken after migrating, want before")
@@ -210,7 +251,8 @@ func TestRefusesNewerSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close()
-	if _, err := openAt(t, dir, migrations.FS); err == nil || !strings.Contains(err.Error(), "only knows up to 1") {
+	want := fmt.Sprintf("only knows up to %d", latestVersion(t))
+	if _, err := openAt(t, dir, migrations.FS); err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("open older binary against newer schema: err = %v, want a refusal", err)
 	}
 }

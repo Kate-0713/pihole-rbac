@@ -1115,7 +1115,7 @@ export interface paths {
         };
         /**
          * The events a channel can receive
-         * @description Every audit action, grouped, plus protected_group_add.
+         * @description Every audit action, grouped, plus the two events that aren't audit actions: protected_group_add, and client_reset_scheduled (a scheduled client reset run, while client_reset is a manual one).
          */
         get: operations["listNotificationEvents"];
         put?: never;
@@ -1254,7 +1254,7 @@ export interface paths {
         get: operations["getBlocking"];
         /**
          * Turn blocking on or off
-         * @description Sets blocking to the given state; setting the state it already has is allowed. With `timer`, which needs `enabled` false, Pi-hole turns blocking back on after that many seconds. Answers with a result per instance (see WriteResults under the schemas). Audited as blocking_set.
+         * @description Sets blocking to the given state; setting the state it already has is allowed. With `timer`, which needs `enabled` false, Pi-hole turns blocking back on after that many seconds. Turning blocking off without a `timer` (until someone turns it back on) also needs `blocking.indefinite` on the target, and is otherwise 403 naming that permission. Answers with a result per instance (see WriteResults under the schemas). Audited as blocking_set.
          */
         put: operations["setBlocking"];
         post?: never;
@@ -2501,7 +2501,7 @@ export interface components {
         };
         BlockingInput: {
             enabled: boolean;
-            /** @description Only with `enabled` false. Seconds until Pi-hole turns blocking back on. */
+            /** @description Only with `enabled` false. Seconds until Pi-hole turns blocking back on. Leaving it out when disabling needs `blocking.indefinite` as well as `blocking.toggle`. */
             timer?: number;
         };
         /**

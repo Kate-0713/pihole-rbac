@@ -1179,7 +1179,7 @@ type AuditList struct {
 type BlockingInput struct {
 	Enabled bool `json:"enabled"`
 
-	// Timer Only with `enabled` false. Seconds until Pi-hole turns blocking back on.
+	// Timer Only with `enabled` false. Seconds until Pi-hole turns blocking back on. Leaving it out when disabling needs `blocking.indefinite` as well as `blocking.toggle`.
 	Timer *int `json:"timer,omitempty"`
 }
 

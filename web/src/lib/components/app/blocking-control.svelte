@@ -5,6 +5,7 @@
 <script lang="ts">
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import { api, unwrap, type Schemas } from '#lib/api/client.js';
+	import BlockingDurationDialog from '#lib/components/app/blocking-duration-dialog.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { formatCountdown, formatDuration } from '#lib/format.js';
@@ -17,6 +18,7 @@
 		status,
 		fetchedAt,
 		canToggle,
+		canIndefinite,
 		onchange
 	}: {
 		target: string;
@@ -24,20 +26,25 @@
 		// When status was read, so the countdown can run from it.
 		fetchedAt: number;
 		canToggle: boolean;
+		// blocking.indefinite as well: without it, blocking can only be turned off for a set time.
+		canIndefinite: boolean;
 		// Called after a change was attempted, whatever its result, so the page reads the status again.
 		onchange: () => Promise<void> | void;
 	} = $props();
 
-	// How long to turn blocking off for, as in Pi-hole's own menu. null means until someone turns it back on.
-	const durations: { seconds: number | null; label: string }[] = [
+	// How long to turn blocking off for, as in Pi-hole's own menu. null means until someone turns it back on, which is
+	// only offered with blocking.indefinite (the server refuses it otherwise). "Custom…" below the list opens a dialog.
+	const presets: { seconds: number | null; label: string }[] = [
 		{ seconds: 30, label: 'For 30 seconds' },
 		{ seconds: 300, label: 'For 5 minutes' },
 		{ seconds: 1800, label: 'For 30 minutes' },
 		{ seconds: 3600, label: 'For 1 hour' },
 		{ seconds: null, label: 'Until turned back on' }
 	];
+	let durations = $derived(presets.filter((d) => d.seconds !== null || canIndefinite));
 
 	let busy = $state(false);
+	let customOpen = $state(false);
 
 	// The countdown ticks once a second, but only while a timer is running. $effect reruns when what it reads
 	// (status.timer here) changes, and the function it returns cleans up before that and when the component goes.
@@ -120,9 +127,12 @@
 						{#each durations as d (d.label)}
 							<DropdownMenu.Item onSelect={() => set(false, d.seconds)}>{d.label}</DropdownMenu.Item>
 						{/each}
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item onSelect={() => (customOpen = true)}>Custom…</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 			{/if}
 		</div>
+		<BlockingDurationDialog bind:open={customOpen} onconfirm={(seconds) => set(false, seconds)} />
 	{/if}
 </div>
