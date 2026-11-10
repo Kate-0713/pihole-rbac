@@ -57,6 +57,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { entryKey, kindLabel, typeLabel } from '#lib/domains.js';
 	import { groupNames, type PiholeGroup } from '#lib/pihole.js';
@@ -176,9 +177,11 @@
 			{#each rows as row (entryKey(row.original))}
 				{@const d = row.original}
 				<Table.Row data-entry={entryKey(d)}>
-					<Table.Cell class="max-w-80">
-						<span class="font-mono text-sm break-all">{d.domain}</span>
-						{#if !d.enabled}<Badge variant="outline" class="ml-1">Disabled</Badge>{/if}
+					<Table.Cell>
+						<CellText width="lg">
+							<span class="font-mono text-sm">{d.domain}</span>
+							{#if !d.enabled}<Badge variant="outline" class="ml-1">Disabled</Badge>{/if}
+						</CellText>
 					</Table.Cell>
 					<Table.Cell>
 						<div class="flex gap-1">
@@ -186,10 +189,8 @@
 							{#if d.kind === 'regex'}<Badge variant="outline">Regex</Badge>{/if}
 						</div>
 					</Table.Cell>
-					<Table.Cell class="text-sm">{groupNames(d.groups, groups).join(', ') || '—'}</Table.Cell>
-					<Table.Cell class="text-muted-foreground max-w-64 text-sm break-words whitespace-normal">
-						{d.comment}
-					</Table.Cell>
+					<Table.Cell class="text-sm"><CellText>{groupNames(d.groups, groups).join(', ') || '—'}</CellText></Table.Cell>
+					<Table.Cell class="text-muted-foreground text-sm"><CellText>{d.comment}</CellText></Table.Cell>
 					<Table.Cell class="text-muted-foreground text-sm whitespace-nowrap">
 						{d.added_at ? dateFormat.format(new Date(d.added_at)) : '—'}
 					</Table.Cell>

@@ -55,6 +55,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { groupNames, type PiholeGroup } from '#lib/pihole.js';
 
@@ -163,12 +164,10 @@
 			{#each rows as row (row.original.client)}
 				{@const c = row.original}
 				<Table.Row>
-					<Table.Cell><span class="font-mono text-sm break-all">{c.client}</span></Table.Cell>
-					{#if hasNames}<Table.Cell class="text-sm">{c.name ?? ''}</Table.Cell>{/if}
-					<Table.Cell class="text-sm">{groupNames(c.groups, groups).join(', ') || '—'}</Table.Cell>
-					<Table.Cell class="text-muted-foreground max-w-64 text-sm break-words whitespace-normal">
-						{c.comment}
-					</Table.Cell>
+					<Table.Cell class="font-mono text-sm"><CellText>{c.client}</CellText></Table.Cell>
+					{#if hasNames}<Table.Cell class="text-sm"><CellText>{c.name ?? ''}</CellText></Table.Cell>{/if}
+					<Table.Cell class="text-sm"><CellText>{groupNames(c.groups, groups).join(', ') || '—'}</CellText></Table.Cell>
+					<Table.Cell class="text-muted-foreground text-sm"><CellText>{c.comment}</CellText></Table.Cell>
 					<Table.Cell class="text-muted-foreground text-sm whitespace-nowrap">
 						{c.added_at ? dateFormat.format(new Date(c.added_at)) : '—'}
 					</Table.Cell>

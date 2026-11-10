@@ -7,6 +7,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import ClientResetResults from '#lib/components/app/client-reset-results.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { describeRun, runStatusLabel, type Run } from '#lib/clientreset.js';
 	import { formatDateTime } from '#lib/format.js';
@@ -59,7 +60,7 @@
 							</button>
 						</Table.Cell>
 						<Table.Cell class="whitespace-nowrap">{formatDateTime(r.started_at)}</Table.Cell>
-						{#if showTarget}<Table.Cell>{r.target_name}</Table.Cell>{/if}
+						{#if showTarget}<Table.Cell><CellText>{r.target_name}</CellText></Table.Cell>{/if}
 						<Table.Cell>{r.trigger === 'schedule' ? 'Schedule' : r.username}</Table.Cell>
 						<Table.Cell class="max-w-72 truncate" title={describeRun(r)}>{describeRun(r)}</Table.Cell>
 						<Table.Cell><Badge variant={statusVariant(r.status)}>{runStatusLabel[r.status]}</Badge></Table.Cell>

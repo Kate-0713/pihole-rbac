@@ -7,6 +7,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { formatDateTime } from '#lib/format.js';
 	import { errorLabel, instanceStatus, passwordSummary, type Instance } from '#lib/instances.js';
@@ -60,12 +61,14 @@
 				{@const lastError = inst.enabled ? errorLabel(inst.health?.last_error) : null}
 				{@const pw = passwordSummary(inst)}
 				<Table.Row>
-					<Table.Cell class="font-medium">{inst.name}</Table.Cell>
+					<Table.Cell class="font-medium"><CellText>{inst.name}</CellText></Table.Cell>
 					<Table.Cell>
-						<span class="font-mono text-sm break-all">{inst.base_url}</span>
-						{#if inst.tls_mode === 'insecure'}
-							<Badge variant="outline" class="ml-1">TLS not verified</Badge>
-						{/if}
+						<CellText width="lg">
+							<span class="font-mono text-sm">{inst.base_url}</span>
+							{#if inst.tls_mode === 'insecure'}
+								<Badge variant="outline" class="ml-1">TLS not verified</Badge>
+							{/if}
+						</CellText>
 					</Table.Cell>
 					<Table.Cell>
 						<span class="inline-flex items-center gap-2 whitespace-nowrap">
@@ -83,12 +86,9 @@
 					<Table.Cell>
 						<Badge variant={pw.tone === 'ok' ? 'secondary' : 'destructive'}>{pw.label}</Badge>
 						{#if pw.detail}
-							<p
-								class="text-muted-foreground text-xs break-all"
-								class:font-mono={inst.password_source === 'environment'}
-							>
+							<CellText class="text-muted-foreground text-xs {inst.password_source === 'environment' ? 'font-mono' : ''}">
 								{pw.detail}
-							</p>
+							</CellText>
 						{/if}
 					</Table.Cell>
 					<Table.Cell>

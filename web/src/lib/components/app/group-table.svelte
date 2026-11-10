@@ -7,6 +7,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { modeLabel, sortedMembers, type Group } from '#lib/groups.js';
 
@@ -30,7 +31,7 @@
 		<Table.Body>
 			{#each sorted as g (g.id)}
 				<Table.Row>
-					<Table.Cell class="font-medium">{g.name}</Table.Cell>
+					<Table.Cell class="font-medium"><CellText>{g.name}</CellText></Table.Cell>
 					<Table.Cell>
 						<Badge variant={g.mode === 'mirrored' ? 'default' : 'secondary'}>{modeLabel[g.mode]}</Badge>
 					</Table.Cell>

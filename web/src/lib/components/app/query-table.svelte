@@ -48,6 +48,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { formatReplyTime } from '#lib/queries.js';
 
@@ -153,22 +154,26 @@
 					</Table.Cell>
 					{#if showInstance}<Table.Cell class="text-sm whitespace-nowrap">{q.instance}</Table.Cell>{/if}
 					<Table.Cell class="text-muted-foreground text-sm">{q.type}</Table.Cell>
-					<Table.Cell class="max-w-80">
-						<a
-							href={filterHref('domain', q.domain)}
-							class="font-mono text-sm break-all hover:underline"
-							title="Only queries for {q.domain}">{q.domain}</a
-						>
+					<Table.Cell>
+						<CellText width="lg">
+							<a
+								href={filterHref('domain', q.domain)}
+								class="font-mono text-sm hover:underline"
+								title="Only queries for {q.domain}">{q.domain}</a
+							>
+						</CellText>
 					</Table.Cell>
 					<Table.Cell class="text-sm">
-						<a href={filterHref('client', q.client_ip)} class="hover:underline" title="Only queries from {q.client_ip}">
-							{#if q.client_name}
-								{q.client_name}
-								<span class="text-muted-foreground block font-mono text-xs">{q.client_ip}</span>
-							{:else}
-								<span class="font-mono">{q.client_ip}</span>
-							{/if}
-						</a>
+						<CellText>
+							<a href={filterHref('client', q.client_ip)} class="hover:underline" title="Only queries from {q.client_ip}">
+								{#if q.client_name}
+									{q.client_name}
+									<span class="text-muted-foreground block font-mono text-xs">{q.client_ip}</span>
+								{:else}
+									<span class="font-mono">{q.client_ip}</span>
+								{/if}
+							</a>
+						</CellText>
 					</Table.Cell>
 					<Table.Cell>
 						<Badge variant={status.kind === 'blocked' ? 'destructive' : status.kind === 'allowed' ? 'secondary' : 'outline'}>
@@ -178,7 +183,7 @@
 					<Table.Cell class="text-muted-foreground text-sm whitespace-nowrap tabular-nums">
 						{formatReplyTime(q.reply_time_ms)}
 					</Table.Cell>
-					<Table.Cell class="text-muted-foreground font-mono text-xs">{q.upstream ?? ''}</Table.Cell>
+					<Table.Cell class="text-muted-foreground font-mono text-xs"><CellText>{q.upstream ?? ''}</CellText></Table.Cell>
 				</Table.Row>
 			{:else}
 				<Table.Row>

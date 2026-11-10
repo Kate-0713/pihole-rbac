@@ -11,6 +11,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import {
 		clientChanges,
@@ -217,10 +218,12 @@
 							<Table.Body>
 								{#each report.domains as d (d.instance_id + d.type + d.kind + d.domain)}
 									<Table.Row>
-										<Table.Cell>{d.instance}</Table.Cell>
+										<Table.Cell><CellText>{d.instance}</CellText></Table.Cell>
 										<Table.Cell>
-											<span class="font-mono text-sm break-all">{d.domain}</span>
-											<span class="text-muted-foreground block text-xs">{d.type} list, {d.kind}</span>
+											<CellText width="lg">
+												<span class="font-mono text-sm">{d.domain}</span>
+												<span class="text-muted-foreground block text-xs">{d.type} list, {d.kind}</span>
+											</CellText>
 										</Table.Cell>
 										<Table.Cell class="whitespace-normal">
 											{@render difference(d.difference)}
@@ -264,8 +267,8 @@
 							<Table.Body>
 								{#each report.clients as c (c.instance_id + c.client)}
 									<Table.Row>
-										<Table.Cell>{c.instance}</Table.Cell>
-										<Table.Cell class="font-mono text-sm break-all">{c.client}</Table.Cell>
+										<Table.Cell><CellText>{c.instance}</CellText></Table.Cell>
+										<Table.Cell class="font-mono text-sm"><CellText>{c.client}</CellText></Table.Cell>
 										<Table.Cell class="whitespace-normal">
 											{@render difference(c.difference)}
 											{@render changes(clientChanges(c))}
@@ -304,8 +307,8 @@
 						<Table.Body>
 							{#each report.groups as g (g.instance_id + g.name)}
 								<Table.Row>
-									<Table.Cell>{g.instance}</Table.Cell>
-									<Table.Cell>{g.name}</Table.Cell>
+									<Table.Cell><CellText>{g.instance}</CellText></Table.Cell>
+									<Table.Cell><CellText>{g.name}</CellText></Table.Cell>
 									<Table.Cell class="whitespace-normal">
 										{@render difference(g.difference)}
 										{@render changes(groupChanges(g))}

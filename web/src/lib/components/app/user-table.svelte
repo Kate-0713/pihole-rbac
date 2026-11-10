@@ -8,6 +8,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { formatDateTime } from '#lib/format.js';
 	import { isSelf, rolesSummary, sourceLabel, userActions, type User } from '#lib/users.js';
@@ -64,11 +65,13 @@
 				{@const can = userActions(u)}
 				<Table.Row>
 					<Table.Cell>
-						<span class="font-medium">{u.username}</span>
-						{#if self}<Badge variant="secondary" class="ml-1">You</Badge>{/if}
-						{#if !u.manageable}
-							<p class="text-muted-foreground text-xs">Holds permissions you don't, so you can't change it.</p>
-						{/if}
+						<CellText>
+							<span class="font-medium">{u.username}</span>
+							{#if self}<Badge variant="secondary" class="ml-1">You</Badge>{/if}
+							{#if !u.manageable}
+								<p class="text-muted-foreground text-xs">Holds permissions you don't, so you can't change it.</p>
+							{/if}
+						</CellText>
 					</Table.Cell>
 					<Table.Cell>
 						{sourceLabel(u)}
@@ -77,7 +80,7 @@
 							<button
 								type="button"
 								class="text-muted-foreground hover:text-foreground block max-w-64 cursor-pointer text-left font-mono text-xs {open
-									? 'break-all whitespace-normal'
+									? 'wrap-anywhere whitespace-normal'
 									: 'truncate'}"
 								title={open ? undefined : u.ldap_dn}
 								aria-expanded={open}
@@ -89,7 +92,7 @@
 						{/if}
 					</Table.Cell>
 					<!-- class: directives only work on plain elements, so a component gets a class expression instead. -->
-					<Table.Cell class={u.roles.length === 0 ? 'text-muted-foreground' : ''}>{rolesSummary(u)}</Table.Cell>
+					<Table.Cell class={u.roles.length === 0 ? 'text-muted-foreground' : ''}><CellText>{rolesSummary(u)}</CellText></Table.Cell>
 					<Table.Cell>
 						{#if u.disabled}
 							<Badge variant="destructive">Disabled</Badge>

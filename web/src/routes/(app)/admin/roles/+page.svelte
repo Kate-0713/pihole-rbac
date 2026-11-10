@@ -10,6 +10,7 @@
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button, buttonVariants } from '#lib/components/ui/button/index.js';
+	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { summarise, type Role } from '#lib/roles.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
@@ -88,20 +89,24 @@
 					{@const lines = r.builtin ? ['Every permission, everywhere'] : summarise(r.grants, data.catalogue)}
 					<Table.Row>
 						<Table.Cell class="align-top">
-							<a href="/admin/roles/{r.id}" class="font-medium underline-offset-4 hover:underline">{r.name}</a>
-							{#if r.builtin}<Badge variant="secondary" class="ml-1">Builtin</Badge>{/if}
-							{#if r.description}<p class="text-muted-foreground text-xs">{r.description}</p>{/if}
+							<CellText>
+								<a href="/admin/roles/{r.id}" class="font-medium underline-offset-4 hover:underline">{r.name}</a>
+								{#if r.builtin}<Badge variant="secondary" class="ml-1">Builtin</Badge>{/if}
+								{#if r.description}<p class="text-muted-foreground text-xs">{r.description}</p>{/if}
+							</CellText>
 						</Table.Cell>
 						<Table.Cell class="align-top">
 							{#if lines.length === 0}
 								<span class="text-muted-foreground text-sm">None</span>
 							{:else}
-								<ul class="text-sm">
-									{#each lines as line (line)}<li class="font-mono text-xs">{line}</li>{/each}
-								</ul>
+								<CellText width="lg">
+									<ul class="text-sm">
+										{#each lines as line (line)}<li class="font-mono text-xs">{line}</li>{/each}
+									</ul>
+								</CellText>
 							{/if}
 						</Table.Cell>
-						<Table.Cell class="align-top text-sm">{usedBy(r)}</Table.Cell>
+						<Table.Cell class="align-top text-sm"><CellText>{usedBy(r)}</CellText></Table.Cell>
 						<Table.Cell class="align-top">
 							<div class="flex gap-1">
 								<Button variant="ghost" size="sm" href="/admin/roles/{r.id}" aria-label="Open {r.name}">
