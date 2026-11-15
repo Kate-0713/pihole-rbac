@@ -2647,11 +2647,11 @@ paths:
         The body names the group exactly and gives the fields to change; fields left out keep their value. A group
         that doesn't exist on the instance, or on a mirrored group's primary, is a 404, and the primary must answer.
         The Default group (ID 0) can't be renamed (400), and disabling it needs `confirm=true`. Renaming a group the
-        app refers to (client reset rules, protected groups) also needs `confirm=true`; once Pi-hole has renamed it,
-        the app updates those references where the old name is gone, and `references` says what changed and what to
-        check. Through a mirrored group, a member without the group fails with not_found. Answers with a result per
-        instance (see WriteResults under the schemas). Audited as piholegroup_enable or piholegroup_disable when the
-        enabled flag changes, otherwise piholegroup_update.
+        app refers to (client reset rules, protected groups, group windows) also needs `confirm=true`; once Pi-hole
+        has renamed it, the app updates those references where the old name is gone, and `references` says what
+        changed and what to check. Through a mirrored group, a member without the group fails with not_found. Answers
+        with a result per instance (see WriteResults under the schemas). Audited as piholegroup_enable or
+        piholegroup_disable when the enabled flag changes, otherwise piholegroup_update.
       operationId: updatePiholeGroup
       x-permission: target:piholegroups.edit
       parameters:
@@ -2755,7 +2755,8 @@ paths:
         For the delete dialog, read just before asking: how many domains, clients and lists are in the group on the
         instance or the mirrored group's primary, and the app's references to it. Reference counts are always given;
         the references themselves only to those who manage them (client reset rules with settings.manage, protected
-        groups with notifications.manage). Reading isn't audited.
+        groups with notifications.manage, group windows with schedules.manage on their target). Reading isn't
+        audited.
       operationId: getPiholeGroupUsage
       x-permission: target:piholegroups.edit
       parameters:
@@ -3663,6 +3664,190 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/schedules:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: The target's schedules
+      description: >-
+        The schedules set on the target, each with its next edge, whether a window is open now, and each instance's
+        result for its latest edge. For an instance, `from_groups` also lists the schedules on its mirrored group, which
+        reach it too, when the caller holds schedules.manage on that group. Reading isn't audited. Since v2.5.0.
+      operationId: listSchedules
+      x-permission: target:schedules.manage
+      responses:
+        "200":
+          description: The schedules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add a schedule
+      description: >-
+        Saves a schedule on the target. Also needs blocking.toggle on the target for a blocking window, or
+        piholegroups.edit for a group window, as you can't schedule what you can't do. A group window's Pi-hole group
+        must exist on the instance, or the mirrored group's primary (which must answer), and can't be the Default
+        group. A group window that would overlap an enabled one of the opposite kind for the same group, on an instance
+        both reach, is 409 conflict. The schedule acts from its next edge: nothing is applied for a window already open.
+        Only the app's database changes. Audited as schedule_create. Since v2.5.0.
+      operationId: createSchedule
+      x-permission: target:schedules.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleInput"
+      responses:
+        "201":
+          description: The saved schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+  /api/v1/targets/{target}/schedules/status:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: What the target's schedules are doing
+      description: >-
+        For the dashboard and the blocking menu: the windows open now and the next edge of each enabled schedule that
+        reaches the target (set on it, or, for an instance, on its mirrored group), by name, kind, group and time only.
+        A schedule with no window open and no edge to come (a one-off past its end) is left out.
+        Any permission on the target. Since v2.5.0.
+      operationId: getScheduleStatus
+      x-permission: target:any
+      responses:
+        "200":
+          description: The schedules' state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleStatus"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+  /api/v1/targets/{target}/schedules/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      summary: A schedule
+      description: One of the target's schedules. 404 for one set on another target. Since v2.5.0.
+      operationId: getSchedule
+      x-permission: target:schedules.manage
+      responses:
+        "200":
+          description: The schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    patch:
+      summary: Change a schedule
+      description: >-
+        Changes the fields given; the rest keep their value, and the result is checked as a whole, as when adding one.
+        Needs the underlying permission (blocking.toggle or piholegroups.edit) as it is now. A finished one-off
+        schedule is 409 conflict: it can only be deleted. The schedule acts from its next edge after the change, and
+        its results start again; a blocking window already open keeps Pi-hole's timer. Audited as schedule_update.
+        Since v2.5.0.
+      operationId: updateSchedule
+      x-permission: target:schedules.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleUpdate"
+      responses:
+        "200":
+          description: The saved schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a schedule
+      description: >-
+        Deletes the schedule. Needs schedules.manage alone, so a schedule can always be stopped. Nothing is sent to
+        Pi-hole: a blocking window's timer runs on, and a group stays as it is. Audited as schedule_delete. Since v2.5.0.
+      operationId: deleteSchedule
+      x-permission: target:schedules.manage
+      responses:
+        "204":
+          description: Deleted.
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/SetupRequired"
 
@@ -6005,6 +6190,13 @@ components:
         localdns_reason_required:
           type: boolean
           description: Whether a local DNS change needs a reason (since v2.4.0). Absent leaves it as it is.
+        schedule_group_window_max_minutes:
+          type: integer
+          minimum: 5
+          maximum: 525600
+          description: >-
+            The longest a schedule's Pi-hole group window can be, 5 minutes to 365 days (since v2.5.0). Lowering it
+            leaves existing schedules running. Absent leaves it as it is.
         localdns_extra_domains:
           type: array
           maxItems: 20
@@ -6037,8 +6229,11 @@ components:
     GeneralSettings:
       type: object
       additionalProperties: false
-      required: [session_lifetime_minutes, idle_timeout_minutes, audit_retention_days, client_reset_schedule, allow_file_lists, localdns_reason_required, localdns_extra_domains]
+      required: [session_lifetime_minutes, idle_timeout_minutes, audit_retention_days, client_reset_schedule, allow_file_lists, localdns_reason_required, localdns_extra_domains, schedule_group_window_max_minutes]
       properties:
+        schedule_group_window_max_minutes:
+          type: integer
+          description: The longest a schedule's group window can be; 1440 (a day) until saved.
         allow_file_lists:
           type: boolean
           description: "Whether file: lists can be added; false until saved."
@@ -7345,7 +7540,8 @@ components:
       required: [counts, items]
       description: >-
         The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller
-        manages: client reset rules with settings.manage, protected groups with notifications.manage.
+        manages: client reset rules with settings.manage, protected groups with notifications.manage, group windows
+        with schedules.manage on the schedule's instance or group.
       properties:
         counts:
           $ref: "#/components/schemas/PiholeGroupReferenceCounts"
@@ -7357,12 +7553,15 @@ components:
     PiholeGroupReferenceCounts:
       type: object
       additionalProperties: false
-      required: [client_reset_rules, protected_groups]
+      required: [client_reset_rules, protected_groups, group_windows]
       properties:
         client_reset_rules:
           type: integer
         protected_groups:
           type: integer
+        group_windows:
+          type: integer
+          description: Schedules whose group window names the group.
 
     PiholeGroupReference:
       type: object
@@ -7371,7 +7570,10 @@ components:
       properties:
         kind:
           type: string
-          enum: [client_reset_rule, protected_group]
+          enum: [client_reset_rule, protected_group, group_window]
+          description: >-
+            A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a
+            schedule's group window (schedules.manage on the schedule's instance or group).
         scope:
           type: string
           enum: [instance, group]
@@ -7387,13 +7589,20 @@ components:
           type: string
           enum: [names, prefixes]
           description: How a client reset rule matches Pi-hole groups.
+        schedule_name:
+          type: string
+          description: A group window's schedule.
+        schedule_kind:
+          type: string
+          enum: [group_enabled, group_disabled]
+          description: Whether a group window's schedule enables or disables the group during its window.
         names:
           type: array
           items:
             type: string
           description: >-
-            A client reset rule's group names or prefixes, or a protected group's name (one). For an updated
-            reference, the value after the rename.
+            A client reset rule's group names or prefixes, or a protected group's or group window's name (one). For
+            an updated reference, the value after the rename.
         before:
           type: array
           items:
@@ -7409,6 +7618,295 @@ components:
           description: >-
             For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach
             every instance the reference covers; or a protected group still matches another group left there.
+
+    ScheduleKind:
+      type: string
+      enum: [blocking_off, group_enabled, group_disabled]
+      description: >-
+        What a schedule does during its window: turn blocking off (through Pi-hole's own timer), or enable or disable
+        a Pi-hole group, switching it back at the end.
+
+    ScheduleRepeat:
+      type: string
+      enum: [weekly, once]
+
+    ScheduleInput:
+      type: object
+      additionalProperties: false
+      required: [name, kind, repeat]
+      description: >-
+        A weekly window starts on each day in `days` at `start` and ends `end_days` later at `end`, in `time_zone`:
+        21:00 to 07:00 is `end_days` 1. It is at most 7 days long and can't overlap itself. A one-off window runs from
+        `starts_at`, which must be in the future, to `ends_at`. A blocking window is at most 24 hours; a group window
+        at most schedule_group_window_max_minutes (refusals give `details.max_minutes`).
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Unique on the target, ignoring case.
+        kind:
+          $ref: "#/components/schemas/ScheduleKind"
+        pihole_group:
+          type: string
+          maxLength: 255
+          description: For a group window, the Pi-hole group, named exactly. Not the Default group.
+        repeat:
+          $ref: "#/components/schemas/ScheduleRepeat"
+        enabled:
+          type: boolean
+          default: true
+        days:
+          type: integer
+          minimum: 1
+          maximum: 127
+          description: Weekly. The days a window starts on, as bits from Monday = 1 to Sunday = 64.
+        start:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: Weekly. HH:MM, 24-hour. A start skipped by a daylight saving change comes an hour later.
+        end:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          description: Weekly. HH:MM, 24-hour, on the day `end_days` after the start.
+        end_days:
+          type: integer
+          minimum: 0
+          maximum: 7
+          description: Weekly. How many days after the start day the window ends.
+        time_zone:
+          type: string
+          maxLength: 64
+          description: Weekly. An IANA time zone, such as Europe/London or UTC. Not "Local".
+        starts_at:
+          type: string
+          format: date-time
+          description: Once.
+        ends_at:
+          type: string
+          format: date-time
+          description: Once.
+
+    ScheduleUpdate:
+      type: object
+      additionalProperties: false
+      description: Any of a schedule's fields but its kind. Absent fields keep their value.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        pihole_group:
+          type: string
+          maxLength: 255
+        repeat:
+          $ref: "#/components/schemas/ScheduleRepeat"
+        enabled:
+          type: boolean
+        days:
+          type: integer
+          minimum: 1
+          maximum: 127
+        start:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        end:
+          type: string
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        end_days:
+          type: integer
+          minimum: 0
+          maximum: 7
+        time_zone:
+          type: string
+          maxLength: 64
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    ScheduleEdge:
+      type: object
+      additionalProperties: false
+      required: [at, edge]
+      properties:
+        at:
+          type: string
+          format: date-time
+        edge:
+          type: string
+          enum: [start, end]
+
+    ScheduleResult:
+      type: object
+      additionalProperties: false
+      required: [instance_id, instance, status, at, attempts]
+      description: >-
+        What the latest edge, or its latest retry, did on one instance. A failed or skipped one is retried every 30
+        seconds until the schedule's next edge (a blocking start only while its window is open; a one-off's end for a
+        week, then given_up).
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+        instance:
+          type: string
+        status:
+          type: string
+          enum: [ok, failed, skipped, given_up]
+        code:
+          type: string
+          description: Why it failed or was skipped, such as not_found, schedule_conflict or a Pi-hole error code.
+        skip:
+          type: string
+          enum: [unchanged, still_open, window_over, timer]
+          description: >-
+            Why an ok edge sent nothing: the state was already right; another window for the group is still open;
+            a blocking start found after its window ended; or a blocking window's end, which Pi-hole's timer handles
+            (unless FTL lost the timer in a restart, when the end turns blocking back on and this is absent).
+        other:
+          type: string
+          description: The schedule that is still open, or in conflict.
+        at:
+          type: string
+          format: date-time
+        attempts:
+          type: integer
+
+    Schedule:
+      type: object
+      additionalProperties: false
+      required: [id, name, target, target_name, kind, repeat, enabled, length_minutes, open, results, over_limit, created_at, created_by, updated_at, updated_by]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        target:
+          type: string
+          description: The instance (i-<id>) or mirrored group (g-<id>) it is set on.
+        target_name:
+          type: string
+        kind:
+          $ref: "#/components/schemas/ScheduleKind"
+        pihole_group:
+          type: string
+        repeat:
+          $ref: "#/components/schemas/ScheduleRepeat"
+        enabled:
+          type: boolean
+        days:
+          type: integer
+        start:
+          type: string
+        end:
+          type: string
+        end_days:
+          type: integer
+        time_zone:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        length_minutes:
+          type: integer
+          description: The window's length as entered.
+        open:
+          type: boolean
+          description: Whether one of its windows is open now (whatever the instances' state, which a person may have changed).
+        open_until:
+          type: string
+          format: date-time
+          description: When the open window ends.
+        next_edge:
+          $ref: "#/components/schemas/ScheduleEdge"
+        last_edge:
+          $ref: "#/components/schemas/ScheduleEdge"
+        results:
+          type: array
+          description: Each instance's result for the latest edge; empty until the first, and after a change.
+          items:
+            $ref: "#/components/schemas/ScheduleResult"
+        finished_at:
+          type: string
+          format: date-time
+          description: A one-off schedule, once done. It can then only be deleted.
+        over_limit:
+          type: boolean
+          description: Longer than the limit allows now; it keeps running, but a change must bring it within the limit.
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: string
+
+    ScheduleList:
+      type: object
+      additionalProperties: false
+      required: [schedules, from_groups, group_window_max_minutes]
+      properties:
+        group_window_max_minutes:
+          type: integer
+          description: >-
+            The longest a group window can be now (schedule_group_window_max_minutes), so a form can say so without
+            settings.manage. A blocking window is at most 1440 minutes, and a weekly one at most 10080.
+        schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/Schedule"
+        from_groups:
+          type: array
+          description: For an instance, the schedules on its mirrored group the caller manages. Empty for a group.
+          items:
+            $ref: "#/components/schemas/Schedule"
+
+    ScheduleStatusItem:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, target, target_name, open]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        kind:
+          $ref: "#/components/schemas/ScheduleKind"
+        pihole_group:
+          type: string
+        target:
+          type: string
+        target_name:
+          type: string
+        open:
+          type: boolean
+        open_until:
+          type: string
+          format: date-time
+        next_edge:
+          $ref: "#/components/schemas/ScheduleEdge"
+
+    ScheduleStatus:
+      type: object
+      additionalProperties: false
+      required: [schedules]
+      properties:
+        schedules:
+          type: array
+          description: Open ones first, then by next edge.
+          items:
+            $ref: "#/components/schemas/ScheduleStatusItem"
 
     PiholeGroupRenameReferences:
       type: object

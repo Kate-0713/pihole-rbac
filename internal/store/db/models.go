@@ -128,6 +128,33 @@ type RoleLdapGroup struct {
 	CreatedAt   int64
 }
 
+type Schedule struct {
+	ID          int64
+	Name        string
+	InstanceID  sql.NullInt64
+	GroupID     sql.NullInt64
+	Kind        string
+	PiholeGroup sql.NullString
+	Repeat      string
+	Days        sql.NullInt64
+	StartMin    sql.NullInt64
+	EndMin      sql.NullInt64
+	EndDays     sql.NullInt64
+	TimeZone    sql.NullString
+	StartsAt    sql.NullInt64
+	EndsAt      sql.NullInt64
+	ActiveFrom  int64
+	LastEdgeAt  sql.NullInt64
+	LastEdge    sql.NullString
+	LastResults string
+	FinishedAt  sql.NullInt64
+	Enabled     int64
+	CreatedAt   int64
+	CreatedBy   string
+	UpdatedAt   int64
+	UpdatedBy   string
+}
+
 type Session struct {
 	IDHash         []byte
 	PublicID       string

@@ -267,3 +267,100 @@ func TestUpgradeFromV2_3_0(t *testing.T) {
 	}
 	check("after migrating up again", map[int]int{1: 1, 10: 0})
 }
+
+// TestUpgradeFromV2_4_0: a database as v2.4.0 left it (version 6) gets the schedules table and schedules.manage on
+// the builtin admin role only. A role that can toggle blocking doesn't get it. The table's checks refuse a schedule
+// that mixes the weekly and one-off fields, and deleting an instance deletes its schedules. Migrating down to 6
+// removes both, and up again restores them.
+func TestUpgradeFromV2_4_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 6))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'blocking.toggle', 'all'), (10, 'piholegroups.edit', 'all')`,
+		`INSERT INTO instances (id, name, base_url, created_at) VALUES (5, 'pihole1', 'https://pihole1', 1)`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	check := func(when string, want map[int]int) {
+		t.Helper()
+		for role, n := range want {
+			var got int
+			q := `SELECT count(*) FROM role_grants WHERE role_id = ? AND permission = 'schedules.manage' AND scope_type = 'all'`
+			if err := s.r.QueryRow(q, role).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != n {
+				t.Errorf("%s: role %d has %d schedules.manage grants, want %d", when, role, got, n)
+			}
+		}
+	}
+	check("after upgrading", map[int]int{1: 1, 10: 0})
+
+	const cols = `(name, instance_id, kind, pihole_group, repeat, days, start_min, end_min, end_days, time_zone, starts_at,
+		ends_at, active_from, created_at, created_by, updated_at, updated_by)`
+	if _, err := s.w.Exec(`INSERT INTO schedules ` + cols + ` VALUES ('Bedtime', 5, 'group_enabled', 'bedtime', 'weekly',
+		31, 1260, 420, 1, 'Europe/London', NULL, NULL, 1, 1, 'admin', 1, 'admin')`); err != nil {
+		t.Fatalf("a weekly group window: %v", err)
+	}
+	for name, values := range map[string]string{
+		"weekly with a start time":  `('a', 5, 'blocking_off', NULL, 'weekly', 31, 480, 510, 0, 'UTC', 5, 10, 1, 1, 'a', 1, 'a')`,
+		"once without an end":       `('b', 5, 'blocking_off', NULL, 'once', NULL, NULL, NULL, NULL, NULL, 5, NULL, 1, 1, 'a', 1, 'a')`,
+		"once ending at its start":  `('c', 5, 'blocking_off', NULL, 'once', NULL, NULL, NULL, NULL, NULL, 5, 5, 1, 1, 'a', 1, 'a')`,
+		"a group window, no group":  `('d', 5, 'group_disabled', NULL, 'once', NULL, NULL, NULL, NULL, NULL, 5, 10, 1, 1, 'a', 1, 'a')`,
+		"blocking with a group":     `('e', 5, 'blocking_off', 'x', 'once', NULL, NULL, NULL, NULL, NULL, 5, 10, 1, 1, 'a', 1, 'a')`,
+		"end_days over 7":           `('f', 5, 'blocking_off', NULL, 'weekly', 31, 480, 510, 8, 'UTC', NULL, NULL, 1, 1, 'a', 1, 'a')`,
+		"a name taken, in any case": `('BEDTIME', 5, 'blocking_off', NULL, 'once', NULL, NULL, NULL, NULL, NULL, 5, 10, 1, 1, 'a', 1, 'a')`,
+		"no instance and no group":  `('g', NULL, 'blocking_off', NULL, 'once', NULL, NULL, NULL, NULL, NULL, 5, 10, 1, 1, 'a', 1, 'a')`,
+	} {
+		if _, err := s.w.Exec(`INSERT INTO schedules ` + cols + ` VALUES ` + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if _, err := s.w.Exec(`DELETE FROM instances WHERE id = 5`); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.r.QueryRow(`SELECT count(*) FROM schedules`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("deleting the instance left %d schedules, %v", n, err)
+	}
+
+	// A grant on another role, so the Down section's first DELETE has something to remove.
+	if _, err := s.w.Exec(`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'schedules.manage', 'all')`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 6); err != nil {
+		t.Fatalf("down to 6: %v", err)
+	}
+	check("after migrating down", map[int]int{1: 0, 10: 0})
+	if err := s.r.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name = 'schedules'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("migrating down left the schedules table: %d, %v", n, err)
+	}
+	var toggle int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE role_id = 10 AND permission = 'blocking.toggle'`).Scan(&toggle); err != nil || toggle != 1 {
+		t.Errorf("migrating down touched other grants: %d blocking.toggle grants on role 10, %v", toggle, err)
+	}
+	if _, err := s.w.Exec(`DELETE FROM role_grants WHERE role_id = 1 AND permission = 'domains.view'`); err == nil {
+		t.Error("the builtin admin's grants can be deleted after migrating down: the trigger wasn't recreated")
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	check("after migrating up again", map[int]int{1: 1, 10: 0})
+}

@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package piholegroups finds and updates the app's references to Pi-hole groups, which are by name: client reset
-// rules (exact names, or name prefixes) and protected groups. Renaming or deleting a Pi-hole group would silently
+// rules (exact names, or name prefixes), protected groups and schedules' group windows. Renaming or deleting a Pi-hole group would silently
 // break them, so a rename or delete lists them first, and a rename updates the exact names where the old name is
 // really gone.
 package piholegroups
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -23,6 +24,7 @@ type Kind string
 const (
 	KindResetRule Kind = "client_reset_rule" // client_reset_targets
 	KindProtected Kind = "protected_group"   // notification_protected_groups
+	KindWindow    Kind = "group_window"      // schedules with a group kind
 )
 
 // Match modes of a client reset rule, as stored.
@@ -56,11 +58,16 @@ type Ref struct {
 	Match  string
 	Groups []string
 
-	// A protected group: the name, matched ignoring case, as its alerts are.
+	// A protected group: the name, matched ignoring case, as its alerts are. A group window: the group's name,
+	// matched exactly, as Pi-hole compares names.
 	Name string
+
+	// A group window: the schedule's name and kind (group_enabled or group_disabled).
+	Schedule     string
+	ScheduleKind string
 }
 
-// Load reads every reference: every client reset rule and protected group.
+// Load reads every reference: every client reset rule, protected group and group window.
 func Load(ctx context.Context, q *db.Queries) ([]Ref, error) {
 	rules, err := q.ListClientResetRules(ctx)
 	if err != nil {
@@ -70,7 +77,11 @@ func Load(ctx context.Context, q *db.Queries) ([]Ref, error) {
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]Ref, 0, len(rules)+len(protected))
+	schedules, err := q.ListSchedules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]Ref, 0, len(rules)+len(protected)+len(schedules))
 	for _, r := range rules {
 		var groups []string
 		if err := json.Unmarshal([]byte(r.TargetGroups), &groups); err != nil {
@@ -87,13 +98,25 @@ func Load(ctx context.Context, q *db.Queries) ([]Ref, error) {
 			ScopeName: p.InstanceName + p.GroupName, Name: p.PiholeGroup,
 		})
 	}
+	for _, w := range schedules {
+		if !w.PiholeGroup.Valid {
+			continue // a blocking window
+		}
+		refs = append(refs, Ref{
+			Kind: KindWindow, ID: w.ID, Scope: Scope{w.InstanceID.Int64, w.GroupID.Int64},
+			ScopeName: w.InstanceName + w.GroupName, Name: w.PiholeGroup.String, Schedule: w.Name, ScheduleKind: w.Kind,
+		})
+	}
 	return refs, nil
 }
 
 // refersTo reports whether r names the Pi-hole group called name: a names-mode rule lists it exactly, a
-// prefixes-mode rule has a prefix it starts with, and a protected group matches it ignoring case.
+// prefixes-mode rule has a prefix it starts with, a protected group matches it ignoring case, and a group window
+// names it exactly.
 func (r Ref) refersTo(name string) bool {
 	switch {
+	case r.Kind == KindWindow:
+		return r.Name == name
 	case r.Kind == KindProtected:
 		return strings.EqualFold(r.Name, name)
 	case r.Match == MatchPrefixes:
@@ -116,18 +139,22 @@ func Matching(refs []Ref, scopes []Scope, name string) []Ref {
 
 // Counts are how many references there are of each kind.
 type Counts struct {
-	ResetRules int `json:"client_reset_rules"`
-	Protected  int `json:"protected_groups"`
+	ResetRules   int `json:"client_reset_rules"`
+	Protected    int `json:"protected_groups"`
+	GroupWindows int `json:"group_windows"`
 }
 
 // Count counts refs by kind.
 func Count(refs []Ref) Counts {
 	var c Counts
 	for _, r := range refs {
-		if r.Kind == KindResetRule {
+		switch r.Kind {
+		case KindResetRule:
 			c.ResetRules++
-		} else {
+		case KindProtected:
 			c.Protected++
+		case KindWindow:
+			c.GroupWindows++
 		}
 	}
 	return c
@@ -140,8 +167,8 @@ const (
 	CheckStillInUse = "old_name_still_used" // a protected group still matching a group left on its scope
 )
 
-// Change is one reference a rename updates. Before and After are the rule's names, or the protected group's name in
-// a one-element list; Dropped means a protected group was removed because its scope already lists the new name.
+// Change is one reference a rename updates. Before and After are the rule's names, or the protected group's or
+// group window's name in a one-element list; Dropped means a protected group was removed because its scope already lists the new name.
 type Change struct {
 	Ref     Ref
 	Before  []string
@@ -193,6 +220,10 @@ func PlanRename(refs []Ref, from, to string, where Renamed) Plan {
 			p.Changes = append(p.Changes, Change{Ref: r, Before: r.Groups, After: renameIn(r.Groups, from, to)})
 			continue
 		}
+		if r.Kind == KindWindow {
+			p.Changes = append(p.Changes, Change{Ref: r, Before: []string{r.Name}, After: []string{to}})
+			continue
+		}
 		// Another group left on the scope that the entry also matches (Kids renamed while kids remains) keeps it.
 		if slices.ContainsFunc(where.Left(r.Scope), func(n string) bool { return n != to && strings.EqualFold(n, r.Name) }) {
 			p.Checks = append(p.Checks, Check{r, CheckStillInUse})
@@ -233,6 +264,8 @@ func Apply(ctx context.Context, q *db.Queries, p Plan) error {
 			if b, err = json.Marshal(c.After); err == nil {
 				err = q.UpdateClientResetRuleGroups(ctx, db.UpdateClientResetRuleGroupsParams{TargetGroups: string(b), ID: c.Ref.ID})
 			}
+		case c.Ref.Kind == KindWindow:
+			err = q.RenameScheduleGroup(ctx, db.RenameScheduleGroupParams{PiholeGroup: sql.NullString{String: c.After[0], Valid: true}, ID: c.Ref.ID})
 		case c.Dropped:
 			err = q.DeleteProtectedGroup(ctx, c.Ref.ID)
 		default:

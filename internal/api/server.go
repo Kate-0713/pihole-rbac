@@ -28,6 +28,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
+	"github.com/Kate-0713/pihole-rbac/internal/schedules"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
@@ -63,6 +64,7 @@ type Options struct {
 	LoginSettings *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
 	Notifications *notifications.Service // notification channels; nil in tests that don't need them
 	ClientReset   *clientreset.Service   // client reset rules and runs; nil in tests that don't need them
+	Schedules     *schedules.Service     // blocking and Pi-hole group schedules; nil in tests that don't need them
 	Gravity       *gravity.Service       // gravity runs; New makes one from Instances' pool when nil
 	Updates       *updates.Service       // the update check and update requests; nil in tests that don't need them
 	// Restart asks the process to shut down cleanly, as SIGTERM does, so its service manager starts it again. nil in

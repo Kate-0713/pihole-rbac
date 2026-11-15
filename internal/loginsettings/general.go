@@ -17,6 +17,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/localdns"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
+	"github.com/Kate-0713/pihole-rbac/internal/schedules"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
 )
@@ -44,6 +45,9 @@ type General struct {
 	// LocalDNSExtraDomains are directory domains a local DNS name is checked against, besides the LDAP base DN's.
 	// Rows saved before the setting existed have none, which loads as empty. On a save, nil keeps them as they are.
 	LocalDNSExtraDomains *[]string `json:"localdns_extra_domains,omitempty"`
+	// ScheduleGroupWindowMaxMinutes is the longest a schedule's Pi-hole group window can be. Rows saved before the
+	// setting existed have none, which loads as a day. On a save, nil keeps it as it is.
+	ScheduleGroupWindowMaxMinutes *int `json:"schedule_group_window_max_minutes,omitempty"`
 }
 
 // ResetSchedule is when client reset runs by itself: daily at Time ("HH:MM", 24-hour) in TimeZone (an IANA name),
@@ -115,6 +119,10 @@ func (g General) Validate() error {
 	case g.AuditRetentionDays < MinRetentionDays || g.AuditRetentionDays > MaxRetentionDays:
 		return validation("audit_retention_days", "Audit entries can be kept for %d to %d days.", MinRetentionDays, MaxRetentionDays)
 	}
+	if m := g.ScheduleGroupWindowMaxMinutes; m != nil && (*m < schedules.MinGroupWindowMinutes || *m > schedules.MaxGroupWindowMinutes) {
+		return validation("schedule_group_window_max_minutes", "A group window can be limited to %d minutes to %d days.",
+			schedules.MinGroupWindowMinutes, schedules.MaxGroupWindowMinutes/(24*60))
+	}
 	if g.LocalDNSExtraDomains != nil {
 		if _, err := localdns.CheckExtraDomains(*g.LocalDNSExtraDomains); err != nil {
 			var fe *localdns.FieldError
@@ -169,6 +177,10 @@ func (s *Service) loadGeneral(ctx context.Context, q *db.Queries) error {
 	s.schedule = g.schedule()
 	s.allowFile = g.AllowFileLists != nil && *g.AllowFileLists
 	s.reasonOptional = g.LocalDNSReasonRequired != nil && !*g.LocalDNSReasonRequired
+	s.groupWindowMax = 0
+	if g.ScheduleGroupWindowMaxMinutes != nil {
+		s.groupWindowMax = *g.ScheduleGroupWindowMaxMinutes
+	}
 	s.extraDomains = nil
 	if g.LocalDNSExtraDomains != nil {
 		s.extraDomains, _ = localdns.CheckExtraDomains(*g.LocalDNSExtraDomains) // checked by Validate
@@ -191,6 +203,21 @@ func (s *Service) LocalDNSExtraDomains() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return slices.Clone(s.extraDomains)
+}
+
+// ScheduleLimits returns the limits a schedule is saved against: the group window maximum, saved or default (a day).
+func (s *Service) ScheduleLimits() schedules.Limits {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return schedules.Limits{MaxGroupWindow: time.Duration(s.groupWindowMaxMinutes()) * time.Minute}
+}
+
+// groupWindowMaxMinutes is the saved group window maximum, or the default. s.mu must be held.
+func (s *Service) groupWindowMaxMinutes() int {
+	if s.groupWindowMax == 0 {
+		return schedules.DefaultGroupWindowMinutes
+	}
+	return s.groupWindowMax
 }
 
 // LDAPBaseDN returns the LDAP settings' base DN, or "" when there are none.
@@ -252,11 +279,13 @@ func (s *Service) General() GeneralView {
 	if extra == nil {
 		extra = []string{}
 	}
+	groupWindowMax := s.groupWindowMaxMinutes()
 	return GeneralView{
 		General: General{
 			SessionLifetimeMinutes: int(lifetime / time.Minute), IdleTimeoutMinutes: int(idle / time.Minute),
 			AuditRetentionDays: retention, ClientReset: &schedule, AllowFileLists: &allowFile,
 			LocalDNSReasonRequired: &reasonRequired, LocalDNSExtraDomains: &extra,
+			ScheduleGroupWindowMaxMinutes: &groupWindowMax,
 		},
 		UpdatedAt: s.generalAt, UpdatedBy: s.generalBy,
 	}
@@ -314,6 +343,14 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	if !slices.Equal(*before.LocalDNSExtraDomains, extra) {
 		changed = append(changed, "localdns_extra_domains")
 	}
+	if g.ScheduleGroupWindowMaxMinutes == nil {
+		g.ScheduleGroupWindowMaxMinutes = before.ScheduleGroupWindowMaxMinutes // likewise
+	}
+	groupWindowMax := *g.ScheduleGroupWindowMaxMinutes
+	g.ScheduleGroupWindowMaxMinutes = &groupWindowMax
+	if *before.ScheduleGroupWindowMaxMinutes != groupWindowMax {
+		changed = append(changed, "schedule_group_window_max_minutes")
+	}
 	if len(changed) == 0 {
 		return nil
 	}
@@ -328,6 +365,7 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 		t.entry.Detail["allow_file_lists"] = allowFile
 		t.entry.Detail["localdns_reason_required"] = reasonRequired
 		t.entry.Detail["localdns_extra_domains"] = extra
+		t.entry.Detail["schedule_group_window_max_minutes"] = groupWindowMax
 		value, err := json.Marshal(g)
 		if err != nil {
 			return err
@@ -346,6 +384,7 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	s.allowFile = allowFile
 	s.reasonOptional = !reasonRequired
 	s.extraDomains = extra
+	s.groupWindowMax = groupWindowMax
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
 	}

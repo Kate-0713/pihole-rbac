@@ -14,8 +14,8 @@ import {
 	type GroupReferences
 } from './pihole-groups.js';
 
-const refs = (rules: number, prot: number, items: GroupReferences['items'] = []): GroupReferences => ({
-	counts: { client_reset_rules: rules, protected_groups: prot },
+const refs = (rules: number, prot: number, items: GroupReferences['items'] = [], windows = 0): GroupReferences => ({
+	counts: { client_reset_rules: rules, protected_groups: prot, group_windows: windows },
 	items
 });
 
@@ -53,10 +53,13 @@ describe('describing references', () => {
 	it('counts them in words', () => {
 		expect(countText(refs(2, 1))).toBe('2 client reset rules and 1 protected group');
 		expect(countText(refs(0, 3))).toBe('3 protected groups');
+		expect(countText(refs(2, 1, [], 1))).toBe('2 client reset rules, 1 protected group and 1 schedule');
+		expect(countText(refs(0, 0, [], 2))).toBe('2 schedules');
 	});
 	it('says how many the caller can not see', () => {
 		const item: GroupReference = { kind: 'protected_group', scope: 'instance', scope_id: 1, scope_name: 'pihole1', names: ['kids'] };
 		expect(hiddenCount(refs(2, 1, [item]))).toBe(2);
+		expect(hiddenCount(refs(0, 1, [item], 2))).toBe(2);
 	});
 	it('names a reference', () => {
 		expect(
@@ -65,6 +68,12 @@ describe('describing references', () => {
 		expect(describeReference({ kind: 'protected_group', scope: 'instance', scope_id: 1, scope_name: 'pihole1', names: ['Kids'] })).toBe(
 			'Protected group on pihole1: Kids'
 		);
+		expect(
+			describeReference({ kind: 'group_window', scope: 'instance', scope_id: 1, scope_name: 'pihole1', schedule_name: 'Bedtime', schedule_kind: 'group_enabled', names: ['kids'] })
+		).toBe('Schedule Bedtime on pihole1, enables: kids');
+		expect(
+			describeReference({ kind: 'group_window', scope: 'group', scope_id: 2, scope_name: 'site', schedule_name: 'Weekend', schedule_kind: 'group_disabled', names: ['strict'] })
+		).toBe('Schedule Weekend on group site, disables: strict');
 	});
 	it('sums up a rename', () => {
 		expect(renameSummary(undefined)).toBeNull();

@@ -32,6 +32,7 @@ const (
 	GravityRun         Permission = "gravity.run"
 	LocalDNSView       Permission = "localdns.view"
 	LocalDNSEdit       Permission = "localdns.edit"
+	SchedulesManage    Permission = "schedules.manage"
 	DriftView          Permission = "drift.view"
 	DriftReconcile     Permission = "drift.reconcile"
 	InstancesManage    Permission = "instances.manage"
@@ -94,6 +95,7 @@ var catalogue = []Info{
 	{GravityRun, ClassInstance, "Run a gravity update"},
 	{LocalDNSView, ClassInstance, "List local DNS records and CNAMEs"},
 	{LocalDNSEdit, ClassInstance, "Add, change and delete local DNS records and CNAMEs"},
+	{SchedulesManage, ClassInstance, "Create, change and delete blocking and Pi-hole group schedules (saving also needs blocking.toggle or piholegroups.edit)"},
 	{DriftView, ClassGroup, "View the drift report for a mirrored group"},
 	{DriftReconcile, ClassGroup, "Reconcile a mirrored group"},
 	{InstancesManage, ClassGlobal, "Add, edit and group instances"},

@@ -154,6 +154,13 @@ var routePermission = map[string]string{
 	"GET /api/v1/targets/{target}/client-reset/preview": targetPrefix + string(rbac.ClientResetRun),
 	"POST /api/v1/targets/{target}/client-reset/run":    targetPrefix + string(rbac.ClientResetRun),
 	"GET /api/v1/targets/{target}/client-reset/runs":    targetPrefix + string(rbac.ClientResetRun),
+
+	"GET /api/v1/targets/{target}/schedules":         targetPrefix + string(rbac.SchedulesManage),
+	"POST /api/v1/targets/{target}/schedules":        targetPrefix + string(rbac.SchedulesManage),
+	"GET /api/v1/targets/{target}/schedules/status":  accessTargetAny,
+	"GET /api/v1/targets/{target}/schedules/{id}":    targetPrefix + string(rbac.SchedulesManage),
+	"PATCH /api/v1/targets/{target}/schedules/{id}":  targetPrefix + string(rbac.SchedulesManage),
+	"DELETE /api/v1/targets/{target}/schedules/{id}": targetPrefix + string(rbac.SchedulesManage),
 }
 
 // longRoutes may take longer than the server's write timeout: a client reset reads, and for a run changes, every

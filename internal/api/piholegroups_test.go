@@ -74,7 +74,7 @@ func (e *testEnv) refsNow() []string {
 	var out []string
 	for _, r := range refs {
 		names := r.Groups
-		if r.Kind == piholegroups.KindProtected {
+		if r.Kind == piholegroups.KindProtected || r.Kind == piholegroups.KindWindow {
 			names = []string{r.Name}
 		}
 		out = append(out, r.Scope.String()+" "+string(r.Kind)+" "+r.Prefix+" "+strings.Join(names, ","))
@@ -368,6 +368,85 @@ func TestPiholeGroupReferences(t *testing.T) {
 	}
 	if _, detail := te.lastAudit(); len(anyList(detail["references"])) != 2 {
 		t.Errorf("delete audit %v", detail)
+	}
+}
+
+// addWindow stores a one-off group window on a scope ("i-<id>" or "g-<id>") directly.
+func (e *testEnv) addWindow(scope, name, group string) {
+	e.t.Helper()
+	ctx := context.Background()
+	t, err := rbac.ParseTarget(scope)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	p := db.CreateScheduleParams{
+		Name: name, Kind: "group_enabled", PiholeGroup: sql.NullString{String: group, Valid: true}, Repeat: "once",
+		StartsAt: sql.NullInt64{Int64: 10, Valid: true}, EndsAt: sql.NullInt64{Int64: 20, Valid: true},
+		ActiveFrom: 1, Enabled: 1, CreatedAt: 1, CreatedBy: "admin", UpdatedAt: 1, UpdatedBy: "admin",
+	}
+	if t.Kind == rbac.TargetGroup {
+		p.GroupID = sql.NullInt64{Int64: t.ID, Valid: true}
+	} else {
+		p.InstanceID = sql.NullInt64{Int64: t.ID, Valid: true}
+	}
+	if err := e.st.WithTx(ctx, func(q *db.Queries) error { _, err := q.CreateSchedule(ctx, p); return err }); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// TestPiholeGroupWindowReferences: a schedule's group window is a reference to its Pi-hole group, counted for
+// everyone and shown in full only to holders of schedules.manage on its target; a rename updates it, and a delete
+// lists it without removing it.
+func TestPiholeGroupWindowReferences(t *testing.T) {
+	te := newTargetEnv(t)
+	te.ph.AddGroup("kids")
+	te.addWindow(te.target, "Bedtime", "kids")
+	te.addWindow(te.target, "Other", "Kids") // names match exactly
+	te.addGrantUser("editor", "editor-password-1", grant(rbac.PiholeGroupsEdit, "instance", te.id))
+	te.addGrantUser("scheduler", "scheduler-password-1", grant(rbac.PiholeGroupsEdit, "instance", te.id), grant(rbac.SchedulesManage, "instance", te.id))
+	for _, tt := range []struct {
+		user, password string
+		items          int
+	}{{"editor", "editor-password-1", 0}, {"scheduler", "scheduler-password-1", 1}} {
+		u := decode[gen.PiholeGroupUsage](t, te.loggedIn(tt.user, tt.password).do(http.MethodGet, te.path("/groups/usage?name=kids"), nil))
+		if u.References.Counts != (gen.PiholeGroupReferenceCounts{GroupWindows: 1}) || len(u.References.Items) != tt.items {
+			t.Errorf("%s sees %+v", tt.user, u.References)
+			continue
+		}
+		if tt.items == 1 {
+			it := u.References.Items[0]
+			if it.Kind != gen.PiholeGroupReferenceKindGroupWindow || it.ScheduleName == nil || *it.ScheduleName != "Bedtime" ||
+				it.ScheduleKind == nil || *it.ScheduleKind != "group_enabled" || !slices.Equal(it.Names, []string{"kids"}) {
+				t.Errorf("item %+v", it)
+			}
+		}
+	}
+
+	rename := gen.PiholeGroupUpdate{Name: "kids", NewName: strp("children")}
+	if res := te.admin.do(http.MethodPatch, te.path("/groups"), rename); res.Code != http.StatusConflict {
+		t.Fatalf("unconfirmed rename: %d %s", res.Code, res.Body)
+	}
+	res := te.admin.do(http.MethodPatch, te.path("/groups?confirm=true"), rename)
+	mustStatus(t, res, http.StatusOK)
+	if body := decode[gen.PiholeGroupWriteResults](t, res); body.References == nil ||
+		body.References.Updated.Counts != (gen.PiholeGroupReferenceCounts{GroupWindows: 1}) {
+		t.Fatalf("references %s", res.Body)
+	}
+	want := sorted(te.target+" group_window  children", te.target+" group_window  Kids")
+	if got := te.refsNow(); !slices.Equal(got, want) {
+		t.Errorf("after the rename:\n got %q\nwant %q", got, want)
+	}
+	if _, detail := te.lastAudit(); len(anyList(detail["references_updated"])) != 1 {
+		t.Errorf("audit %v", detail)
+	}
+
+	res = te.admin.do(http.MethodDelete, te.path("/groups?confirm=true"), gen.PiholeGroupKey{Name: "children"})
+	mustStatus(t, res, http.StatusOK)
+	if del := decode[gen.PiholeGroupDeleteResults](t, res); del.References == nil || del.References.Counts.GroupWindows != 1 {
+		t.Errorf("delete references %s", res.Body)
+	}
+	if got := te.refsNow(); !slices.Equal(got, want) {
+		t.Errorf("a delete changed references: %q", got)
 	}
 }
 

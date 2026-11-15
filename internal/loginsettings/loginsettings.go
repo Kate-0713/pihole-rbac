@@ -71,6 +71,8 @@ type Service struct {
 	// reasonOptional is localdns_reason_required turned off; extraDomains the extra directory domains.
 	reasonOptional bool
 	extraDomains   []string
+	// groupWindowMax is schedule_group_window_max_minutes, 0 until saved (the default).
+	groupWindowMax int
 }
 
 // StoredPassword is the bind password as kept in the database.

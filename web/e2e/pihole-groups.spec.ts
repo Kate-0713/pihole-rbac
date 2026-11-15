@@ -136,8 +136,9 @@ test('renaming a group the app refers to lists the references, and they follow',
 		await page.getByRole('button', { name: 'Delete e2e renamed' }).click();
 		const confirm = page.getByRole('alertdialog');
 		await expect(confirm.locator('[data-references]')).toContainText('1 client reset rule');
-		await confirm.getByRole('button', { name: 'Delete' }).click();
+		await confirm.getByRole('button', { name: 'Delete anyway' }).click();
 		await expect(page.getByText('e2e renamed deleted on pihole1.')).toBeVisible();
+		await expect(page.getByText("The app still refers to e2e renamed: 1 client reset rule. They're left for you to fix.")).toBeVisible();
 		const after = await (await page.request.get('/api/v1/client-reset/rules')).json();
 		expect(after.rules[0].pihole_groups).toEqual(['e2e renamed']);
 	} finally {

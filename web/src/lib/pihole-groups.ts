@@ -55,16 +55,17 @@ function isReferences(x: unknown): x is GroupReferences {
 }
 
 export function referenceCount(refs: GroupReferences | null | undefined): number {
-	return refs ? refs.counts.client_reset_rules + refs.counts.protected_groups : 0;
+	return refs ? refs.counts.client_reset_rules + refs.counts.protected_groups + (refs.counts.group_windows ?? 0) : 0;
 }
 
-// countText says how many references there are: "2 client reset rules and 1 protected group".
+// countText says how many references there are: "2 client reset rules, 1 protected group and 1 schedule".
 export function countText(refs: GroupReferences): string {
 	const parts: string[] = [];
 	const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
 	if (refs.counts.client_reset_rules > 0) parts.push(n(refs.counts.client_reset_rules, 'client reset rule', 'client reset rules'));
 	if (refs.counts.protected_groups > 0) parts.push(n(refs.counts.protected_groups, 'protected group', 'protected groups'));
-	return parts.join(' and ');
+	if ((refs.counts.group_windows ?? 0) > 0) parts.push(n(refs.counts.group_windows, 'schedule', 'schedules'));
+	return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
 }
 
 // hiddenCount is how many references the caller can't see in full: they only see those they manage.
@@ -76,6 +77,10 @@ export function hiddenCount(refs: GroupReferences): number {
 export function describeReference(r: GroupReference): string {
 	const where = `${r.scope === 'group' ? 'group ' : ''}${r.scope_name}`;
 	if (r.kind === 'protected_group') return `Protected group on ${where}: ${r.names[0] ?? ''}`;
+	if (r.kind === 'group_window') {
+		const how = r.schedule_kind === 'group_disabled' ? 'disables' : 'enables';
+		return `Schedule ${r.schedule_name ?? ''} on ${where}, ${how}: ${r.names[0] ?? ''}`;
+	}
 	const how = r.match === 'prefixes' ? 'prefixes' : 'groups';
 	return `Client reset rule ${r.comment_prefix ?? ''} on ${where}, ${how}: ${r.names.join(', ')}`;
 }

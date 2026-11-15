@@ -231,8 +231,9 @@ export function browserZone(): string {
 	return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
-// zoneOffset is how far a zone's wall clock is ahead of UTC at an instant, in milliseconds.
-function zoneOffset(at: number, zone: string): number {
+// zoneOffset is how far a zone's wall clock is ahead of UTC at an instant, in milliseconds. The schedules page uses
+// it too.
+export function zoneOffset(at: number, zone: string): number {
 	const parts = new Intl.DateTimeFormat('en-US', {
 		timeZone: zone,
 		hourCycle: 'h23',

@@ -113,6 +113,13 @@ const (
 	ActionCNAMEUpdate     = "cname_update"
 	ActionCNAMEDelete     = "cname_delete"
 
+	// Schedules, since v2.5.0: changes to schedules by a user, and once per instance an edge (a window's start or end)
+	// or its retry sent something to, or failed on, by (system).
+	ActionScheduleCreate = "schedule_create"
+	ActionScheduleUpdate = "schedule_update"
+	ActionScheduleDelete = "schedule_delete"
+	ActionScheduleRun    = "schedule_run"
+
 	// Gravity runs, since v2.3.0: when a run starts, and per instance when its part ends.
 	ActionGravityStart = "gravity_start"
 	ActionGravityRun   = "gravity_run"

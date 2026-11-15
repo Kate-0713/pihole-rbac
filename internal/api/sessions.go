@@ -173,6 +173,7 @@ func (s *Server) SetGeneralSettings(ctx context.Context, req gen.SetGeneralSetti
 	g.AllowFileLists = req.Body.AllowFileLists // likewise
 	g.LocalDNSReasonRequired = req.Body.LocaldnsReasonRequired
 	g.LocalDNSExtraDomains = req.Body.LocaldnsExtraDomains
+	g.ScheduleGroupWindowMaxMinutes = req.Body.ScheduleGroupWindowMaxMinutes
 	if err := s.LoginSettings.SaveGeneral(ctx, actor(ctx), g); err != nil {
 		return nil, err
 	}
@@ -189,6 +190,9 @@ func generalJSON(v loginsettings.GeneralView) gen.GeneralSettings {
 	}
 	if v.LocalDNSExtraDomains != nil {
 		out.LocaldnsExtraDomains = *v.LocalDNSExtraDomains
+	}
+	if v.ScheduleGroupWindowMaxMinutes != nil {
+		out.ScheduleGroupWindowMaxMinutes = *v.ScheduleGroupWindowMaxMinutes
 	}
 	if r := v.ClientReset; r != nil {
 		out.ClientResetSchedule = gen.ClientResetSchedule{Enabled: r.Enabled, Time: r.Time, TimeZone: r.TimeZone}

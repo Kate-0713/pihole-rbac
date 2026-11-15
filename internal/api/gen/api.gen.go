@@ -188,16 +188,16 @@ func (e ClientResetRunStatus) Valid() bool {
 
 // Defines values for ClientResetRunTrigger.
 const (
-	Manual   ClientResetRunTrigger = "manual"
-	Schedule ClientResetRunTrigger = "schedule"
+	ClientResetRunTriggerManual   ClientResetRunTrigger = "manual"
+	ClientResetRunTriggerSchedule ClientResetRunTrigger = "schedule"
 )
 
 // Valid indicates whether the value is a known member of the ClientResetRunTrigger enum.
 func (e ClientResetRunTrigger) Valid() bool {
 	switch e {
-	case Manual:
+	case ClientResetRunTriggerManual:
 		return true
-	case Schedule:
+	case ClientResetRunTriggerSchedule:
 		return true
 	default:
 		return false
@@ -867,6 +867,7 @@ func (e PermissionInfoClass) Valid() bool {
 // Defines values for PiholeGroupReferenceKind.
 const (
 	PiholeGroupReferenceKindClientResetRule PiholeGroupReferenceKind = "client_reset_rule"
+	PiholeGroupReferenceKindGroupWindow     PiholeGroupReferenceKind = "group_window"
 	PiholeGroupReferenceKindProtectedGroup  PiholeGroupReferenceKind = "protected_group"
 )
 
@@ -874,6 +875,8 @@ const (
 func (e PiholeGroupReferenceKind) Valid() bool {
 	switch e {
 	case PiholeGroupReferenceKindClientResetRule:
+		return true
+	case PiholeGroupReferenceKindGroupWindow:
 		return true
 	case PiholeGroupReferenceKindProtectedGroup:
 		return true
@@ -915,6 +918,24 @@ func (e PiholeGroupReferenceReason) Valid() bool {
 	case OldNameStillUsed:
 		return true
 	case PrefixMatchChanges:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeGroupReferenceScheduleKind.
+const (
+	PiholeGroupReferenceScheduleKindGroupDisabled PiholeGroupReferenceScheduleKind = "group_disabled"
+	PiholeGroupReferenceScheduleKindGroupEnabled  PiholeGroupReferenceScheduleKind = "group_enabled"
+)
+
+// Valid indicates whether the value is a known member of the PiholeGroupReferenceScheduleKind enum.
+func (e PiholeGroupReferenceScheduleKind) Valid() bool {
+	switch e {
+	case PiholeGroupReferenceScheduleKindGroupDisabled:
+		return true
+	case PiholeGroupReferenceScheduleKindGroupEnabled:
 		return true
 	default:
 		return false
@@ -1329,6 +1350,111 @@ func (e ReconcileItemResultType) Valid() bool {
 	case ReconcileItemResultTypeAllow:
 		return true
 	case ReconcileItemResultTypeDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleEdgeEdge.
+const (
+	End   ScheduleEdgeEdge = "end"
+	Start ScheduleEdgeEdge = "start"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleEdgeEdge enum.
+func (e ScheduleEdgeEdge) Valid() bool {
+	switch e {
+	case End:
+		return true
+	case Start:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleKind.
+const (
+	ScheduleKindBlockingOff   ScheduleKind = "blocking_off"
+	ScheduleKindGroupDisabled ScheduleKind = "group_disabled"
+	ScheduleKindGroupEnabled  ScheduleKind = "group_enabled"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleKind enum.
+func (e ScheduleKind) Valid() bool {
+	switch e {
+	case ScheduleKindBlockingOff:
+		return true
+	case ScheduleKindGroupDisabled:
+		return true
+	case ScheduleKindGroupEnabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleRepeat.
+const (
+	Once   ScheduleRepeat = "once"
+	Weekly ScheduleRepeat = "weekly"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleRepeat enum.
+func (e ScheduleRepeat) Valid() bool {
+	switch e {
+	case Once:
+		return true
+	case Weekly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleResultSkip.
+const (
+	ScheduleResultSkipStillOpen  ScheduleResultSkip = "still_open"
+	ScheduleResultSkipTimer      ScheduleResultSkip = "timer"
+	ScheduleResultSkipUnchanged  ScheduleResultSkip = "unchanged"
+	ScheduleResultSkipWindowOver ScheduleResultSkip = "window_over"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleResultSkip enum.
+func (e ScheduleResultSkip) Valid() bool {
+	switch e {
+	case ScheduleResultSkipStillOpen:
+		return true
+	case ScheduleResultSkipTimer:
+		return true
+	case ScheduleResultSkipUnchanged:
+		return true
+	case ScheduleResultSkipWindowOver:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleResultStatus.
+const (
+	ScheduleResultStatusFailed  ScheduleResultStatus = "failed"
+	ScheduleResultStatusGivenUp ScheduleResultStatus = "given_up"
+	ScheduleResultStatusOk      ScheduleResultStatus = "ok"
+	ScheduleResultStatusSkipped ScheduleResultStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleResultStatus enum.
+func (e ScheduleResultStatus) Valid() bool {
+	switch e {
+	case ScheduleResultStatusFailed:
+		return true
+	case ScheduleResultStatusGivenUp:
+		return true
+	case ScheduleResultStatusOk:
+		return true
+	case ScheduleResultStatusSkipped:
 		return true
 	default:
 		return false
@@ -2451,7 +2577,10 @@ type GeneralSettings struct {
 
 	// LocaldnsReasonRequired Whether a local DNS change needs a reason; true until saved.
 	LocaldnsReasonRequired bool `json:"localdns_reason_required"`
-	SessionLifetimeMinutes int  `json:"session_lifetime_minutes"`
+
+	// ScheduleGroupWindowMaxMinutes The longest a schedule's group window can be; 1440 (a day) until saved.
+	ScheduleGroupWindowMaxMinutes int `json:"schedule_group_window_max_minutes"`
+	SessionLifetimeMinutes        int `json:"session_lifetime_minutes"`
 
 	// UpdatedAt Absent until the settings are first saved.
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
@@ -2477,6 +2606,9 @@ type GeneralSettingsInput struct {
 
 	// LocaldnsReasonRequired Whether a local DNS change needs a reason (since v2.4.0). Absent leaves it as it is.
 	LocaldnsReasonRequired *bool `json:"localdns_reason_required,omitempty"`
+
+	// ScheduleGroupWindowMaxMinutes The longest a schedule's Pi-hole group window can be, 5 minutes to 365 days (since v2.5.0). Lowering it leaves existing schedules running. Absent leaves it as it is.
+	ScheduleGroupWindowMaxMinutes *int `json:"schedule_group_window_max_minutes,omitempty"`
 
 	// SessionLifetimeMinutes How long a session lasts at most, from login. 15 minutes to 30 days.
 	SessionLifetimeMinutes int `json:"session_lifetime_minutes"`
@@ -3122,7 +3254,7 @@ type PiholeGroup struct {
 
 // PiholeGroupDeleteResults The result per instance of deleting a Pi-hole group.
 type PiholeGroupDeleteResults struct {
-	// References The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	// References The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group.
 	References *PiholeGroupReferences `json:"references,omitempty"`
 	Results    []DeleteResult         `json:"results"`
 }
@@ -3168,23 +3300,31 @@ type PiholeGroupReference struct {
 	CommentPrefix *string `json:"comment_prefix,omitempty"`
 
 	// Dropped For an updated protected group: removed, because its instance or group already listed the new name.
-	Dropped *bool                    `json:"dropped,omitempty"`
-	Kind    PiholeGroupReferenceKind `json:"kind"`
+	Dropped *bool `json:"dropped,omitempty"`
+
+	// Kind A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a schedule's group window (schedules.manage on the schedule's instance or group).
+	Kind PiholeGroupReferenceKind `json:"kind"`
 
 	// Match How a client reset rule matches Pi-hole groups.
 	Match *PiholeGroupReferenceMatch `json:"match,omitempty"`
 
-	// Names A client reset rule's group names or prefixes, or a protected group's name (one). For an updated reference, the value after the rename.
+	// Names A client reset rule's group names or prefixes, or a protected group's or group window's name (one). For an updated reference, the value after the rename.
 	Names []string `json:"names"`
 
 	// Reason For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach every instance the reference covers; or a protected group still matches another group left there.
-	Reason    *PiholeGroupReferenceReason `json:"reason,omitempty"`
-	Scope     PiholeGroupReferenceScope   `json:"scope"`
-	ScopeId   int64                       `json:"scope_id"`
-	ScopeName string                      `json:"scope_name"`
+	Reason *PiholeGroupReferenceReason `json:"reason,omitempty"`
+
+	// ScheduleKind Whether a group window's schedule enables or disables the group during its window.
+	ScheduleKind *PiholeGroupReferenceScheduleKind `json:"schedule_kind,omitempty"`
+
+	// ScheduleName A group window's schedule.
+	ScheduleName *string                   `json:"schedule_name,omitempty"`
+	Scope        PiholeGroupReferenceScope `json:"scope"`
+	ScopeId      int64                     `json:"scope_id"`
+	ScopeName    string                    `json:"scope_name"`
 }
 
-// PiholeGroupReferenceKind defines model for PiholeGroupReference.Kind.
+// PiholeGroupReferenceKind A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a schedule's group window (schedules.manage on the schedule's instance or group).
 type PiholeGroupReferenceKind string
 
 // PiholeGroupReferenceMatch How a client reset rule matches Pi-hole groups.
@@ -3193,16 +3333,22 @@ type PiholeGroupReferenceMatch string
 // PiholeGroupReferenceReason For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach every instance the reference covers; or a protected group still matches another group left there.
 type PiholeGroupReferenceReason string
 
+// PiholeGroupReferenceScheduleKind Whether a group window's schedule enables or disables the group during its window.
+type PiholeGroupReferenceScheduleKind string
+
 // PiholeGroupReferenceScope defines model for PiholeGroupReference.Scope.
 type PiholeGroupReferenceScope string
 
 // PiholeGroupReferenceCounts defines model for PiholeGroupReferenceCounts.
 type PiholeGroupReferenceCounts struct {
 	ClientResetRules int `json:"client_reset_rules"`
-	ProtectedGroups  int `json:"protected_groups"`
+
+	// GroupWindows Schedules whose group window names the group.
+	GroupWindows    int `json:"group_windows"`
+	ProtectedGroups int `json:"protected_groups"`
 }
 
-// PiholeGroupReferences The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+// PiholeGroupReferences The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group.
 type PiholeGroupReferences struct {
 	Counts PiholeGroupReferenceCounts `json:"counts"`
 	Items  []PiholeGroupReference     `json:"items"`
@@ -3213,10 +3359,10 @@ type PiholeGroupRenameReferences struct {
 	// Error Set when Pi-hole renamed the group but the app couldn't update its references; `updated` then lists what would have changed, and nothing did.
 	Error *string `json:"error,omitempty"`
 
-	// ToCheck The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	// ToCheck The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group.
 	ToCheck PiholeGroupReferences `json:"to_check"`
 
-	// Updated The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	// Updated The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group.
 	Updated PiholeGroupReferences `json:"updated"`
 }
 
@@ -3245,7 +3391,7 @@ type PiholeGroupUsage struct {
 	Lists int    `json:"lists"`
 	Name  string `json:"name"`
 
-	// References The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	// References The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group.
 	References PiholeGroupReferences `json:"references"`
 }
 
@@ -3706,6 +3852,173 @@ type RoleList struct {
 type RoleRef struct {
 	Id   int64  `json:"id"`
 	Name string `json:"name"`
+}
+
+// Schedule defines model for Schedule.
+type Schedule struct {
+	CreatedAt time.Time  `json:"created_at"`
+	CreatedBy string     `json:"created_by"`
+	Days      *int       `json:"days,omitempty"`
+	Enabled   bool       `json:"enabled"`
+	End       *string    `json:"end,omitempty"`
+	EndDays   *int       `json:"end_days,omitempty"`
+	EndsAt    *time.Time `json:"ends_at,omitempty"`
+
+	// FinishedAt A one-off schedule, once done. It can then only be deleted.
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Id         int64      `json:"id"`
+
+	// Kind What a schedule does during its window: turn blocking off (through Pi-hole's own timer), or enable or disable a Pi-hole group, switching it back at the end.
+	Kind     ScheduleKind  `json:"kind"`
+	LastEdge *ScheduleEdge `json:"last_edge,omitempty"`
+
+	// LengthMinutes The window's length as entered.
+	LengthMinutes int           `json:"length_minutes"`
+	Name          string        `json:"name"`
+	NextEdge      *ScheduleEdge `json:"next_edge,omitempty"`
+
+	// Open Whether one of its windows is open now (whatever the instances' state, which a person may have changed).
+	Open bool `json:"open"`
+
+	// OpenUntil When the open window ends.
+	OpenUntil *time.Time `json:"open_until,omitempty"`
+
+	// OverLimit Longer than the limit allows now; it keeps running, but a change must bring it within the limit.
+	OverLimit   bool           `json:"over_limit"`
+	PiholeGroup *string        `json:"pihole_group,omitempty"`
+	Repeat      ScheduleRepeat `json:"repeat"`
+
+	// Results Each instance's result for the latest edge; empty until the first, and after a change.
+	Results  []ScheduleResult `json:"results"`
+	Start    *string          `json:"start,omitempty"`
+	StartsAt *time.Time       `json:"starts_at,omitempty"`
+
+	// Target The instance (i-<id>) or mirrored group (g-<id>) it is set on.
+	Target     string    `json:"target"`
+	TargetName string    `json:"target_name"`
+	TimeZone   *string   `json:"time_zone,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	UpdatedBy  string    `json:"updated_by"`
+}
+
+// ScheduleEdge defines model for ScheduleEdge.
+type ScheduleEdge struct {
+	At   time.Time        `json:"at"`
+	Edge ScheduleEdgeEdge `json:"edge"`
+}
+
+// ScheduleEdgeEdge defines model for ScheduleEdge.Edge.
+type ScheduleEdgeEdge string
+
+// ScheduleInput A weekly window starts on each day in `days` at `start` and ends `end_days` later at `end`, in `time_zone`: 21:00 to 07:00 is `end_days` 1. It is at most 7 days long and can't overlap itself. A one-off window runs from `starts_at`, which must be in the future, to `ends_at`. A blocking window is at most 24 hours; a group window at most schedule_group_window_max_minutes (refusals give `details.max_minutes`).
+type ScheduleInput struct {
+	// Days Weekly. The days a window starts on, as bits from Monday = 1 to Sunday = 64.
+	Days    *int  `json:"days,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// End Weekly. HH:MM, 24-hour, on the day `end_days` after the start.
+	End *string `json:"end,omitempty"`
+
+	// EndDays Weekly. How many days after the start day the window ends.
+	EndDays *int `json:"end_days,omitempty"`
+
+	// EndsAt Once.
+	EndsAt *time.Time `json:"ends_at,omitempty"`
+
+	// Kind What a schedule does during its window: turn blocking off (through Pi-hole's own timer), or enable or disable a Pi-hole group, switching it back at the end.
+	Kind ScheduleKind `json:"kind"`
+
+	// Name Unique on the target, ignoring case.
+	Name string `json:"name"`
+
+	// PiholeGroup For a group window, the Pi-hole group, named exactly. Not the Default group.
+	PiholeGroup *string        `json:"pihole_group,omitempty"`
+	Repeat      ScheduleRepeat `json:"repeat"`
+
+	// Start Weekly. HH:MM, 24-hour. A start skipped by a daylight saving change comes an hour later.
+	Start *string `json:"start,omitempty"`
+
+	// StartsAt Once.
+	StartsAt *time.Time `json:"starts_at,omitempty"`
+
+	// TimeZone Weekly. An IANA time zone, such as Europe/London or UTC. Not "Local".
+	TimeZone *string `json:"time_zone,omitempty"`
+}
+
+// ScheduleKind What a schedule does during its window: turn blocking off (through Pi-hole's own timer), or enable or disable a Pi-hole group, switching it back at the end.
+type ScheduleKind string
+
+// ScheduleList defines model for ScheduleList.
+type ScheduleList struct {
+	// FromGroups For an instance, the schedules on its mirrored group the caller manages. Empty for a group.
+	FromGroups []Schedule `json:"from_groups"`
+
+	// GroupWindowMaxMinutes The longest a group window can be now (schedule_group_window_max_minutes), so a form can say so without settings.manage. A blocking window is at most 1440 minutes, and a weekly one at most 10080.
+	GroupWindowMaxMinutes int        `json:"group_window_max_minutes"`
+	Schedules             []Schedule `json:"schedules"`
+}
+
+// ScheduleRepeat defines model for ScheduleRepeat.
+type ScheduleRepeat string
+
+// ScheduleResult What the latest edge, or its latest retry, did on one instance. A failed or skipped one is retried every 30 seconds until the schedule's next edge (a blocking start only while its window is open; a one-off's end for a week, then given_up).
+type ScheduleResult struct {
+	At       time.Time `json:"at"`
+	Attempts int       `json:"attempts"`
+
+	// Code Why it failed or was skipped, such as not_found, schedule_conflict or a Pi-hole error code.
+	Code       *string `json:"code,omitempty"`
+	Instance   string  `json:"instance"`
+	InstanceId int64   `json:"instance_id"`
+
+	// Other The schedule that is still open, or in conflict.
+	Other *string `json:"other,omitempty"`
+
+	// Skip Why an ok edge sent nothing: the state was already right; another window for the group is still open; a blocking start found after its window ended; or a blocking window's end, which Pi-hole's timer handles (unless FTL lost the timer in a restart, when the end turns blocking back on and this is absent).
+	Skip   *ScheduleResultSkip  `json:"skip,omitempty"`
+	Status ScheduleResultStatus `json:"status"`
+}
+
+// ScheduleResultSkip Why an ok edge sent nothing: the state was already right; another window for the group is still open; a blocking start found after its window ended; or a blocking window's end, which Pi-hole's timer handles (unless FTL lost the timer in a restart, when the end turns blocking back on and this is absent).
+type ScheduleResultSkip string
+
+// ScheduleResultStatus defines model for ScheduleResult.Status.
+type ScheduleResultStatus string
+
+// ScheduleStatus defines model for ScheduleStatus.
+type ScheduleStatus struct {
+	// Schedules Open ones first, then by next edge.
+	Schedules []ScheduleStatusItem `json:"schedules"`
+}
+
+// ScheduleStatusItem defines model for ScheduleStatusItem.
+type ScheduleStatusItem struct {
+	Id int64 `json:"id"`
+
+	// Kind What a schedule does during its window: turn blocking off (through Pi-hole's own timer), or enable or disable a Pi-hole group, switching it back at the end.
+	Kind        ScheduleKind  `json:"kind"`
+	Name        string        `json:"name"`
+	NextEdge    *ScheduleEdge `json:"next_edge,omitempty"`
+	Open        bool          `json:"open"`
+	OpenUntil   *time.Time    `json:"open_until,omitempty"`
+	PiholeGroup *string       `json:"pihole_group,omitempty"`
+	Target      string        `json:"target"`
+	TargetName  string        `json:"target_name"`
+}
+
+// ScheduleUpdate Any of a schedule's fields but its kind. Absent fields keep their value.
+type ScheduleUpdate struct {
+	Days        *int            `json:"days,omitempty"`
+	Enabled     *bool           `json:"enabled,omitempty"`
+	End         *string         `json:"end,omitempty"`
+	EndDays     *int            `json:"end_days,omitempty"`
+	EndsAt      *time.Time      `json:"ends_at,omitempty"`
+	Name        *string         `json:"name,omitempty"`
+	PiholeGroup *string         `json:"pihole_group,omitempty"`
+	Repeat      *ScheduleRepeat `json:"repeat,omitempty"`
+	Start       *string         `json:"start,omitempty"`
+	StartsAt    *time.Time      `json:"starts_at,omitempty"`
+	TimeZone    *string         `json:"time_zone,omitempty"`
 }
 
 // ScopeName defines model for ScopeName.
@@ -4571,6 +4884,12 @@ type UpdateDNSRecordJSONRequestBody = DNSRecordUpdate
 // AddDNSRecordJSONRequestBody defines body for AddDNSRecord for application/json ContentType.
 type AddDNSRecordJSONRequestBody = DNSRecordInput
 
+// CreateScheduleJSONRequestBody defines body for CreateSchedule for application/json ContentType.
+type CreateScheduleJSONRequestBody = ScheduleInput
+
+// UpdateScheduleJSONRequestBody defines body for UpdateSchedule for application/json ContentType.
+type UpdateScheduleJSONRequestBody = ScheduleUpdate
+
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = UserCreate
 
@@ -4882,6 +5201,24 @@ type ServerInterface interface {
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(w http.ResponseWriter, r *http.Request, target TargetID, params ListQueriesParams)
+	// ListSchedules The target's schedules
+	// (GET /api/v1/targets/{target}/schedules)
+	ListSchedules(w http.ResponseWriter, r *http.Request, target TargetID)
+	// CreateSchedule Add a schedule
+	// (POST /api/v1/targets/{target}/schedules)
+	CreateSchedule(w http.ResponseWriter, r *http.Request, target TargetID)
+	// GetScheduleStatus What the target's schedules are doing
+	// (GET /api/v1/targets/{target}/schedules/status)
+	GetScheduleStatus(w http.ResponseWriter, r *http.Request, target TargetID)
+	// DeleteSchedule Delete a schedule
+	// (DELETE /api/v1/targets/{target}/schedules/{id})
+	DeleteSchedule(w http.ResponseWriter, r *http.Request, target TargetID, id int64)
+	// GetSchedule A schedule
+	// (GET /api/v1/targets/{target}/schedules/{id})
+	GetSchedule(w http.ResponseWriter, r *http.Request, target TargetID, id int64)
+	// UpdateSchedule Change a schedule
+	// (PATCH /api/v1/targets/{target}/schedules/{id})
+	UpdateSchedule(w http.ResponseWriter, r *http.Request, target TargetID, id int64)
 	// GetTargetSummary Dashboard figures for a target
 	// (GET /api/v1/targets/{target}/summary)
 	GetTargetSummary(w http.ResponseWriter, r *http.Request, target TargetID)
@@ -7955,6 +8292,189 @@ func (siw *ServerInterfaceWrapper) ListQueries(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListSchedules operation middleware
+func (siw *ServerInterfaceWrapper) ListSchedules(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSchedules(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSchedule(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScheduleStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetScheduleStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScheduleStatus(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSchedule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSchedule(w, r, target, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSchedule operation middleware
+func (siw *ServerInterfaceWrapper) GetSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSchedule(w, r, target, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSchedule(w, r, target, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetTargetSummary operation middleware
 func (siw *ServerInterfaceWrapper) GetTargetSummary(w http.ResponseWriter, r *http.Request) {
 
@@ -8457,6 +8977,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/client-reset/preview", wrapper.PreviewClientReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/client-reset/run", wrapper.RunClientReset)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/client-reset/runs", wrapper.ListTargetClientResetRuns)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/schedules", wrapper.ListSchedules)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/schedules", wrapper.CreateSchedule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/schedules/status", wrapper.GetScheduleStatus)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/schedules/{id}", wrapper.DeleteSchedule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/schedules/{id}", wrapper.GetSchedule)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/schedules/{id}", wrapper.UpdateSchedule)
 
 	return m
 }
@@ -18557,6 +19083,613 @@ func (response ListQueries503JSONResponse) VisitListQueriesResponse(w http.Respo
 	return err
 }
 
+type ListSchedulesRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListSchedulesResponseObject interface {
+	VisitListSchedulesResponse(w http.ResponseWriter) error
+}
+
+type ListSchedules200JSONResponse ScheduleList
+
+func (response ListSchedules200JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListSchedules400JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSchedules401JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSchedules403JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListSchedules404JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListSchedules503JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScheduleRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *CreateScheduleJSONRequestBody
+}
+
+type CreateScheduleResponseObject interface {
+	VisitCreateScheduleResponse(w http.ResponseWriter) error
+}
+
+type CreateSchedule201JSONResponse Schedule
+
+func (response CreateSchedule201JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response CreateSchedule400JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateSchedule401JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateSchedule403JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CreateSchedule404JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateSchedule409JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response CreateSchedule502JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response CreateSchedule503JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleStatusRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type GetScheduleStatusResponseObject interface {
+	VisitGetScheduleStatusResponse(w http.ResponseWriter) error
+}
+
+type GetScheduleStatus200JSONResponse ScheduleStatus
+
+func (response GetScheduleStatus200JSONResponse) VisitGetScheduleStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleStatus400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetScheduleStatus400JSONResponse) VisitGetScheduleStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleStatus401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetScheduleStatus401JSONResponse) VisitGetScheduleStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleStatus403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetScheduleStatus403JSONResponse) VisitGetScheduleStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleStatus404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetScheduleStatus404JSONResponse) VisitGetScheduleStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleStatus503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetScheduleStatus503JSONResponse) VisitGetScheduleStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScheduleRequestObject struct {
+	Target TargetID `json:"target"`
+	Id     int64    `json:"id"`
+}
+
+type DeleteScheduleResponseObject interface {
+	VisitDeleteScheduleResponse(w http.ResponseWriter) error
+}
+
+type DeleteSchedule204Response struct {
+}
+
+func (response DeleteSchedule204Response) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteSchedule400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response DeleteSchedule400JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteSchedule401JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteSchedule403JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteSchedule404JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteSchedule503JSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRequestObject struct {
+	Target TargetID `json:"target"`
+	Id     int64    `json:"id"`
+}
+
+type GetScheduleResponseObject interface {
+	VisitGetScheduleResponse(w http.ResponseWriter) error
+}
+
+type GetSchedule200JSONResponse Schedule
+
+func (response GetSchedule200JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetSchedule400JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetSchedule401JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSchedule403JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetSchedule404JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetSchedule503JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScheduleRequestObject struct {
+	Target TargetID `json:"target"`
+	Id     int64    `json:"id"`
+	Body   *UpdateScheduleJSONRequestBody
+}
+
+type UpdateScheduleResponseObject interface {
+	VisitUpdateScheduleResponse(w http.ResponseWriter) error
+}
+
+type UpdateSchedule200JSONResponse Schedule
+
+func (response UpdateSchedule200JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response UpdateSchedule400JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateSchedule401JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateSchedule403JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateSchedule404JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateSchedule409JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateSchedule502JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateSchedule503JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetTargetSummaryRequestObject struct {
 	Target TargetID `json:"target"`
 }
@@ -19731,6 +20864,24 @@ type StrictServerInterface interface {
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(ctx context.Context, request ListQueriesRequestObject) (ListQueriesResponseObject, error)
+	// ListSchedules The target's schedules
+	// (GET /api/v1/targets/{target}/schedules)
+	ListSchedules(ctx context.Context, request ListSchedulesRequestObject) (ListSchedulesResponseObject, error)
+	// CreateSchedule Add a schedule
+	// (POST /api/v1/targets/{target}/schedules)
+	CreateSchedule(ctx context.Context, request CreateScheduleRequestObject) (CreateScheduleResponseObject, error)
+	// GetScheduleStatus What the target's schedules are doing
+	// (GET /api/v1/targets/{target}/schedules/status)
+	GetScheduleStatus(ctx context.Context, request GetScheduleStatusRequestObject) (GetScheduleStatusResponseObject, error)
+	// DeleteSchedule Delete a schedule
+	// (DELETE /api/v1/targets/{target}/schedules/{id})
+	DeleteSchedule(ctx context.Context, request DeleteScheduleRequestObject) (DeleteScheduleResponseObject, error)
+	// GetSchedule A schedule
+	// (GET /api/v1/targets/{target}/schedules/{id})
+	GetSchedule(ctx context.Context, request GetScheduleRequestObject) (GetScheduleResponseObject, error)
+	// UpdateSchedule Change a schedule
+	// (PATCH /api/v1/targets/{target}/schedules/{id})
+	UpdateSchedule(ctx context.Context, request UpdateScheduleRequestObject) (UpdateScheduleResponseObject, error)
 	// GetTargetSummary Dashboard figures for a target
 	// (GET /api/v1/targets/{target}/summary)
 	GetTargetSummary(ctx context.Context, request GetTargetSummaryRequestObject) (GetTargetSummaryResponseObject, error)
@@ -22633,6 +23784,179 @@ func (sh *strictHandler) ListQueries(w http.ResponseWriter, r *http.Request, tar
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListQueriesResponseObject); ok {
 		if err := validResponse.VisitListQueriesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSchedules operation middleware
+func (sh *strictHandler) ListSchedules(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListSchedulesRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSchedules(ctx, request.(ListSchedulesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSchedules")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSchedulesResponseObject); ok {
+		if err := validResponse.VisitListSchedulesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSchedule operation middleware
+func (sh *strictHandler) CreateSchedule(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request CreateScheduleRequestObject
+
+	request.Target = target
+
+	var body CreateScheduleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSchedule(ctx, request.(CreateScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateScheduleResponseObject); ok {
+		if err := validResponse.VisitCreateScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetScheduleStatus operation middleware
+func (sh *strictHandler) GetScheduleStatus(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request GetScheduleStatusRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetScheduleStatus(ctx, request.(GetScheduleStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetScheduleStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScheduleStatusResponseObject); ok {
+		if err := validResponse.VisitGetScheduleStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSchedule operation middleware
+func (sh *strictHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request, target TargetID, id int64) {
+	var request DeleteScheduleRequestObject
+
+	request.Target = target
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteSchedule(ctx, request.(DeleteScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteScheduleResponseObject); ok {
+		if err := validResponse.VisitDeleteScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSchedule operation middleware
+func (sh *strictHandler) GetSchedule(w http.ResponseWriter, r *http.Request, target TargetID, id int64) {
+	var request GetScheduleRequestObject
+
+	request.Target = target
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSchedule(ctx, request.(GetScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScheduleResponseObject); ok {
+		if err := validResponse.VisitGetScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSchedule operation middleware
+func (sh *strictHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request, target TargetID, id int64) {
+	var request UpdateScheduleRequestObject
+
+	request.Target = target
+	request.Id = id
+
+	var body UpdateScheduleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateSchedule(ctx, request.(UpdateScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateScheduleResponseObject); ok {
+		if err := validResponse.VisitUpdateScheduleResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

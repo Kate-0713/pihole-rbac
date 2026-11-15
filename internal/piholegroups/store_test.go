@@ -17,8 +17,8 @@ import (
 )
 
 // TestLoadAndApply reads the references from a real database, renames kids to children on pihole1, and reads them
-// back: the names-mode rule and the protected group on pihole1 follow, a protected group whose scope already lists
-// the new name is dropped, and pihole2's references are untouched.
+// back: the names-mode rule, the protected group and the group window on pihole1 follow, a protected group whose
+// scope already lists the new name is dropped, a blocking window isn't a reference, and pihole2's are renamed too.
 func TestLoadAndApply(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Options{DataDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
@@ -54,6 +54,15 @@ func TestLoadAndApply(t *testing.T) {
 				return err
 			}
 		}
+		for _, w := range []db.CreateScheduleParams{
+			{Name: "Bedtime", InstanceID: inst(p1), Kind: "group_enabled", PiholeGroup: sql.NullString{String: "kids", Valid: true}},
+			{Name: "Lab mornings", InstanceID: inst(p1), Kind: "blocking_off"},
+		} {
+			w.Repeat, w.StartsAt, w.EndsAt, w.ActiveFrom, w.Enabled, w.CreatedBy, w.UpdatedBy = "once", inst(10), inst(20), 1, 1, "admin", "admin"
+			if _, err := q.CreateSchedule(ctx, w); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -64,7 +73,7 @@ func TestLoadAndApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	s1, s2 := piholegroups.Scope{InstanceID: p1}, piholegroups.Scope{InstanceID: p2}
-	if c := piholegroups.Count(piholegroups.Matching(refs, []piholegroups.Scope{s1}, "kids")); c != (piholegroups.Counts{ResetRules: 1, Protected: 1}) {
+	if c := piholegroups.Count(piholegroups.Matching(refs, []piholegroups.Scope{s1}, "kids")); c != (piholegroups.Counts{ResetRules: 1, Protected: 1, GroupWindows: 1}) {
 		t.Errorf("counts on pihole1: %+v", c)
 	}
 	rename := func(s piholegroups.Scope) {
@@ -106,6 +115,7 @@ func TestLoadAndApply(t *testing.T) {
 		{piholegroups.KindResetRule, "pihole2", []string{"children"}, ""},
 		{piholegroups.KindProtected, "pihole1", nil, "children"},
 		{piholegroups.KindProtected, "pihole2", nil, "children"},
+		{piholegroups.KindWindow, "pihole1", nil, "children"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("after the rename:\n got %+v\nwant %+v", got, want)

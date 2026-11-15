@@ -121,20 +121,36 @@ func refsIn(refs []piholegroups.Ref, scopes []piholegroups.Scope) []piholegroups
 }
 
 // refView decides which references the caller may see in full: client reset rules with settings.manage, protected
-// groups with notifications.manage. Counts are always shown.
-type refView struct{ rules, protected bool }
+// groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group. Counts
+// are always shown.
+type refView struct {
+	rules, protected bool
+	windows          func(piholegroups.Scope) bool
+}
 
 func (s *Server) refView(ctx context.Context) (refView, error) {
 	set, err := s.permissions(ctx)
 	if err != nil {
 		return refView{}, err
 	}
-	return refView{rules: set.CanGlobal(rbac.SettingsManage), protected: set.CanGlobal(rbac.NotifyManage)}, nil
+	return refView{
+		rules: set.CanGlobal(rbac.SettingsManage), protected: set.CanGlobal(rbac.NotifyManage),
+		windows: func(sc piholegroups.Scope) bool {
+			t := rbac.InstanceTarget(sc.InstanceID)
+			if sc.GroupID != 0 {
+				t = rbac.GroupTarget(sc.GroupID)
+			}
+			return set.Can(rbac.SchedulesManage, t)
+		},
+	}, nil
 }
 
 func (v refView) shows(r piholegroups.Ref) bool {
-	if r.Kind == piholegroups.KindResetRule {
+	switch r.Kind {
+	case piholegroups.KindResetRule:
 		return v.rules
+	case piholegroups.KindWindow:
+		return v.windows != nil && v.windows(r.Scope)
 	}
 	return v.protected
 }
@@ -148,10 +164,14 @@ func refJSON(r piholegroups.Ref) gen.PiholeGroupReference {
 	if r.Scope.GroupID != 0 {
 		out.Scope, out.ScopeId = gen.PiholeGroupReferenceScopeGroup, r.Scope.GroupID
 	}
-	if r.Kind == piholegroups.KindResetRule {
+	switch r.Kind {
+	case piholegroups.KindResetRule:
 		prefix, match := r.Prefix, gen.PiholeGroupReferenceMatch(r.Match)
 		out.CommentPrefix, out.Match, out.Names = &prefix, &match, slices.Clone(r.Groups)
-	} else {
+	case piholegroups.KindWindow:
+		name, kind := r.Schedule, gen.PiholeGroupReferenceScheduleKind(r.ScheduleKind)
+		out.ScheduleName, out.ScheduleKind, out.Names = &name, &kind, []string{r.Name}
+	default:
 		out.Names = []string{r.Name}
 	}
 	return out
@@ -161,7 +181,7 @@ func refJSON(r piholegroups.Ref) gen.PiholeGroupReference {
 func (v refView) list(refs []piholegroups.Ref, each func(i int, r *gen.PiholeGroupReference)) gen.PiholeGroupReferences {
 	c := piholegroups.Count(refs)
 	out := gen.PiholeGroupReferences{
-		Counts: gen.PiholeGroupReferenceCounts{ClientResetRules: c.ResetRules, ProtectedGroups: c.Protected},
+		Counts: gen.PiholeGroupReferenceCounts{ClientResetRules: c.ResetRules, ProtectedGroups: c.Protected, GroupWindows: c.GroupWindows},
 		Items:  []gen.PiholeGroupReference{},
 	}
 	for i, r := range refs {
@@ -180,9 +200,12 @@ func (v refView) list(refs []piholegroups.Ref, each func(i int, r *gen.PiholeGro
 // refDetail describes a reference for an audit row, in full: the audit log is read with audit.view.
 func refDetail(r piholegroups.Ref) map[string]any {
 	d := map[string]any{"kind": string(r.Kind), "scope": r.Scope.String(), "scope_name": r.ScopeName}
-	if r.Kind == piholegroups.KindResetRule {
+	switch r.Kind {
+	case piholegroups.KindResetRule:
 		d["comment_prefix"], d["match"], d["names"] = r.Prefix, r.Match, r.Groups
-	} else {
+	case piholegroups.KindWindow:
+		d["schedule_id"], d["schedule_name"], d["schedule_kind"], d["names"] = r.ID, r.Schedule, r.ScheduleKind, []string{r.Name}
+	default:
 		d["names"] = []string{r.Name}
 	}
 	return d

@@ -12,11 +12,12 @@
 	import StatTile from '#lib/components/app/stat-tile.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import { formatCount, formatPercent } from '#lib/format.js';
+	import { formatCount, formatDateTime, formatPercent } from '#lib/format.js';
+	import { openBlocking, statusLine } from '#lib/schedules.js';
 	import { can } from '#lib/permissions.js';
 	import { whileVisible } from '#lib/poll.js';
 	import { session } from '#lib/stores/session.svelte.js';
-	import { targets } from '#lib/stores/targets.svelte.js';
+	import { targets, withTarget } from '#lib/stores/targets.svelte.js';
 	import { _summaryKey as summaryKey } from './+page.js';
 	import type { PageProps } from './$types';
 
@@ -40,6 +41,10 @@
 	});
 
 	let updated = $derived(new Date(data.fetchedAt).toLocaleTimeString());
+	// The schedules line: the windows open now and the next few edges.
+	let scheduleItems = $derived((data.schedules?.schedules ?? []).filter((s) => s.open || s.next_edge).slice(0, 5));
+	let blockingWindow = $derived(openBlocking(data.schedules));
+	const when = (iso: string) => formatDateTime(iso);
 </script>
 
 <svelte:head>
@@ -82,6 +87,7 @@
 						fetchedAt={data.fetchedAt}
 						canToggle={can('blocking.toggle', data.target)}
 						canIndefinite={can('blocking.indefinite', data.target)}
+						schedule={blockingWindow ? { name: blockingWindow.name, until: blockingWindow.open_until ?? '' } : null}
 						onchange={refresh}
 					/>
 				</Card.Content>
@@ -103,6 +109,24 @@
 				</Card.Root>
 			{/if}
 		</div>
+
+		{#if scheduleItems.length > 0}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Schedules</Card.Title>
+					{#if can('schedules.manage', data.target)}
+						<Card.Action><a class="text-sm underline" href={withTarget('/schedules', data.target)}>Manage</a></Card.Action>
+					{/if}
+				</Card.Header>
+				<Card.Content>
+					<ul class="grid gap-1 text-sm" aria-label="Schedules">
+						{#each scheduleItems as item (item.id)}
+							<li class={item.open ? 'font-medium' : ''}>{statusLine(item, when, data.target)}</li>
+						{/each}
+					</ul>
+				</Card.Content>
+			</Card.Root>
+		{/if}
 
 		{#if target.members}
 			<Card.Root>

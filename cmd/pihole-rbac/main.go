@@ -27,6 +27,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/notify"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/release"
+	"github.com/Kate-0713/pihole-rbac/internal/schedules"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
@@ -217,6 +218,12 @@ func serve() error {
 		return err
 	}
 
+	// Schedules: blocking turned off, or a Pi-hole group switched, for a window. The scheduler looks at once, so an
+	// edge missed while the app was stopped is applied at startup, then every 30 seconds.
+	scheduleService := &schedules.Service{
+		Store: st, Audit: auditLog, Instances: instanceService, Limits: login.ScheduleLimits, Logger: logger,
+	}
+
 	// The daily update check, update requests for the LXC updater, and announcing how each update ended: at once, so
 	// a version that has just been installed reports itself, then every minute.
 	var releases updates.Releases
@@ -235,6 +242,7 @@ func serve() error {
 		LoginSettings:  login,
 		Notifications:  channels,
 		ClientReset:    resets,
+		Schedules:      scheduleService,
 		Updates:        updateService,
 		Audit:          auditLog,
 		Secrets:        sec,
@@ -258,6 +266,7 @@ func serve() error {
 		return resetSchedule(login.ResetSchedule())
 	}}
 	go scheduler.Run(ctx)
+	go (&schedules.Scheduler{Service: scheduleService}).Run(ctx)
 	rechecker := &auth.Rechecker{
 		Store:     st,
 		Audit:     auditLog,

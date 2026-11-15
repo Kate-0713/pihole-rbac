@@ -6,8 +6,9 @@
 	import { countText, describeReference, hiddenCount, reasonText, type GroupReferences } from '#lib/pihole-groups.js';
 
 	// The app's references to a Pi-hole group: how many, and the ones the user manages (client reset rules with
-	// settings.manage, protected groups with notifications.manage). The server leaves the others out of `items`, so
-	// this only says how many it can't show. Every value is shown as text.
+	// settings.manage, protected groups with notifications.manage, schedules with schedules.manage on their target).
+	// The server leaves the others out of `items`, so this only says how many it can't show. Every value is shown
+	// as text.
 	let { refs, label }: { refs: GroupReferences; label: string } = $props();
 
 	let hidden = $derived(hiddenCount(refs));

@@ -432,3 +432,48 @@ func TestLoad(t *testing.T) {
 		})
 	}
 }
+
+// TestScheduleGroupWindowMax: the group window maximum defaults to a day, is refused outside 5 minutes to 365 days,
+// is audited when it changes, is kept by a save that leaves it out, and survives a restart.
+func TestScheduleGroupWindowMax(t *testing.T) {
+	e := newEnv(t)
+	if got := e.svc.ScheduleLimits().MaxGroupWindow; got != 24*time.Hour {
+		t.Errorf("default %s", got)
+	}
+	if g := e.svc.General(); g.ScheduleGroupWindowMaxMinutes == nil || *g.ScheduleGroupWindowMaxMinutes != 1440 {
+		t.Errorf("General shows %v", g.ScheduleGroupWindowMaxMinutes)
+	}
+	save := func(m *int) error {
+		return e.svc.SaveGeneral(e.ctx, e.admin, General{SessionLifetimeMinutes: 480, IdleTimeoutMinutes: 60,
+			AuditRetentionDays: DefaultRetentionDays, ScheduleGroupWindowMaxMinutes: m})
+	}
+	ptr := func(n int) *int { return &n }
+	for _, m := range []int{0, 4, 365*24*60 + 1} {
+		wantField(t, save(ptr(m)), "schedule_group_window_max_minutes")
+	}
+	if err := save(ptr(90)); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.svc.ScheduleLimits().MaxGroupWindow; got != 90*time.Minute {
+		t.Errorf("after saving 90: %s", got)
+	}
+	rows, err := e.st.Read().ListRecentAudit(e.ctx, 1)
+	if err != nil || len(rows) != 1 || rows[0].Action != audit.ActionSettingsUpdate ||
+		!strings.Contains(rows[0].Detail, `"changed":["schedule_group_window_max_minutes"]`) ||
+		!strings.Contains(rows[0].Detail, `"schedule_group_window_max_minutes":90`) {
+		t.Errorf("audit: %+v, %v", rows, err)
+	}
+	if err := save(nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.svc.ScheduleLimits().MaxGroupWindow; got != 90*time.Minute {
+		t.Errorf("a save without it changed it: %s", got)
+	}
+	again := &Service{Store: e.st, Audit: audit.NewLogger(io.Discard), Secrets: e.sec, Logger: e.svc.Logger}
+	if err := again.Load(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := again.ScheduleLimits().MaxGroupWindow; got != 90*time.Minute {
+		t.Errorf("after a restart: %s", got)
+	}
+}

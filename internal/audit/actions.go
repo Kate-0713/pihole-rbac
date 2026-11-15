@@ -16,6 +16,7 @@ const (
 	GroupPihole        = "Pi-hole changes"
 	GroupLists         = "Lists and gravity"
 	GroupLocalDNS      = "Local DNS"
+	GroupSchedules     = "Schedules"
 	GroupInstances     = "Instances and groups"
 	GroupAccess        = "Users, roles and LDAP"
 	GroupSettings      = "Settings and system"
@@ -62,6 +63,11 @@ var actions = []ActionInfo{
 	{ActionCNAMEAdd, GroupLocalDNS, "A CNAME added, which restarts DNS on the Pi-hole"},
 	{ActionCNAMEUpdate, GroupLocalDNS, "A CNAME changed, which restarts DNS on the Pi-hole"},
 	{ActionCNAMEDelete, GroupLocalDNS, "A CNAME deleted, which restarts DNS on the Pi-hole"},
+
+	{ActionScheduleCreate, GroupSchedules, "A schedule added"},
+	{ActionScheduleUpdate, GroupSchedules, "A schedule changed, or switched on or off"},
+	{ActionScheduleDelete, GroupSchedules, "A schedule deleted"},
+	{ActionScheduleRun, GroupSchedules, "A schedule turned blocking off or a Pi-hole group on or off, or failed to"},
 
 	{ActionInstanceCreate, GroupInstances, "An instance added"},
 	{ActionInstanceUpdate, GroupInstances, "An instance's settings changed"},

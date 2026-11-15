@@ -34,6 +34,7 @@ export type TargetPermission =
 	| 'gravity.run'
 	| 'localdns.view'
 	| 'localdns.edit'
+	| 'schedules.manage'
 	| 'drift.view'
 	| 'drift.reconcile';
 

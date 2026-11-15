@@ -1379,7 +1379,7 @@ export interface paths {
         head?: never;
         /**
          * Rename a Pi-hole group, or change its comment or enabled flag
-         * @description The body names the group exactly and gives the fields to change; fields left out keep their value. A group that doesn't exist on the instance, or on a mirrored group's primary, is a 404, and the primary must answer. The Default group (ID 0) can't be renamed (400), and disabling it needs `confirm=true`. Renaming a group the app refers to (client reset rules, protected groups) also needs `confirm=true`; once Pi-hole has renamed it, the app updates those references where the old name is gone, and `references` says what changed and what to check. Through a mirrored group, a member without the group fails with not_found. Answers with a result per instance (see WriteResults under the schemas). Audited as piholegroup_enable or piholegroup_disable when the enabled flag changes, otherwise piholegroup_update.
+         * @description The body names the group exactly and gives the fields to change; fields left out keep their value. A group that doesn't exist on the instance, or on a mirrored group's primary, is a 404, and the primary must answer. The Default group (ID 0) can't be renamed (400), and disabling it needs `confirm=true`. Renaming a group the app refers to (client reset rules, protected groups, group windows) also needs `confirm=true`; once Pi-hole has renamed it, the app updates those references where the old name is gone, and `references` says what changed and what to check. Through a mirrored group, a member without the group fails with not_found. Answers with a result per instance (see WriteResults under the schemas). Audited as piholegroup_enable or piholegroup_disable when the enabled flag changes, otherwise piholegroup_update.
          */
         patch: operations["updatePiholeGroup"];
         trace?: never;
@@ -1396,7 +1396,7 @@ export interface paths {
         };
         /**
          * What uses a Pi-hole group
-         * @description For the delete dialog, read just before asking: how many domains, clients and lists are in the group on the instance or the mirrored group's primary, and the app's references to it. Reference counts are always given; the references themselves only to those who manage them (client reset rules with settings.manage, protected groups with notifications.manage). Reading isn't audited.
+         * @description For the delete dialog, read just before asking: how many domains, clients and lists are in the group on the instance or the mirrored group's primary, and the app's references to it. Reference counts are always given; the references themselves only to those who manage them (client reset rules with settings.manage, protected groups with notifications.manage, group windows with schedules.manage on their target). Reading isn't audited.
          */
         get: operations["getPiholeGroupUsage"];
         put?: never;
@@ -1712,6 +1712,88 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The target's schedules
+         * @description The schedules set on the target, each with its next edge, whether a window is open now, and each instance's result for its latest edge. For an instance, `from_groups` also lists the schedules on its mirrored group, which reach it too, when the caller holds schedules.manage on that group. Reading isn't audited. Since v2.5.0.
+         */
+        get: operations["listSchedules"];
+        put?: never;
+        /**
+         * Add a schedule
+         * @description Saves a schedule on the target. Also needs blocking.toggle on the target for a blocking window, or piholegroups.edit for a group window, as you can't schedule what you can't do. A group window's Pi-hole group must exist on the instance, or the mirrored group's primary (which must answer), and can't be the Default group. A group window that would overlap an enabled one of the opposite kind for the same group, on an instance both reach, is 409 conflict. The schedule acts from its next edge: nothing is applied for a window already open. Only the app's database changes. Audited as schedule_create. Since v2.5.0.
+         */
+        post: operations["createSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/schedules/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * What the target's schedules are doing
+         * @description For the dashboard and the blocking menu: the windows open now and the next edge of each enabled schedule that reaches the target (set on it, or, for an instance, on its mirrored group), by name, kind, group and time only. A schedule with no window open and no edge to come (a one-off past its end) is left out. Any permission on the target. Since v2.5.0.
+         */
+        get: operations["getScheduleStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/schedules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                id: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * A schedule
+         * @description One of the target's schedules. 404 for one set on another target. Since v2.5.0.
+         */
+        get: operations["getSchedule"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a schedule
+         * @description Deletes the schedule. Needs schedules.manage alone, so a schedule can always be stopped. Nothing is sent to Pi-hole: a blocking window's timer runs on, and a group stays as it is. Audited as schedule_delete. Since v2.5.0.
+         */
+        delete: operations["deleteSchedule"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a schedule
+         * @description Changes the fields given; the rest keep their value, and the result is checked as a whole, as when adding one. Needs the underlying permission (blocking.toggle or piholegroups.edit) as it is now. A finished one-off schedule is 409 conflict: it can only be deleted. The schedule acts from its next edge after the change, and its results start again; a blocking window already open keeps Pi-hole's timer. Audited as schedule_update. Since v2.5.0.
+         */
+        patch: operations["updateSchedule"];
         trace?: never;
     };
 }
@@ -2681,6 +2763,8 @@ export interface components {
             allow_file_lists?: boolean;
             /** @description Whether a local DNS change needs a reason (since v2.4.0). Absent leaves it as it is. */
             localdns_reason_required?: boolean;
+            /** @description The longest a schedule's Pi-hole group window can be, 5 minutes to 365 days (since v2.5.0). Lowering it leaves existing schedules running. Absent leaves it as it is. */
+            schedule_group_window_max_minutes?: number;
             /** @description Directory domains a local DNS name is checked against, besides the LDAP base DN's (since v2.4.0). Each follows the hostname rules; stored lowercased. Absent leaves them as they are. */
             localdns_extra_domains?: string[];
         };
@@ -2693,6 +2777,8 @@ export interface components {
             time_zone: string;
         };
         GeneralSettings: {
+            /** @description The longest a schedule's group window can be; 1440 (a day) until saved. */
+            schedule_group_window_max_minutes: number;
             /** @description Whether file: lists can be added; false until saved. */
             allow_file_lists: boolean;
             /** @description Whether a local DNS change needs a reason; true until saved. */
@@ -3288,7 +3374,7 @@ export interface components {
             results: components["schemas"]["DeleteResult"][];
             references?: components["schemas"]["PiholeGroupReferences"];
         };
-        /** @description The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage. */
+        /** @description The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group. */
         PiholeGroupReferences: {
             counts: components["schemas"]["PiholeGroupReferenceCounts"];
             items: components["schemas"]["PiholeGroupReference"][];
@@ -3296,10 +3382,15 @@ export interface components {
         PiholeGroupReferenceCounts: {
             client_reset_rules: number;
             protected_groups: number;
+            /** @description Schedules whose group window names the group. */
+            group_windows: number;
         };
         PiholeGroupReference: {
-            /** @enum {string} */
-            kind: "client_reset_rule" | "protected_group";
+            /**
+             * @description A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a schedule's group window (schedules.manage on the schedule's instance or group).
+             * @enum {string}
+             */
+            kind: "client_reset_rule" | "protected_group" | "group_window";
             /** @enum {string} */
             scope: "instance" | "group";
             /** Format: int64 */
@@ -3312,7 +3403,14 @@ export interface components {
              * @enum {string}
              */
             match?: "names" | "prefixes";
-            /** @description A client reset rule's group names or prefixes, or a protected group's name (one). For an updated reference, the value after the rename. */
+            /** @description A group window's schedule. */
+            schedule_name?: string;
+            /**
+             * @description Whether a group window's schedule enables or disables the group during its window.
+             * @enum {string}
+             */
+            schedule_kind?: "group_enabled" | "group_disabled";
+            /** @description A client reset rule's group names or prefixes, or a protected group's or group window's name (one). For an updated reference, the value after the rename. */
             names: string[];
             /** @description For an updated reference, the value before the rename. */
             before?: string[];
@@ -3323,6 +3421,157 @@ export interface components {
              * @enum {string}
              */
             reason?: "prefix_match_changes" | "not_renamed_everywhere" | "old_name_still_used";
+        };
+        /**
+         * @description What a schedule does during its window: turn blocking off (through Pi-hole's own timer), or enable or disable a Pi-hole group, switching it back at the end.
+         * @enum {string}
+         */
+        ScheduleKind: "blocking_off" | "group_enabled" | "group_disabled";
+        /** @enum {string} */
+        ScheduleRepeat: "weekly" | "once";
+        /** @description A weekly window starts on each day in `days` at `start` and ends `end_days` later at `end`, in `time_zone`: 21:00 to 07:00 is `end_days` 1. It is at most 7 days long and can't overlap itself. A one-off window runs from `starts_at`, which must be in the future, to `ends_at`. A blocking window is at most 24 hours; a group window at most schedule_group_window_max_minutes (refusals give `details.max_minutes`). */
+        ScheduleInput: {
+            /** @description Unique on the target, ignoring case. */
+            name: string;
+            kind: components["schemas"]["ScheduleKind"];
+            /** @description For a group window, the Pi-hole group, named exactly. Not the Default group. */
+            pihole_group?: string;
+            repeat: components["schemas"]["ScheduleRepeat"];
+            /** @default true */
+            enabled: boolean;
+            /** @description Weekly. The days a window starts on, as bits from Monday = 1 to Sunday = 64. */
+            days?: number;
+            /** @description Weekly. HH:MM, 24-hour. A start skipped by a daylight saving change comes an hour later. */
+            start?: string;
+            /** @description Weekly. HH:MM, 24-hour, on the day `end_days` after the start. */
+            end?: string;
+            /** @description Weekly. How many days after the start day the window ends. */
+            end_days?: number;
+            /** @description Weekly. An IANA time zone, such as Europe/London or UTC. Not "Local". */
+            time_zone?: string;
+            /**
+             * Format: date-time
+             * @description Once.
+             */
+            starts_at?: string;
+            /**
+             * Format: date-time
+             * @description Once.
+             */
+            ends_at?: string;
+        };
+        /** @description Any of a schedule's fields but its kind. Absent fields keep their value. */
+        ScheduleUpdate: {
+            name?: string;
+            pihole_group?: string;
+            repeat?: components["schemas"]["ScheduleRepeat"];
+            enabled?: boolean;
+            days?: number;
+            start?: string;
+            end?: string;
+            end_days?: number;
+            time_zone?: string;
+            /** Format: date-time */
+            starts_at?: string;
+            /** Format: date-time */
+            ends_at?: string;
+        };
+        ScheduleEdge: {
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            edge: "start" | "end";
+        };
+        /** @description What the latest edge, or its latest retry, did on one instance. A failed or skipped one is retried every 30 seconds until the schedule's next edge (a blocking start only while its window is open; a one-off's end for a week, then given_up). */
+        ScheduleResult: {
+            /** Format: int64 */
+            instance_id: number;
+            instance: string;
+            /** @enum {string} */
+            status: "ok" | "failed" | "skipped" | "given_up";
+            /** @description Why it failed or was skipped, such as not_found, schedule_conflict or a Pi-hole error code. */
+            code?: string;
+            /**
+             * @description Why an ok edge sent nothing: the state was already right; another window for the group is still open; a blocking start found after its window ended; or a blocking window's end, which Pi-hole's timer handles (unless FTL lost the timer in a restart, when the end turns blocking back on and this is absent).
+             * @enum {string}
+             */
+            skip?: "unchanged" | "still_open" | "window_over" | "timer";
+            /** @description The schedule that is still open, or in conflict. */
+            other?: string;
+            /** Format: date-time */
+            at: string;
+            attempts: number;
+        };
+        Schedule: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description The instance (i-<id>) or mirrored group (g-<id>) it is set on. */
+            target: string;
+            target_name: string;
+            kind: components["schemas"]["ScheduleKind"];
+            pihole_group?: string;
+            repeat: components["schemas"]["ScheduleRepeat"];
+            enabled: boolean;
+            days?: number;
+            start?: string;
+            end?: string;
+            end_days?: number;
+            time_zone?: string;
+            /** Format: date-time */
+            starts_at?: string;
+            /** Format: date-time */
+            ends_at?: string;
+            /** @description The window's length as entered. */
+            length_minutes: number;
+            /** @description Whether one of its windows is open now (whatever the instances' state, which a person may have changed). */
+            open: boolean;
+            /**
+             * Format: date-time
+             * @description When the open window ends.
+             */
+            open_until?: string;
+            next_edge?: components["schemas"]["ScheduleEdge"];
+            last_edge?: components["schemas"]["ScheduleEdge"];
+            /** @description Each instance's result for the latest edge; empty until the first, and after a change. */
+            results: components["schemas"]["ScheduleResult"][];
+            /**
+             * Format: date-time
+             * @description A one-off schedule, once done. It can then only be deleted.
+             */
+            finished_at?: string;
+            /** @description Longer than the limit allows now; it keeps running, but a change must bring it within the limit. */
+            over_limit: boolean;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_by: string;
+        };
+        ScheduleList: {
+            /** @description The longest a group window can be now (schedule_group_window_max_minutes), so a form can say so without settings.manage. A blocking window is at most 1440 minutes, and a weekly one at most 10080. */
+            group_window_max_minutes: number;
+            schedules: components["schemas"]["Schedule"][];
+            /** @description For an instance, the schedules on its mirrored group the caller manages. Empty for a group. */
+            from_groups: components["schemas"]["Schedule"][];
+        };
+        ScheduleStatusItem: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            kind: components["schemas"]["ScheduleKind"];
+            pihole_group?: string;
+            target: string;
+            target_name: string;
+            open: boolean;
+            /** Format: date-time */
+            open_until?: string;
+            next_edge?: components["schemas"]["ScheduleEdge"];
+        };
+        ScheduleStatus: {
+            /** @description Open ones first, then by next edge. */
+            schedules: components["schemas"]["ScheduleStatusItem"][];
         };
         /** @description Present on a rename. What happened to the app's references to the old name. */
         PiholeGroupRenameReferences: {
@@ -7288,6 +7537,187 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schedules. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    createSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleInput"];
+            };
+        };
+        responses: {
+            /** @description The saved schedule. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getScheduleStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schedules' state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleStatus"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schedule. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleUpdate"];
+            };
+        };
+        responses: {
+            /** @description The saved schedule. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            502: components["responses"]["TargetPiholeFailed"];
             503: components["responses"]["SetupRequired"];
         };
     };

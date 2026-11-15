@@ -8,7 +8,7 @@
 	import BlockingDurationDialog from '#lib/components/app/blocking-duration-dialog.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { formatCountdown, formatDuration } from '#lib/format.js';
+	import { formatCountdown, formatDateTime, formatDuration } from '#lib/format.js';
 	import { reportFailure, reportResults } from '#lib/write-report.js';
 
 	type BlockingStatus = Schemas['BlockingStatus'];
@@ -19,6 +19,7 @@
 		fetchedAt,
 		canToggle,
 		canIndefinite,
+		schedule = null,
 		onchange
 	}: {
 		target: string;
@@ -28,6 +29,8 @@
 		canToggle: boolean;
 		// blocking.indefinite as well: without it, blocking can only be turned off for a set time.
 		canIndefinite: boolean;
+		// A blocking schedule whose window is open now, and when it ends (RFC 3339): the reason blocking is off.
+		schedule?: { name: string; until: string } | null;
 		// Called after a change was attempted, whatever its result, so the page reads the status again.
 		onchange: () => Promise<void> | void;
 	} = $props();
@@ -106,6 +109,13 @@
 			Pi-hole couldn't tell whether blocking is on
 		{/if}
 	</p>
+
+	{#if schedule && status.blocking !== 'enabled'}
+		<p class="text-muted-foreground text-sm">
+			Off for the schedule '{schedule.name}' until {formatDateTime(schedule.until)}. Turning blocking on now keeps it on
+			until the schedule next starts.
+		</p>
+	{/if}
 
 	{#if canToggle}
 		<div class="flex flex-wrap gap-2">

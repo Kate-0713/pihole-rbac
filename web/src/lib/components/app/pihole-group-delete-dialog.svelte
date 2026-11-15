@@ -7,7 +7,7 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { buttonVariants } from '#lib/components/ui/button/index.js';
 	import type { PiholeGroup } from '#lib/pihole.js';
-	import { confirmationOf, referenceCount, type GroupUsage } from '#lib/pihole-groups.js';
+	import { confirmationOf, countText, referenceCount, type GroupUsage } from '#lib/pihole-groups.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
 	import { reportFailure, reportResults } from '#lib/write-report.js';
 	import PiholeGroupReferences from './pihole-group-references.svelte';
@@ -58,6 +58,7 @@
 		const name = group.name;
 		const text = { done: `${name} deleted`, failed: `Couldn't delete ${name}` };
 		const confirm = referenceCount(usage?.references) > 0;
+		const refs = usage?.references;
 		const send = async (members?: number[]) =>
 			(
 				await unwrap(
@@ -70,7 +71,7 @@
 		const retry = { retry: send, after: ondeleted };
 		try {
 			reportResults(await send(), text, retry);
-			if (confirm) notices.info('The app still refers to the deleted group: fix its client reset rules and protected groups.');
+			if (confirm && refs) notices.info(`The app still refers to ${name}: ${countText(refs)}. They're left for you to fix.`);
 		} catch (e) {
 			// References added since the dialog opened: say so rather than delete without asking again.
 			if (confirmationOf(e)) notices.error('The app now refers to this group. Open the dialog again to see how.', text.failed);
@@ -117,7 +118,7 @@
 				disabled={busy || (!usage && !usageError)}
 				onclick={remove}
 			>
-				{busy ? 'Deleting…' : 'Delete'}
+				{busy ? 'Deleting…' : referenceCount(usage?.references) > 0 ? 'Delete anyway' : 'Delete'}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
