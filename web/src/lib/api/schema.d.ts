@@ -1493,6 +1493,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/targets/{target}/local-dns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Local DNS records and CNAMEs
+         * @description The Pi-hole's local DNS records (dns.hosts) and CNAMEs (dns.cnameRecords), each with its key, its fields as read, marks for an entry the app couldn't have written, and its latest reason from the audit log. `instances` says, per instance, whether the app can change them: Pi-hole only lets the app's password change config while webserver.api.app_sudo is on. For a mirrored group the records are the primary's, every member is read for `instances`, and a primary that can't be read fails the request. Reading isn't audited. Since v2.4.0.
+         */
+        get: operations["listLocalDNS"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/local-dns/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a local DNS record
+         * @description Adds the host record `<ip> <hostname>`, with the address in its canonical form and the hostname lowercased. A record the instance already has (by key) is a 409 conflict for an instance target; a member of a mirrored group that has it is ok with `already_present`. A hostname that is, or falls under, a directory domain answers 409 confirmation_required until `confirm=true`. `reason` is required while the general setting `localdns_reason_required` is on. Answers with a result per instance. Audited as dnsrecord_add.
+         */
+        post: operations["addDNSRecord"];
+        /**
+         * Delete a local DNS record
+         * @description Deletes the record `record` names, by its fields or by `value`. Every string on the instance with that key is deleted (Pi-hole matches strings exactly, so two spellings of one record can both be there). A record the target doesn't have is a 404; a member of a mirrored group without it is ok. Audited as dnsrecord_delete.
+         */
+        delete: operations["deleteDNSRecord"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a local DNS record
+         * @description Replaces the record `from` names (by its fields or by `value`, Pi-hole's string as read) with `to`: the new record is added, then the old one deleted, since Pi-hole has no edit. If the delete fails, that instance's result is failed with `added` true: the new record is in place and the old one is still there. A `to` with the same key as `from` changes nothing. Audited as dnsrecord_update.
+         */
+        patch: operations["updateDNSRecord"];
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/local-dns/cnames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a CNAME
+         * @description Adds the CNAME `<alias>,<target>[,<ttl>]`, names lowercased. Pi-hole restarts its resolver for every CNAME change, so DNS doesn't answer for a moment; the answer comes once the instance is back (up to 15 seconds; `restart_pending` when it wasn't back in time). Through a mirrored group the members are written one at a time, the primary first, each waited for, so the group never restarts at once: a member that fails stops the write, and the rest are skipped with code stopped. Otherwise as for records. Audited as cname_add.
+         */
+        post: operations["addCNAME"];
+        /**
+         * Delete a CNAME
+         * @description As for records, one member at a time through a mirrored group. Audited as cname_delete.
+         */
+        delete: operations["deleteCNAME"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a CNAME
+         * @description As for records: the new CNAME is added without a restart, then the old one deleted with one, so a change restarts the resolver once. If the delete fails, the resolver is restarted anyway so the new CNAME is served, and the result is failed with `added` true. Audited as cname_update.
+         */
+        patch: operations["updateCNAME"];
+        trace?: never;
+    };
     "/api/v1/targets/{target}/queries": {
         parameters: {
             query?: never;
@@ -1943,6 +2028,8 @@ export interface components {
         };
         InstanceTestResult: {
             ok: boolean;
+            /** @description When ok, whether the Pi-hole's webserver.api.app_sudo is on, which the app needs to change local DNS (since v2.4.0). Absent if it couldn't be read. */
+            app_sudo?: boolean;
             error?: components["schemas"]["InstanceTestError"];
         };
         InstanceTestError: {
@@ -2007,7 +2094,7 @@ export interface components {
              * @description When the check ran. Absent when not_checked.
              */
             checked_at?: string;
-            /** @description Whether any member was found to differ from the primary, in any of the four kinds of item. */
+            /** @description Whether any member was found to differ from the primary, in any of the five kinds of item. */
             drifted: boolean;
             /** @description The enabled members as of the check, the primary first. Empty when not_checked. */
             members: components["schemas"]["MemberRead"][];
@@ -2019,12 +2106,15 @@ export interface components {
             groups?: components["schemas"]["PiholeGroupDrift"][];
             /** @description Absent without lists.view on the group. Since v2.3.0. */
             lists?: components["schemas"]["PiholeListDrift"][];
+            /** @description Absent without localdns.view on the group. Since v2.4.0. */
+            local_dns?: components["schemas"]["LocalDNSDrift"][];
         };
         DriftCounts: {
             domains: number;
             clients: number;
             groups: number;
             lists: number;
+            local_dns: number;
         };
         /**
          * @description missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
@@ -2095,6 +2185,7 @@ export interface components {
             clients?: components["schemas"]["ReconcileClient"][];
             groups?: components["schemas"]["ReconcileGroup"][];
             lists?: components["schemas"]["ReconcileList"][];
+            local_dns?: components["schemas"]["ReconcileLocalDNS"][];
         };
         ReconcileList: {
             /** Format: int64 */
@@ -2133,7 +2224,7 @@ export interface components {
             /** Format: int64 */
             instance_id: number;
             /** @enum {string} */
-            item: "domain" | "client" | "group" | "list";
+            item: "domain" | "client" | "group" | "list" | "local_dns";
             /** @description For a domain list entry, with `type` and `kind`. */
             domain?: string;
             /** @description For a subscribed list, with `list_type`; a user name or password in it is replaced by `xxxxx`. */
@@ -2141,6 +2232,11 @@ export interface components {
             list_type?: components["schemas"]["PiholeListType"];
             /** @description For a list added or enabled on the member, which waits for gravity there. */
             needs_gravity?: boolean;
+            record_kind?: components["schemas"]["LocalDNSKind"];
+            /** @description For a local DNS record or CNAME, with `record_kind`. */
+            key?: string;
+            /** @description For a CNAME change, the member hadn't answered again within 15 seconds of restarting its resolver. */
+            restart_pending?: boolean;
             /** @enum {string} */
             type?: "allow" | "deny";
             /** @enum {string} */
@@ -2583,6 +2679,10 @@ export interface components {
             client_reset_schedule?: components["schemas"]["ClientResetSchedule"];
             /** @description Whether file: lists can be added (since v2.3.0). They make a Pi-hole read a file on its own host. Turning it off leaves existing ones alone. Absent leaves it as it is. */
             allow_file_lists?: boolean;
+            /** @description Whether a local DNS change needs a reason (since v2.4.0). Absent leaves it as it is. */
+            localdns_reason_required?: boolean;
+            /** @description Directory domains a local DNS name is checked against, besides the LDAP base DN's (since v2.4.0). Each follows the hostname rules; stored lowercased. Absent leaves them as they are. */
+            localdns_extra_domains?: string[];
         };
         /** @description When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is. */
         ClientResetSchedule: {
@@ -2595,6 +2695,10 @@ export interface components {
         GeneralSettings: {
             /** @description Whether file: lists can be added; false until saved. */
             allow_file_lists: boolean;
+            /** @description Whether a local DNS change needs a reason; true until saved. */
+            localdns_reason_required: boolean;
+            /** @description The extra directory domains for the local DNS check; none until saved. */
+            localdns_extra_domains: string[];
             session_lifetime_minutes: number;
             idle_timeout_minutes: number;
             /** @description How many days audit entries, and client reset runs, are kept; 365 until saved. */
@@ -2659,6 +2763,163 @@ export interface components {
             /** @description Only with `enabled` false. Seconds until Pi-hole turns blocking back on. Leaving it out when disabling needs `blocking.indefinite` as well as `blocking.toggle`. */
             timer?: number;
         };
+        LocalDNS: {
+            /** @description Whether a change needs a reason (the general setting localdns_reason_required), so a form can say so. */
+            reason_required: boolean;
+            records: components["schemas"]["DNSRecord"][];
+            cnames: components["schemas"]["CNAMERecord"][];
+            /** @description Per instance (every enabled member, for a mirrored group), whether the app can change its local DNS. */
+            instances: components["schemas"]["LocalDNSInstance"][];
+            /** @description For a mirrored group, whether the last drift check found its members' local DNS differing. */
+            drifted?: boolean;
+            /** @description For a mirrored group, how each member answered. */
+            members?: components["schemas"]["MemberRead"][];
+        };
+        /**
+         * @description Why the app couldn't have written an entry: several hostnames or aliases on it, a # comment, or a string that doesn't parse as a record. Such entries can be deleted, but the app never writes one.
+         * @enum {string}
+         */
+        LocalDNSMark: "multiple_names" | "comment" | "unparsed";
+        /** @description The reason given with the latest change to the record made through the app. */
+        LocalDNSReason: {
+            /** @description Empty when none was given (while reasons aren't required). */
+            reason: string;
+            by: string;
+            /** Format: date-time */
+            at: string;
+        };
+        DNSRecord: {
+            /** @description The record's normalised form, which matches it across instances. */
+            key: string;
+            /** @description Pi-hole's string exactly. Pi-hole's text; show it as text. */
+            value: string;
+            /** @description Absent for an unparsed entry. */
+            ip?: string;
+            hostnames: string[];
+            comment?: string;
+            marks: components["schemas"]["LocalDNSMark"][];
+            reason?: components["schemas"]["LocalDNSReason"];
+        };
+        CNAMERecord: {
+            key: string;
+            /** @description Pi-hole's string exactly. Pi-hole's text; show it as text. */
+            value: string;
+            aliases: string[];
+            /** @description Absent for an unparsed entry. */
+            target?: string;
+            ttl?: number;
+            comment?: string;
+            marks: components["schemas"]["LocalDNSMark"][];
+            reason?: components["schemas"]["LocalDNSReason"];
+        };
+        LocalDNSInstance: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            /**
+             * @description ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is read-only (misc.readOnly). unknown: the member couldn't be read.
+             * @enum {string}
+             */
+            writable: "ok" | "app_sudo_off" | "locked" | "unknown";
+            /** @description The records are set by an environment variable, so Pi-hole's API can't change them. */
+            records_locked: boolean;
+            /** @description Likewise for the CNAMEs. */
+            cnames_locked: boolean;
+        };
+        DNSRecordFields: {
+            /** @description IPv4 or IPv6, without a zone. */
+            ip: string;
+            /** @description Letters, digits, hyphens and dots, in labels of 1 to 63 characters. */
+            hostname: string;
+        };
+        /** @description Names an existing record, either by `value` (Pi-hole's string as read) or by `ip` and `hostname`. */
+        DNSRecordRef: {
+            value?: string;
+            ip?: string;
+            hostname?: string;
+        };
+        DNSRecordInput: {
+            ip: string;
+            hostname: string;
+            reason?: components["schemas"]["LocalDNSReasonText"];
+        };
+        DNSRecordUpdate: {
+            from: components["schemas"]["DNSRecordRef"];
+            to: components["schemas"]["DNSRecordFields"];
+            reason?: components["schemas"]["LocalDNSReasonText"];
+        };
+        DNSRecordDelete: {
+            record: components["schemas"]["DNSRecordRef"];
+            reason?: components["schemas"]["LocalDNSReasonText"];
+        };
+        CNAMEFields: {
+            alias: string;
+            target: string;
+            /** @description Seconds. Absent uses Pi-hole's dns.localTTL. */
+            ttl?: number;
+        };
+        /** @description Names an existing CNAME, either by `value` (Pi-hole's string as read) or by `alias`, `target` and `ttl`. */
+        CNAMERef: {
+            value?: string;
+            alias?: string;
+            target?: string;
+            ttl?: number;
+        };
+        CNAMEInput: {
+            alias: string;
+            target: string;
+            ttl?: number;
+            reason?: components["schemas"]["LocalDNSReasonText"];
+        };
+        CNAMEUpdate: {
+            from: components["schemas"]["CNAMERef"];
+            to: components["schemas"]["CNAMEFields"];
+            reason?: components["schemas"]["LocalDNSReasonText"];
+        };
+        CNAMEDelete: {
+            cname: components["schemas"]["CNAMERef"];
+            reason?: components["schemas"]["LocalDNSReasonText"];
+        };
+        /** @description Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only. */
+        LocalDNSReasonText: string;
+        LocalDNSWriteResults: {
+            results: components["schemas"]["LocalDNSWriteResult"][];
+        };
+        LocalDNSWriteResult: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description For an add through a mirrored group, the member already had the record, so nothing was sent. */
+            already_present?: boolean;
+            /** @description For a failed change, the new record was added but the old one couldn't be deleted. */
+            added?: boolean;
+            /** @description For a CNAME change, Pi-hole accepted it but hadn't answered again within 15 seconds of restarting its resolver. */
+            restart_pending?: boolean;
+        };
+        LocalDNSDrift: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            record_kind: components["schemas"]["LocalDNSKind"];
+            key: string;
+            /** @description The string on the primary (missing) or on the member (extra). Pi-hole's text; show it as text. */
+            value: string;
+            /** @enum {string} */
+            difference: "missing" | "extra";
+            /** @description For a missing entry, whether reconcile can copy it (the app could have written it). */
+            writable?: boolean;
+        };
+        /** @enum {string} */
+        LocalDNSKind: "record" | "cname";
+        ReconcileLocalDNS: {
+            /** Format: int64 */
+            instance_id: number;
+            record_kind: components["schemas"]["LocalDNSKind"];
+            /** @description As the drift report shows it. */
+            key: string;
+        };
         /**
          * @description ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
          * @enum {string}
@@ -2666,7 +2927,7 @@ export interface components {
         WriteStatus: "ok" | "failed" | "skipped";
         /** @description Why an instance failed or was skipped. Present exactly when the status isn't ok. */
         WriteError: {
-            /** @description pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member), pihole_group_missing (it has no Pi-hole group with a name the change uses) or validation_failed (the Pi-hole group a rename or delete names is that member's Default group). */
+            /** @description pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member), pihole_group_missing (it has no Pi-hole group with a name the change uses) or validation_failed (the Pi-hole group a rename or delete names is that member's Default group). Since v2.4.0 also pihole_app_sudo_off and pihole_config_locked (the Pi-hole won't let the app change its config), and, for a member skipped by a CNAME write that goes one member at a time, stopped (an earlier member failed) or time_limit (the write ran out of time). */
             code: string;
             /** @description Safe to show to the user. */
             message: string;
@@ -3409,6 +3670,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The name is, or falls under, a directory domain and needs `confirm=true` (code confirmation_required, with `details.domain` and `details.field`); or the instance already has the record (code conflict); or the instance can't be used or won't let the app change its config: code instance_password_missing, instance_misconfigured, pihole_app_sudo_off (webserver.api.app_sudo is off) or pihole_config_locked (the records are set by an environment variable, or the config is read-only). On a write, a Pi-hole failure here means no instance succeeded, and `details.results` has the result per instance. */
+        LocalDNSConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected) or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. When it is a mirrored group's primary, `details.group` names the group and `details.primary` is true: reads of domains, clients and Pi-hole groups come from the primary alone. The underlying error goes to the server log only. On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
         TargetPiholeFailed: {
             headers: {
@@ -3479,7 +3749,7 @@ export interface components {
         Members: number[];
         /** @description The role's ID. */
         RoleID: number;
-        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
         Confirm: boolean;
         /** @description The user's ID. */
         UserID: number;
@@ -4614,7 +4884,7 @@ export interface operations {
     setRoleGrants: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4712,7 +4982,7 @@ export interface operations {
     removeLDAPMapping: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4823,7 +5093,7 @@ export interface operations {
     deleteUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4879,7 +5149,7 @@ export interface operations {
     disableUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4941,7 +5211,7 @@ export interface operations {
     setUserRoles: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -6089,7 +6359,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -6138,7 +6408,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -6474,6 +6744,326 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listLocalDNS: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The records and CNAMEs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNS"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    addDNSRecord: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DNSRecordInput"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't, or (for a CNAME) a member's failure stopped the write before the rest were reached. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LocalDNSConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteDNSRecord: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DNSRecordDelete"];
+            };
+        };
+        responses: {
+            /** @description Deleted on every instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't, or (for a CNAME) a member's failure stopped the write before the rest were reached. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LocalDNSConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateDNSRecord: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DNSRecordUpdate"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't, or (for a CNAME) a member's failure stopped the write before the rest were reached. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LocalDNSConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    addCNAME: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CNAMEInput"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't, or (for a CNAME) a member's failure stopped the write before the rest were reached. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LocalDNSConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteCNAME: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CNAMEDelete"];
+            };
+        };
+        responses: {
+            /** @description Deleted on every instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't, or (for a CNAME) a member's failure stopped the write before the rest were reached. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LocalDNSConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateCNAME: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CNAMEUpdate"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't, or (for a CNAME) a member's failure stopped the write before the rest were reached. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDNSWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LocalDNSConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
             503: components["responses"]["SetupRequired"];
         };
     };

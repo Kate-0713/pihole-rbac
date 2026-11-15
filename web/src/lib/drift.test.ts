@@ -10,7 +10,7 @@ const base: DriftReport = {
 	state: 'checked',
 	drifted: false,
 	members: [],
-	counts: { domains: 0, clients: 0, groups: 0, lists: 0 }
+	counts: { domains: 0, clients: 0, groups: 0, lists: 0, local_dns: 0 }
 };
 
 describe('summary', () => {
@@ -18,11 +18,14 @@ describe('summary', () => {
 		expect(summary({ ...base, state: 'not_checked' })).toMatch(/^Not checked yet/);
 		expect(summary({ ...base, state: 'primary_unavailable' })).toMatch(/primary couldn't be read/);
 		expect(summary(base)).toBe('Every member that answered matches the primary.');
-		expect(summary({ ...base, drifted: true, counts: { domains: 2, clients: 1, groups: 0, lists: 0 } })).toBe(
+		expect(summary({ ...base, drifted: true, counts: { domains: 2, clients: 1, groups: 0, lists: 0, local_dns: 0 } })).toBe(
 			'Members differ from the primary in 2 domain list entries and 1 client.'
 		);
-		expect(summary({ ...base, drifted: true, counts: { domains: 1, clients: 3, groups: 1, lists: 2 } })).toBe(
+		expect(summary({ ...base, drifted: true, counts: { domains: 1, clients: 3, groups: 1, lists: 2, local_dns: 0 } })).toBe(
 			'Members differ from the primary in 1 domain list entry, 3 clients, 1 Pi-hole group and 2 subscribed lists.'
+		);
+		expect(summary({ ...base, drifted: true, counts: { domains: 0, clients: 0, groups: 0, lists: 0, local_dns: 1 } })).toBe(
+			'Members differ from the primary in 1 local DNS entry.'
 		);
 	});
 });
@@ -76,7 +79,7 @@ describe('plan', () => {
 		const r: DriftReport = {
 			...base,
 			drifted: true,
-			counts: { domains: 3, clients: 2, groups: 2, lists: 4 },
+			counts: { domains: 3, clients: 2, groups: 2, lists: 4, local_dns: 0 },
 			domains: [
 				{ instance: 'beta', instance_id: 2, domain: 'a', type: 'deny', kind: 'exact', difference: 'missing' },
 				{ instance: 'beta', instance_id: 2, domain: 'b', type: 'deny', kind: 'exact', difference: 'missing' },
@@ -124,7 +127,37 @@ describe('reconcileSummary', () => {
 
 describe('plan without lists.view', () => {
 	it("counts the lists it can't show", () => {
-		const r: DriftReport = { ...base, drifted: true, counts: { domains: 0, clients: 0, groups: 0, lists: 3 } };
+		const r: DriftReport = { ...base, drifted: true, counts: { domains: 0, clients: 0, groups: 0, lists: 3, local_dns: 0 } };
 		expect(plan(r).hidden).toEqual(['3 subscribed lists']);
+	});
+});
+
+describe('plan with local DNS', () => {
+	it("adds and deletes entries, and leaves out those the app can't copy", () => {
+		const entry = (instance: string, id: number, key: string, difference: 'missing' | 'extra', writable?: boolean) => ({
+			instance,
+			instance_id: id,
+			record_kind: 'record' as const,
+			key,
+			value: key,
+			difference,
+			writable
+		});
+		const r: DriftReport = {
+			...base,
+			drifted: true,
+			counts: { domains: 0, clients: 0, groups: 0, lists: 0, local_dns: 4 },
+			local_dns: [
+				entry('beta', 2, '10.0.0.5 nas.lab', 'missing', true),
+				{ ...entry('beta', 2, 'a,b', 'missing', true), record_kind: 'cname' },
+				entry('beta', 2, '10.0.0.6 a b', 'missing', false),
+				entry('gamma', 3, '10.0.0.9 old', 'extra')
+			]
+		};
+		expect(plan(r).members).toEqual([
+			{ member: 'beta', lines: ['Add 2 local DNS entries', "Leave out 1 local DNS entry the app can't copy"] },
+			{ member: 'gamma', lines: ['Delete 1 local DNS entry'] }
+		]);
+		expect(plan({ ...r, local_dns: undefined }).hidden).toEqual(['4 local DNS entries']);
 	});
 });

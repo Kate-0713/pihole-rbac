@@ -140,6 +140,12 @@ func (s *Server) ReconcileGroup(ctx context.Context, req gen.ReconcileGroupReque
 				needs := true
 				r.NeedsGravity = &needs
 			}
+		case instances.ItemLocalDNS:
+			k, key := gen.LocalDNSKind(it.LocalDNS.Kind), it.LocalDNS.Key
+			r.RecordKind, r.Key = &k, &key
+			if it.RestartPending {
+				r.RestartPending = ptrTrue()
+			}
 		}
 		if it.Err != nil {
 			partial = true
@@ -171,6 +177,9 @@ func (s *Server) selection(b *gen.ReconcileInput, g instances.Group) (instances.
 	}
 	if b.Lists != nil {
 		n += len(*b.Lists)
+	}
+	if b.LocalDns != nil {
+		n += len(*b.LocalDns)
 	}
 	switch {
 	case all && n > 0:
@@ -237,6 +246,20 @@ func (s *Server) selection(b *gen.ReconcileInput, g instances.Group) (instances.
 			sel.Lists = append(sel.Lists, instances.ListKey{Member: l.InstanceId, Address: key.Address, Type: key.Type})
 		}
 	}
+	if b.LocalDns != nil {
+		for _, d := range *b.LocalDns {
+			if err := member("local_dns", d.InstanceId); err != nil {
+				return sel, err
+			}
+			if !validLocalDNSKind(string(d.RecordKind)) {
+				return sel, invalid("local_dns", `The record kind must be "record" or "cname".`)
+			}
+			if err := checkRefValue("local_dns", d.Key); err != nil {
+				return sel, err
+			}
+			sel.LocalDNS = append(sel.LocalDNS, instances.LocalDNSKey{Member: d.InstanceId, Kind: string(d.RecordKind), Key: d.Key})
+		}
+	}
 	return sel, nil
 }
 
@@ -248,6 +271,8 @@ func itemKey(it instances.ReconcileItem) string {
 		return it.Client
 	case instances.ItemList:
 		return it.List.Type + " " + lists.Redacted(it.List.Address)
+	case instances.ItemLocalDNS:
+		return it.LocalDNS.Kind + " " + it.LocalDNS.Key
 	}
 	return it.Group
 }
@@ -259,6 +284,12 @@ func reconcileError(it instances.ReconcileItem) *gen.WriteError {
 		return &gen.WriteError{
 			Code:    string(rbac.CodeValidation),
 			Message: "The primary's list wasn't copied to " + it.MemberName + ". " + ae.Message + ".",
+		}
+	}
+	if errors.Is(it.Err, instances.ErrNotWritable) {
+		return &gen.WriteError{
+			Code:    string(rbac.CodeValidation),
+			Message: "The primary's entry wasn't copied to " + it.MemberName + ": it has several names, a comment, or a value the app doesn't write.",
 		}
 	}
 	if errors.Is(it.Err, instances.ErrNotReconcilable) {

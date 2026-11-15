@@ -76,7 +76,8 @@ func (s *Server) driftGroup(ctx context.Context, id int64) (instances.Group, *rb
 }
 
 // driftJSON reports a drift check. Domain differences are only given to callers who can list the group's domains,
-// client differences to those who can list its clients, and list differences to those who can list its lists, so drift.view never reveals entries the caller couldn't
+// client differences to those who can list its clients, list differences to those who can list its lists, and local
+// DNS differences to those who can list its local DNS, so drift.view never reveals entries the caller couldn't
 // otherwise see; the counts are always given.
 func driftJSON(g instances.Group, rep instances.Report, set *rbac.Set) gen.DriftReport {
 	t := rbac.GroupTarget(g.ID)
@@ -84,7 +85,10 @@ func driftJSON(g instances.Group, rep instances.Report, set *rbac.Set) gen.Drift
 	out := gen.DriftReport{
 		GroupId: g.ID, Group: g.Name, State: gen.DriftReportState("checked"), CheckedAt: &at,
 		Drifted: rep.Drifted(), Members: make([]gen.MemberRead, len(rep.Members)),
-		Counts: gen.DriftCounts{Domains: len(rep.Domains), Clients: len(rep.Clients), Groups: len(rep.Groups), Lists: len(rep.Lists)},
+		Counts: gen.DriftCounts{
+			Domains: len(rep.Domains), Clients: len(rep.Clients), Groups: len(rep.Groups), Lists: len(rep.Lists),
+			LocalDns: len(rep.LocalDNS),
+		},
 		Groups: &[]gen.PiholeGroupDrift{},
 	}
 	if !rep.PrimaryOK {
@@ -129,6 +133,20 @@ func driftJSON(g instances.Group, rep instances.Report, set *rbac.Set) gen.Drift
 			}
 		}
 		out.Lists = &list
+	}
+	if set.Can(rbac.LocalDNSView, t) {
+		list := make([]gen.LocalDNSDrift, len(rep.LocalDNS))
+		for i, d := range rep.LocalDNS {
+			list[i] = gen.LocalDNSDrift{
+				Instance: d.MemberName, InstanceId: d.Member, RecordKind: gen.LocalDNSKind(d.Kind), Key: d.Key,
+				Value: d.Value, Difference: gen.LocalDNSDriftDifference(d.Difference),
+			}
+			if d.Difference == instances.Missing {
+				w := d.Writable
+				list[i].Writable = &w
+			}
+		}
+		out.LocalDns = &list
 	}
 	for _, gd := range rep.Groups {
 		*out.Groups = append(*out.Groups, gen.PiholeGroupDrift{

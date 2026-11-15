@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package piholetest is a fake Pi-hole v6 API for tests. It implements login, logout and session checks, and keeps
-// blocking, domains, clients, groups, lists, gravity and the query log in memory, with the Pi-hole behaviours the app has to cope
+// blocking, domains, clients, groups, lists, gravity, local DNS and the query log in memory, with the Pi-hole behaviours the app has to cope
 // with: PUT creates an entry that doesn't exist, PUT without "enabled" enables the entry, a duplicate add is a 2xx
 // with the item under processed.errors, and malformed input is a 400 with an error body. Tests add or override
 // anything else with Handle.
@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Domain is an allow or deny list entry, as Pi-hole returns it.
@@ -135,6 +136,15 @@ type Server struct {
 	now      int64
 	requests []string
 	handle   func(w http.ResponseWriter, r *http.Request) bool
+
+	hosts, cnames       []string // dns.hosts and dns.cnameRecords
+	appSudo, readOnly   bool     // webserver.api.app_sudo and misc.readOnly
+	hostsEnv, cnamesEnv bool     // the arrays are set by environment variables
+	restarts            int      // FTL restarts caused by config changes
+	restartPattern      []int    // what a restart does: connections dropped, answered, dropped, …
+	pending             []int    // what is left of the current restart's pattern
+	droppingNow         bool     // whether pending[0] counts dropped connections
+	startedAt           time.Time
 }
 
 // New starts a plain HTTP fake that accepts password. It is closed when the test ends.
@@ -164,6 +174,7 @@ func newServer(password string) *Server {
 		password: password, validity: 1800, sessions: map[string]bool{}, blocking: true,
 		groups: []Group{{ID: 0, Name: "Default", Comment: "The default group", Enabled: true}},
 		nextID: 1, now: 1_790_000_000, domains0: 123456,
+		restartPattern: []int{2}, droppingNow: true, startedAt: time.Now().Add(-time.Hour),
 	}
 }
 
@@ -350,6 +361,9 @@ func (s *Server) id() int {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.dropping(w) {
+		return
+	}
 	switch {
 	case r.URL.Path == "/api/auth" && r.Method == http.MethodPost:
 		s.login(w, r)
@@ -410,6 +424,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.blocking, s.timer = *in.Blocking, in.Timer
 		writeJSON(w, http.StatusOK, s.blockingJSON())
 	case route == "POST action/restartdns":
+		// FTL restarts here too. The fake counts it and starts its uptime again, but doesn't drop connections, so
+		// tests of Restart DNS needn't wait for it.
+		s.restarts++
+		s.startedAt = time.Now()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "restarting"})
 	case route == "GET stats/summary":
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -464,6 +482,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"lists": s.lists})
 	case r.Method != http.MethodGet && seg[0] == "lists":
 		s.writeList(w, r, seg)
+	case seg[0] == "config":
+		s.config(w, r, seg)
+	case route == "GET info/ftl" && len(seg) == 2:
+		s.infoFTL(w)
 	case route == "GET queries" && len(seg) == 1:
 		s.listQueries(w, r)
 	default:

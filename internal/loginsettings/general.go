@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"time"
 	_ "time/tzdata" // the schedule's time zone must load on a host without zone files, such as the distroless image
 
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/localdns"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
@@ -36,6 +38,12 @@ type General struct {
 	// AllowFileLists says whether file: lists can be added. Rows saved before the setting existed have none, which
 	// loads as off. On a save, nil keeps it as it is.
 	AllowFileLists *bool `json:"allow_file_lists,omitempty"`
+	// LocalDNSReasonRequired says whether a local DNS change needs a reason. Rows saved before the setting existed
+	// have none, which loads as on. On a save, nil keeps it as it is.
+	LocalDNSReasonRequired *bool `json:"localdns_reason_required,omitempty"`
+	// LocalDNSExtraDomains are directory domains a local DNS name is checked against, besides the LDAP base DN's.
+	// Rows saved before the setting existed have none, which loads as empty. On a save, nil keeps them as they are.
+	LocalDNSExtraDomains *[]string `json:"localdns_extra_domains,omitempty"`
 }
 
 // ResetSchedule is when client reset runs by itself: daily at Time ("HH:MM", 24-hour) in TimeZone (an IANA name),
@@ -107,6 +115,15 @@ func (g General) Validate() error {
 	case g.AuditRetentionDays < MinRetentionDays || g.AuditRetentionDays > MaxRetentionDays:
 		return validation("audit_retention_days", "Audit entries can be kept for %d to %d days.", MinRetentionDays, MaxRetentionDays)
 	}
+	if g.LocalDNSExtraDomains != nil {
+		if _, err := localdns.CheckExtraDomains(*g.LocalDNSExtraDomains); err != nil {
+			var fe *localdns.FieldError
+			if errors.As(err, &fe) {
+				return validation(fe.Field, "%s.", fe.Message)
+			}
+			return err
+		}
+	}
 	return g.schedule().Validate()
 }
 
@@ -151,10 +168,39 @@ func (s *Service) loadGeneral(ctx context.Context, q *db.Queries) error {
 	s.retention = g.AuditRetentionDays
 	s.schedule = g.schedule()
 	s.allowFile = g.AllowFileLists != nil && *g.AllowFileLists
+	s.reasonOptional = g.LocalDNSReasonRequired != nil && !*g.LocalDNSReasonRequired
+	s.extraDomains = nil
+	if g.LocalDNSExtraDomains != nil {
+		s.extraDomains, _ = localdns.CheckExtraDomains(*g.LocalDNSExtraDomains) // checked by Validate
+	}
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
 	}
 	return nil
+}
+
+// LocalDNSReasonRequired reports whether a local DNS change needs a reason, saved or default (on).
+func (s *Service) LocalDNSReasonRequired() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return !s.reasonOptional
+}
+
+// LocalDNSExtraDomains returns the extra directory domains, saved or default (none), lowercased.
+func (s *Service) LocalDNSExtraDomains() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return slices.Clone(s.extraDomains)
+}
+
+// LDAPBaseDN returns the LDAP settings' base DN, or "" when there are none.
+func (s *Service) LDAPBaseDN() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.ldap == nil {
+		return ""
+	}
+	return s.ldap.BaseDN
 }
 
 // AllowFileLists reports whether file: lists can be added, saved or default (off).
@@ -201,11 +247,16 @@ func (s *Service) General() GeneralView {
 	if schedule.Time == "" {
 		schedule = DefaultResetSchedule
 	}
-	allowFile := s.allowFile
+	allowFile, reasonRequired := s.allowFile, !s.reasonOptional
+	extra := slices.Clone(s.extraDomains)
+	if extra == nil {
+		extra = []string{}
+	}
 	return GeneralView{
 		General: General{
 			SessionLifetimeMinutes: int(lifetime / time.Minute), IdleTimeoutMinutes: int(idle / time.Minute),
 			AuditRetentionDays: retention, ClientReset: &schedule, AllowFileLists: &allowFile,
+			LocalDNSReasonRequired: &reasonRequired, LocalDNSExtraDomains: &extra,
 		},
 		UpdatedAt: s.generalAt, UpdatedBy: s.generalBy,
 	}
@@ -247,6 +298,22 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	if *before.AllowFileLists != allowFile {
 		changed = append(changed, "allow_file_lists")
 	}
+	if g.LocalDNSReasonRequired == nil {
+		g.LocalDNSReasonRequired = before.LocalDNSReasonRequired // likewise
+	}
+	reasonRequired := *g.LocalDNSReasonRequired
+	g.LocalDNSReasonRequired = &reasonRequired
+	if *before.LocalDNSReasonRequired != reasonRequired {
+		changed = append(changed, "localdns_reason_required")
+	}
+	if g.LocalDNSExtraDomains == nil {
+		g.LocalDNSExtraDomains = before.LocalDNSExtraDomains // likewise
+	}
+	extra, _ := localdns.CheckExtraDomains(*g.LocalDNSExtraDomains) // checked by Validate
+	g.LocalDNSExtraDomains = &extra
+	if !slices.Equal(*before.LocalDNSExtraDomains, extra) {
+		changed = append(changed, "localdns_extra_domains")
+	}
 	if len(changed) == 0 {
 		return nil
 	}
@@ -259,6 +326,8 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 		t.entry.Detail["audit_retention_days"] = g.AuditRetentionDays
 		t.entry.Detail["client_reset_schedule"] = schedule
 		t.entry.Detail["allow_file_lists"] = allowFile
+		t.entry.Detail["localdns_reason_required"] = reasonRequired
+		t.entry.Detail["localdns_extra_domains"] = extra
 		value, err := json.Marshal(g)
 		if err != nil {
 			return err
@@ -275,6 +344,8 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	s.retention = g.AuditRetentionDays
 	s.schedule = schedule
 	s.allowFile = allowFile
+	s.reasonOptional = !reasonRequired
+	s.extraDomains = extra
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
 	}

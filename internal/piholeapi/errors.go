@@ -141,6 +141,12 @@ const (
 func Kind(err error) string {
 	var se *StatusError
 	switch {
+	case errors.Is(err, ErrAppSudoOff):
+		return CodeAppSudoOff
+	case errors.Is(err, ErrConfigLocked):
+		return CodeConfigLocked
+	case errors.Is(err, ErrAlreadyPresent):
+		return CodeAlreadyPresent
 	case errors.Is(err, ErrRejected):
 		return CodeRejected
 	case errors.Is(err, ErrGravityRunning):

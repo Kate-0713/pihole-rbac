@@ -13,13 +13,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kate-0713/pihole-rbac/internal/localdns"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
 
 // Drift keeps, in memory, what differs between the members of each mirrored group: every enabled member is compared
 // with the primary, the group's source of truth. Domains are matched by domain, type and kind, clients by their
-// identifier, Pi-hole groups by name, and subscribed lists by address and type, since Pi-hole's IDs differ per instance; group memberships are compared by
+// identifier, Pi-hole groups by name, subscribed lists by address and type, and local DNS records and CNAMEs by their
+// key (see internal/localdns), since Pi-hole's IDs differ per instance; group memberships are compared by
 // group name for the same reason. A group is checked when Run starts, every Interval after that, and soon after Poke
 // (a write through the group, say). Nothing is stored: a restart checks again.
 type Drift struct {
@@ -31,6 +33,9 @@ type Drift struct {
 	Logger *slog.Logger
 	// Now returns the current time; nil means time.Now.
 	Now func() time.Time
+
+	// cnameMu lets reconcile change one member's CNAMEs at a time, since each member restarts FTL for them.
+	cnameMu sync.Mutex
 
 	mu      sync.Mutex
 	reports map[int64]Report
@@ -114,6 +119,25 @@ type ListDrift struct {
 	Other      *ListState
 }
 
+// The kinds of local DNS entry, as LocalDNSDrift.Kind and LocalDNSKey.Kind.
+const (
+	LocalDNSRecord = "record"
+	LocalDNSCNAME  = "cname"
+)
+
+// LocalDNSDrift is a local DNS record or CNAME on the primary and not on a member (Missing), or the other way round
+// (Extra). A record has nothing else that can differ. Value is Pi-hole's string on the side that has it; Writable says,
+// for a missing one, whether the app could have written it, which reconcile needs to copy it.
+type LocalDNSDrift struct {
+	Member     int64
+	MemberName string
+	Kind       string
+	Key        string
+	Value      string
+	Difference Difference
+	Writable   bool
+}
+
 // MemberCheck is how reading one member went. Code is empty when it answered, otherwise the error's code (Kind).
 type MemberCheck struct {
 	ID      int64
@@ -133,12 +157,13 @@ type Report struct {
 	Clients   []ClientDrift
 	Groups    []GroupDrift
 	Lists     []ListDrift
+	LocalDNS  []LocalDNSDrift
 }
 
 // Drifted says whether any member was found to differ from the primary. Members that didn't answer don't count:
 // they are unknown, not different.
 func (r Report) Drifted() bool {
-	return len(r.Domains)+len(r.Clients)+len(r.Groups)+len(r.Lists) > 0
+	return len(r.Domains)+len(r.Clients)+len(r.Groups)+len(r.Lists)+len(r.LocalDNS) > 0
 }
 
 // DomainsDrifted, ClientsDrifted and GroupsDrifted are the per-type flags behind the badges on the domains, clients
@@ -147,6 +172,9 @@ func (r Report) DomainsDrifted() bool { return len(r.Domains) > 0 }
 func (r Report) ClientsDrifted() bool { return len(r.Clients) > 0 }
 func (r Report) GroupsDrifted() bool  { return len(r.Groups) > 0 }
 func (r Report) ListsDrifted() bool   { return len(r.Lists) > 0 }
+
+// LocalDNSDrifted is the flag behind the badge on the local DNS page.
+func (r Report) LocalDNSDrifted() bool { return len(r.LocalDNS) > 0 }
 
 func (d *Drift) now() time.Time {
 	if d.Now != nil {
@@ -362,12 +390,14 @@ func (d *Drift) log() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// snapshot is what one member has: its domain lists, clients, Pi-hole groups and subscribed lists.
+// snapshot is what one member has: its domain lists, clients, Pi-hole groups, subscribed lists and local DNS.
 type snapshot struct {
 	domains []piholeapi.DomainEntry
 	clients []piholeapi.ClientEntry
 	groups  []piholeapi.Group
 	lists   []piholeapi.ListEntry
+	hosts   []localdns.Host
+	cnames  []localdns.CNAME
 }
 
 func readSnapshot(ctx context.Context, c *piholeapi.Client) (snapshot, error) {
@@ -382,8 +412,20 @@ func readSnapshot(ctx context.Context, c *piholeapi.Client) (snapshot, error) {
 	if s.groups, err = c.ListGroups(ctx); err != nil {
 		return s, err
 	}
-	s.lists, err = c.ListLists(ctx)
-	return s, err
+	if s.lists, err = c.ListLists(ctx); err != nil {
+		return s, err
+	}
+	dns, err := c.GetLocalDNS(ctx)
+	if err != nil {
+		return s, err
+	}
+	for _, v := range dns.Hosts {
+		s.hosts = append(s.hosts, localdns.ParseHost(v))
+	}
+	for _, v := range dns.CNAMEs {
+		s.cnames = append(s.cnames, localdns.ParseCNAME(v))
+	}
+	return s, nil
 }
 
 // names turns Pi-hole group IDs into sorted names, so memberships can be compared across instances. An ID the
@@ -551,4 +593,61 @@ func compare(rep *Report, primary, other snapshot, m MemberCheck) {
 		return cmp.Or(cmp.Compare(a.Address, b.Address), cmp.Compare(a.Type, b.Type))
 	})
 	rep.Lists = append(rep.Lists, lists...)
+
+	rep.LocalDNS = append(rep.LocalDNS, compareLocalDNS(primary, other, m)...)
+}
+
+// localDNSEntry is a local DNS entry as compareLocalDNS needs it.
+type localDNSEntry struct {
+	kind, key, value string
+	writable         bool
+}
+
+func (s snapshot) localDNS() []localDNSEntry {
+	out := make([]localDNSEntry, 0, len(s.hosts)+len(s.cnames))
+	for _, h := range s.hosts {
+		out = append(out, localDNSEntry{LocalDNSRecord, h.Key, h.Value, h.Writable()})
+	}
+	for _, c := range s.cnames {
+		out = append(out, localDNSEntry{LocalDNSCNAME, c.Key, c.Value, c.Writable()})
+	}
+	return out
+}
+
+// compareLocalDNS lists the local DNS entries only one of primary and other has, by kind and key, sorted.
+func compareLocalDNS(primary, other snapshot, m MemberCheck) []LocalDNSDrift {
+	type key struct{ kind, key string }
+	index := func(s snapshot) (map[key]localDNSEntry, []key) {
+		got := map[key]localDNSEntry{}
+		var order []key
+		for _, e := range s.localDNS() {
+			k := key{e.kind, e.key}
+			if _, dup := got[k]; !dup { // two spellings of one record: the first stands for both
+				got[k] = e
+				order = append(order, k)
+			}
+		}
+		return got, order
+	}
+	pm, porder := index(primary)
+	om, oorder := index(other)
+	var out []LocalDNSDrift
+	for _, k := range porder {
+		if _, ok := om[k]; !ok {
+			e := pm[k]
+			out = append(out, LocalDNSDrift{Member: m.ID, MemberName: m.Name, Kind: e.kind, Key: e.key, Value: e.value,
+				Difference: Missing, Writable: e.writable})
+		}
+	}
+	for _, k := range oorder {
+		if _, ok := pm[k]; !ok {
+			e := om[k]
+			out = append(out, LocalDNSDrift{Member: m.ID, MemberName: m.Name, Kind: e.kind, Key: e.key, Value: e.value,
+				Difference: Extra, Writable: e.writable})
+		}
+	}
+	slices.SortFunc(out, func(a, b LocalDNSDrift) int {
+		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Key, b.Key))
+	})
+	return out
 }

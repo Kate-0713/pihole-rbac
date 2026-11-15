@@ -71,6 +71,7 @@
 		clients?: { instance_id: number; client: string }[];
 		groups?: { instance_id: number; name: string }[];
 		lists?: { instance_id: number; address: string; type: 'block' | 'allow' }[];
+		local_dns?: { instance_id: number; record_kind: 'record' | 'cname'; key: string }[];
 	};
 
 	// reconcile sends the request, reports what happened (a toast for what worked, an error per item that didn't), and
@@ -92,6 +93,11 @@
 			const waiting = [...new Set(out.results.filter((r) => r.needs_gravity).map((r) => r.instance))];
 			if (waiting.length > 0) {
 				notices.info(`Run gravity on ${waiting.join(', ')} for the lists added or enabled there to take effect.`);
+			}
+			// A member whose CNAMEs changed restarts DNS; one that hadn't answered again in time is worth a look.
+			const pending = [...new Set(out.results.filter((r) => r.restart_pending).map((r) => r.instance))];
+			if (pending.length > 0) {
+				notices.info(`${pending.join(', ')} hadn't answered again after restarting DNS. Check that it's running.`);
 			}
 			if (out.results.some((r) => r.status === 'ok' && r.action !== 'none') || out.results.every((r) => r.status === 'ok')) {
 				notices.success(reconcileSummary(out));
@@ -140,9 +146,9 @@
 	</Button>
 {/snippet}
 
-{#snippet hidden(what: string, permission: string, n: number)}
+{#snippet hidden(what: string, permission: string, n: number, plural = `${what}s`)}
 	<p class="text-muted-foreground text-sm">
-		{n === 1 ? `1 ${what} differs` : `${n} ${what}s differ`}. Seeing which needs {permission} on this group.
+		{n === 1 ? `1 ${what} differs` : `${n} ${plural} differ`}. Seeing which needs {permission} on this group.
 	</p>
 {/snippet}
 
@@ -340,6 +346,59 @@
 					</div>
 				{:else}
 					{@render hidden('subscribed list', 'lists.view', report.counts.lists)}
+				{/if}
+			</section>
+		{/if}
+
+		{#if report.counts.local_dns > 0}
+			<section class="grid gap-2" aria-labelledby="drift-local-dns">
+				<h2 id="drift-local-dns" class="font-semibold">Local DNS</h2>
+				{#if report.local_dns}
+					<div class="overflow-x-auto rounded-lg border">
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>Member</Table.Head>
+									<Table.Head>Entry</Table.Head>
+									<Table.Head>Difference</Table.Head>
+									{#if canReconcile}<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>{/if}
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each report.local_dns as d (d.instance_id + d.record_kind + d.key)}
+									<Table.Row>
+										<Table.Cell><CellText>{d.instance}</CellText></Table.Cell>
+										<Table.Cell>
+											<CellText width="lg">
+												<span class="font-mono text-sm break-all">{d.value}</span>
+												<span class="text-muted-foreground block text-xs">{d.record_kind === 'record' ? 'Record' : 'CNAME'}</span>
+											</CellText>
+										</Table.Cell>
+										<Table.Cell class="whitespace-normal">
+											{@render difference(d.difference)}
+											{#if d.writable === false}
+												<p class="text-muted-foreground text-xs">
+													Added outside the app with several names or a comment, so it isn't copied. Add it on this member
+													yourself, or change it on the primary.
+												</p>
+											{/if}
+										</Table.Cell>
+										{#if canReconcile}
+											<Table.Cell>
+												{#if d.writable !== false}
+													{@render fix(`local_dns:${d.instance_id}:${d.record_kind}:${d.key}`, `${d.value} on ${d.instance}`, {
+														local_dns: [{ instance_id: d.instance_id, record_kind: d.record_kind, key: d.key }]
+													})}
+												{/if}
+											</Table.Cell>
+										{/if}
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				{:else}
+					{@render hidden('local DNS entry', 'localdns.view', report.counts.local_dns, 'local DNS entries')}
 				{/if}
 			</section>
 		{/if}

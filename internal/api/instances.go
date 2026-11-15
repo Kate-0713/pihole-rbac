@@ -233,9 +233,9 @@ func (s *Server) TestInstance(ctx context.Context, req gen.TestInstanceRequestOb
 	if s.Instances == nil {
 		return nil, errNoInstances
 	}
-	err := s.Instances.Test(ctx, actor(ctx), req.Id)
+	appSudo, err := s.Instances.Test(ctx, actor(ctx), req.Id)
 	if err == nil {
-		return gen.TestInstance200JSONResponse{Ok: true}, nil
+		return gen.TestInstance200JSONResponse{Ok: true, AppSudo: appSudo}, nil
 	}
 	if instances.Kind(err) == "" || ctx.Err() != nil {
 		return nil, err

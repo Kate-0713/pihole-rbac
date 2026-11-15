@@ -244,7 +244,10 @@ func TestForbidden(t *testing.T) {
 			return err
 		},
 		"delete": func() error { return e.svc.Delete(e.ctx, e.viewer, inst.ID) },
-		"test":   func() error { return e.svc.Test(e.ctx, e.viewer, inst.ID) },
+		"test": func() error {
+			_, err := e.svc.Test(e.ctx, e.viewer, inst.ID)
+			return err
+		},
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {

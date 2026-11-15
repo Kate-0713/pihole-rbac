@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/Kate-0713/pihole-rbac/internal/lists"
+	"github.com/Kate-0713/pihole-rbac/internal/localdns"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
@@ -22,7 +23,9 @@ import (
 // view may still use them. The members are read again first, so a reconcile acts on what is there now rather than
 // on the last drift report. Each member is changed on its own (members at once), Pi-hole groups first, so the
 // lists, entries and clients after them can use them; a Pi-hole group an entry or client needs that the member doesn't have
-// is created as part of that item. One item failing doesn't stop the others.
+// is created as part of that item. Local DNS comes last: CNAME changes restart FTL, so members change their CNAMEs one
+// at a time, each sending them so that FTL restarts once, and waiting for it to answer again. One item failing doesn't
+// stop the others.
 
 // DomainKey names a list entry on a member.
 type DomainKey struct {
@@ -52,6 +55,14 @@ type ListKey struct {
 	Type    string
 }
 
+// LocalDNSKey names a local DNS record or CNAME on a member: Kind is LocalDNSRecord or LocalDNSCNAME, Key as in
+// internal/localdns.
+type LocalDNSKey struct {
+	Member int64
+	Kind   string
+	Key    string
+}
+
 // Selection is what to reconcile: everything, or the items named.
 type Selection struct {
 	All     bool
@@ -59,6 +70,8 @@ type Selection struct {
 	Clients []ClientKey
 	Groups  []GroupKey
 	Lists   []ListKey
+	// LocalDNS are local DNS records and CNAMEs. Only missing and extra ones can differ.
+	LocalDNS []LocalDNSKey
 	// CheckList, if set, says whether a list missing on a member may be added to it: the app's rules for new lists'
 	// addresses (see lists.CheckAddress), so reconcile doesn't copy an address the app wouldn't accept. It is called
 	// for several members at once.
@@ -79,10 +92,11 @@ const (
 type ItemKind string
 
 const (
-	ItemDomain ItemKind = "domain"
-	ItemClient ItemKind = "client"
-	ItemGroup  ItemKind = "group"
-	ItemList   ItemKind = "list"
+	ItemDomain   ItemKind = "domain"
+	ItemClient   ItemKind = "client"
+	ItemGroup    ItemKind = "group"
+	ItemList     ItemKind = "list"
+	ItemLocalDNS ItemKind = "local_dns"
 )
 
 // ReconcileItem is what happened to one item on one member. Err is nil when it worked.
@@ -96,8 +110,12 @@ type ReconcileItem struct {
 	List       ListKey   // for a subscribed list, with the address as Pi-hole has it
 	// NeedsGravity is set for a list added, or enabled, on the member: it waits for gravity there.
 	NeedsGravity bool
-	Action       Action
-	Err          error
+	LocalDNS     LocalDNSKey // for a local DNS record or CNAME
+	// RestartPending is set for a CNAME changed on a member that hadn't answered again within RestartWait of
+	// restarting its resolver.
+	RestartPending bool
+	Action         Action
+	Err            error
 }
 
 // ReconcileResult is what a reconcile did: each item, and the members that couldn't be read (Code set), who were
@@ -110,6 +128,10 @@ type ReconcileResult struct {
 // ErrNotReconcilable is a selected item reconcile won't change: a Pi-hole group only a member has, which is never
 // deleted.
 var ErrNotReconcilable = errors.New("Pi-hole groups only a member has aren't deleted: entries or clients outside the group may use them")
+
+// ErrNotWritable is a primary's local DNS entry reconcile won't copy: one the app couldn't have written itself
+// (several names, a comment, or a value it wouldn't accept).
+var ErrNotWritable = errors.New("the primary's entry has several names, a comment, or a value the app doesn't write, so it isn't copied")
 
 // ErrPrimaryUnavailable means the group's primary is disabled, so there is nothing to copy from.
 var ErrPrimaryUnavailable = errors.New("the group's primary is disabled")
@@ -161,6 +183,9 @@ func (d *Drift) Reconcile(ctx context.Context, groupID int64, sel Selection) (Re
 	for _, k := range sel.Lists {
 		named[k.Member] = true
 	}
+	for _, k := range sel.LocalDNS {
+		named[k.Member] = true
+	}
 	var members []MemberCheck
 	for _, id := range g.Members {
 		name, ok := pool.Name(id)
@@ -178,7 +203,7 @@ func (d *Drift) Reconcile(ctx context.Context, groupID int64, sel Selection) (Re
 			m := &members[i]
 			err := pool.Do(ctx, m.ID, func(ctx context.Context, c *piholeapi.Client) error {
 				var err error
-				items[i], err = reconcileMember(ctx, c, primary, *m, sel)
+				items[i], err = reconcileMember(ctx, c, primary, *m, sel, &d.cnameMu)
 				return err
 			})
 			if err != nil {
@@ -202,7 +227,7 @@ func (d *Drift) Reconcile(ctx context.Context, groupID int64, sel Selection) (Re
 
 // reconcileMember changes one member to match the primary. It returns an error only when the member couldn't be
 // read at all; a change that fails is that item's Err.
-func reconcileMember(ctx context.Context, c *piholeapi.Client, primary snapshot, m MemberCheck, sel Selection) ([]ReconcileItem, error) {
+func reconcileMember(ctx context.Context, c *piholeapi.Client, primary snapshot, m MemberCheck, sel Selection, cnameMu *sync.Mutex) ([]ReconcileItem, error) {
 	member, err := readSnapshot(ctx, c)
 	if err != nil {
 		return nil, err
@@ -350,7 +375,126 @@ func reconcileMember(ctx context.Context, c *piholeapi.Client, primary snapshot,
 			out = append(out, ReconcileItem{Member: m.ID, MemberName: m.Name, Kind: ItemClient, Client: k.Client, Action: ActionNone})
 		}
 	}
+	out = append(out, reconcileLocalDNS(ctx, c, rep.LocalDNS, primary, member, m, sel, cnameMu)...)
 	return out, nil
+}
+
+// reconcileLocalDNS adds the local DNS entries member m is missing and deletes those only it has, for the differences
+// in drift that sel asks for. A missing entry is added as the app builds it, never by copying the primary's string,
+// and only if the app could have written it. Host records are changed at once; CNAMEs, which restart FTL, wait for
+// cnameMu so one member restarts at a time, and are sent so that FTL restarts once.
+func reconcileLocalDNS(ctx context.Context, c *piholeapi.Client, drift []LocalDNSDrift, primary, member snapshot, m MemberCheck, sel Selection, cnameMu *sync.Mutex) []ReconcileItem {
+	var out []ReconcileItem
+	seen := map[LocalDNSKey]bool{}
+	// opsOf[i] are the indexes in cnameOps of item i's CNAME changes.
+	var cnameOps []piholeapi.CNAMEOp
+	opsOf := map[int][]int{}
+	ignore := func(err error) error { // already as asked
+		var se *piholeapi.StatusError
+		if errors.Is(err, piholeapi.ErrAlreadyPresent) || (errors.As(err, &se) && se.Code == 404) {
+			return nil
+		}
+		return err
+	}
+	for _, ld := range drift {
+		k := LocalDNSKey{Member: m.ID, Kind: ld.Kind, Key: ld.Key}
+		if !sel.All && !slices.Contains(sel.LocalDNS, k) {
+			continue
+		}
+		seen[k] = true
+		it := ReconcileItem{Member: m.ID, MemberName: m.Name, Kind: ItemLocalDNS, LocalDNS: k, Action: ActionAdd}
+		var values []string // the strings to send: the one to add, or the member's to delete
+		if ld.Difference == Extra {
+			it.Action = ActionDelete
+			values = member.localDNSValues(ld.Kind, ld.Key)
+		} else {
+			v, err := primary.buildLocalDNS(ld.Kind, ld.Key)
+			if err != nil {
+				it.Err = err
+				out = append(out, it)
+				continue
+			}
+			values = []string{v}
+		}
+		if ld.Kind == LocalDNSRecord {
+			for _, v := range values {
+				var err error
+				if it.Action == ActionDelete {
+					err = c.DeleteHostRecord(ctx, v)
+				} else {
+					err = c.AddHostRecord(ctx, v)
+				}
+				if err = ignore(err); err != nil && it.Err == nil {
+					it.Err = err
+				}
+			}
+			out = append(out, it)
+			continue
+		}
+		i := len(out)
+		out = append(out, it)
+		for _, v := range values {
+			opsOf[i] = append(opsOf[i], len(cnameOps))
+			cnameOps = append(cnameOps, piholeapi.CNAMEOp{Delete: it.Action == ActionDelete, Value: v})
+		}
+	}
+	if len(cnameOps) > 0 {
+		cnameMu.Lock()
+		errs, restarted, since := c.ApplyCNAMEs(ctx, cnameOps)
+		pending := restarted && c.WaitRestarted(ctx, since, piholeapi.RestartWait) != nil
+		cnameMu.Unlock()
+		for i, ops := range opsOf {
+			for _, op := range ops {
+				if err := ignore(errs[op]); err != nil && out[i].Err == nil {
+					out[i].Err = err
+				}
+			}
+			out[i].RestartPending = pending && out[i].Err == nil
+		}
+	}
+	for _, k := range sel.LocalDNS {
+		if k.Member == m.ID && !seen[k] {
+			out = append(out, ReconcileItem{Member: m.ID, MemberName: m.Name, Kind: ItemLocalDNS, LocalDNS: k, Action: ActionNone})
+		}
+	}
+	return out
+}
+
+// localDNSValues is every string s has for the local DNS entry of kind with key: usually one, but Pi-hole matches
+// strings exactly, so two spellings of one record can both be there.
+func (s snapshot) localDNSValues(kind, key string) []string {
+	var out []string
+	for _, e := range s.localDNS() {
+		if e.kind == kind && e.key == key {
+			out = append(out, e.value)
+		}
+	}
+	return out
+}
+
+// buildLocalDNS is the string the app writes for s's local DNS entry of kind with key, or ErrNotWritable for one it
+// couldn't have written.
+func (s snapshot) buildLocalDNS(kind, key string) (string, error) {
+	if kind == LocalDNSRecord {
+		for _, h := range s.hosts {
+			if h.Key == key && h.Writable() {
+				b, err := localdns.NewHost(h.IP.String(), h.Hostnames[0])
+				if err == nil {
+					return b.Value, nil
+				}
+			}
+		}
+		return "", ErrNotWritable
+	}
+	for _, c := range s.cnames {
+		if c.Key == key && c.Writable() {
+			b, err := localdns.NewCNAME(c.Aliases[0], c.Target, c.TTL)
+			if err == nil {
+				return b.Value, nil
+			}
+		}
+	}
+	return "", ErrNotWritable
 }
 
 // reconcileLists makes member m's subscribed lists match the primary's, for the differences in drift that sel asks

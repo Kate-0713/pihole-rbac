@@ -27,6 +27,7 @@
 			{ href: '/domains', label: 'Domains', show: can('domains.view', target) },
 			{ href: '/clients', label: 'Clients', show: can('clients.view', target) },
 			{ href: '/lists', label: 'Lists', show: can('lists.view', target) },
+			{ href: '/local-dns', label: 'Local DNS', show: can('localdns.view', target) },
 			// Reading a target's Pi-hole groups needs any permission on it; changing them needs piholegroups.edit.
 			{ href: '/pihole-groups', label: 'Pi-hole groups', show: canAny(target) },
 			{ href: '/querylog', label: 'Query log', show: can('querylog.view', target) },

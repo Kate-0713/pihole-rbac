@@ -26,6 +26,7 @@ var releasedMigrations = map[string]string{
 	"00003_client_reset_scheduled_event.sql": "17763399adcd6fdda0a87ca77fd98c17ef70102912471595596d8bf840f4b094", // v2.1.0
 	"00004_piholegroups_edit.sql":            "47b6db8acabd7369e41a283d7137099eb1531119c75a783fe649c72306f5def0", // v2.2.0
 	"00005_lists_gravity.sql":                "e021f6da7d3a49a4d49eba551b3e0c19ea690577a06e24d9777141f925a5842a", // v2.3.0
+	"00006_localdns.sql":                     "f5a0d8ab1e2eaadd1fcc082618d1ed7e21fc9202483601fd957947e1d57a701f", // v2.4.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
@@ -191,6 +192,73 @@ func TestUpgradeFromV2_2_0(t *testing.T) {
 		t.Fatalf("down to 4: %v", err)
 	}
 	check("after migrating down", map[int]int{1: 0, 10: 0})
+	if _, err := s.w.Exec(`DELETE FROM role_grants WHERE role_id = 1 AND permission = 'domains.view'`); err == nil {
+		t.Error("the builtin admin's grants can be deleted after migrating down: the trigger wasn't recreated")
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	check("after migrating up again", map[int]int{1: 1, 10: 0})
+}
+
+// TestUpgradeFromV2_3_0: a database as v2.3.0 left it (version 5) gets localdns.view and localdns.edit on the builtin
+// admin role only. A role that can edit lists doesn't get them. Migrating down to 5 removes them everywhere, and up
+// again restores the builtin admin's.
+func TestUpgradeFromV2_3_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'lists.edit', 'all'), (10, 'domains.edit', 'all')`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	perms := []string{"localdns.view", "localdns.edit"}
+	check := func(when string, want map[int]int) {
+		t.Helper()
+		for role, n := range want {
+			for _, p := range perms {
+				var got int
+				q := `SELECT count(*) FROM role_grants WHERE role_id = ? AND permission = ? AND scope_type = 'all'`
+				if err := s.r.QueryRow(q, role, p).Scan(&got); err != nil {
+					t.Fatal(err)
+				}
+				if got != n {
+					t.Errorf("%s: role %d has %d %s grants, want %d", when, role, got, p, n)
+				}
+			}
+		}
+	}
+	check("after upgrading", map[int]int{1: 1, 10: 0})
+
+	// A grant on another role, so the Down section's first DELETE has something to remove.
+	if _, err := s.w.Exec(`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'localdns.view', 'all')`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 5); err != nil {
+		t.Fatalf("down to 5: %v", err)
+	}
+	check("after migrating down", map[int]int{1: 0, 10: 0})
+	var lists int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE role_id = 10 AND permission = 'lists.edit'`).Scan(&lists); err != nil || lists != 1 {
+		t.Errorf("migrating down touched other grants: %d lists.edit grants on role 10, %v", lists, err)
+	}
 	if _, err := s.w.Exec(`DELETE FROM role_grants WHERE role_id = 1 AND permission = 'domains.view'`); err == nil {
 		t.Error("the builtin admin's grants can be deleted after migrating down: the trigger wasn't recreated")
 	}

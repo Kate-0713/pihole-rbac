@@ -15,6 +15,7 @@ const (
 	GroupSignIn        = "Sign-in and sessions"
 	GroupPihole        = "Pi-hole changes"
 	GroupLists         = "Lists and gravity"
+	GroupLocalDNS      = "Local DNS"
 	GroupInstances     = "Instances and groups"
 	GroupAccess        = "Users, roles and LDAP"
 	GroupSettings      = "Settings and system"
@@ -54,6 +55,13 @@ var actions = []ActionInfo{
 	{ActionListDelete, GroupLists, "A list unsubscribed from"},
 	{ActionGravityStart, GroupLists, "A gravity update started"},
 	{ActionGravityRun, GroupLists, "A gravity update finished on an instance, or failed"},
+
+	{ActionDNSRecordAdd, GroupLocalDNS, "A local DNS record added"},
+	{ActionDNSRecordUpdate, GroupLocalDNS, "A local DNS record changed"},
+	{ActionDNSRecordDelete, GroupLocalDNS, "A local DNS record deleted"},
+	{ActionCNAMEAdd, GroupLocalDNS, "A CNAME added, which restarts DNS on the Pi-hole"},
+	{ActionCNAMEUpdate, GroupLocalDNS, "A CNAME changed, which restarts DNS on the Pi-hole"},
+	{ActionCNAMEDelete, GroupLocalDNS, "A CNAME deleted, which restarts DNS on the Pi-hole"},
 
 	{ActionInstanceCreate, GroupInstances, "An instance added"},
 	{ActionInstanceUpdate, GroupInstances, "An instance's settings changed"},

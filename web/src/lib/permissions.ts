@@ -32,6 +32,8 @@ export type TargetPermission =
 	| 'lists.view'
 	| 'lists.edit'
 	| 'gravity.run'
+	| 'localdns.view'
+	| 'localdns.edit'
 	| 'drift.view'
 	| 'drift.reconcile';
 

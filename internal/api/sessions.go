@@ -171,6 +171,8 @@ func (s *Server) SetGeneralSettings(ctx context.Context, req gen.SetGeneralSetti
 		g.ClientReset = &loginsettings.ResetSchedule{Enabled: r.Enabled, Time: r.Time, TimeZone: r.TimeZone}
 	}
 	g.AllowFileLists = req.Body.AllowFileLists // likewise
+	g.LocalDNSReasonRequired = req.Body.LocaldnsReasonRequired
+	g.LocalDNSExtraDomains = req.Body.LocaldnsExtraDomains
 	if err := s.LoginSettings.SaveGeneral(ctx, actor(ctx), g); err != nil {
 		return nil, err
 	}
@@ -180,8 +182,13 @@ func (s *Server) SetGeneralSettings(ctx context.Context, req gen.SetGeneralSetti
 func generalJSON(v loginsettings.GeneralView) gen.GeneralSettings {
 	out := gen.GeneralSettings{
 		SessionLifetimeMinutes: v.SessionLifetimeMinutes, IdleTimeoutMinutes: v.IdleTimeoutMinutes,
-		AuditRetentionDays: v.AuditRetentionDays,
-		AllowFileLists:     v.AllowFileLists != nil && *v.AllowFileLists,
+		AuditRetentionDays:     v.AuditRetentionDays,
+		AllowFileLists:         v.AllowFileLists != nil && *v.AllowFileLists,
+		LocaldnsReasonRequired: v.LocalDNSReasonRequired == nil || *v.LocalDNSReasonRequired,
+		LocaldnsExtraDomains:   []string{},
+	}
+	if v.LocalDNSExtraDomains != nil {
+		out.LocaldnsExtraDomains = *v.LocalDNSExtraDomains
 	}
 	if r := v.ClientReset; r != nil {
 		out.ClientResetSchedule = gen.ClientResetSchedule{Enabled: r.Enabled, Time: r.Time, TimeZone: r.TimeZone}

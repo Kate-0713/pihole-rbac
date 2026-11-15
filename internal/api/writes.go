@@ -154,6 +154,12 @@ func describeCode(pf *piholeFailure) failure {
 		f.message = fmt.Sprintf("Pi-hole %q is already running gravity, started outside this app. Try again when it has finished.", pf.Instance)
 	case piholeapi.CodeGravityFailed:
 		f.message = fmt.Sprintf("Gravity failed on Pi-hole %q. Its output says why.", pf.Instance)
+	case piholeapi.CodeAppSudoOff:
+		f.status = http.StatusConflict
+		f.message = fmt.Sprintf("Pi-hole %q doesn't let the app change its settings: webserver.api.app_sudo is off. An administrator can turn it on with: pihole-FTL --config webserver.api.app_sudo true", pf.Instance)
+	case piholeapi.CodeConfigLocked:
+		f.status = http.StatusConflict
+		f.message = fmt.Sprintf("Pi-hole %q won't let its local DNS be changed through its API: the records are set by an environment variable, or its config is read-only.", pf.Instance)
 	case piholeapi.CodeAuthRejected:
 		f.message = fmt.Sprintf("Pi-hole %q refused the app's password. An administrator needs to check it.", pf.Instance)
 	case piholeapi.CodeStatusError:

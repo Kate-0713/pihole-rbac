@@ -91,6 +91,9 @@ func run() error {
 	defer ph2.Close()
 	fillPihole(ph1)
 	fillQueryPages(ph2)
+	// The app changes local DNS only where app_sudo is on. pihole2 needs it too, for reconciling a group of the two.
+	ph2.SetAppSudo(true)
+	ph2.SetRestartOutage(0)
 	// A directory for the LDAP page's tests. The seeded server doesn't use it until a test saves its settings.
 	directory, err := ldaptest.Start("127.0.0.1:0")
 	if err != nil {
@@ -246,6 +249,12 @@ func fillPihole(ph *piholetest.Server) {
 		Domains: 123456,
 		Lines:   []string{"  [i] Neutrino emissions detected...", "  [✓] Building tree", "  [✓] Done."},
 	})
+
+	// Local DNS: a record, one added in Pi-hole's own admin with two names and a comment (which the app won't copy or
+	// write), and a CNAME. Restarts don't drop connections, so CNAME changes answer at once.
+	ph.SetLocalDNS([]string{"10.0.0.5 nas.lab", "10.0.0.6 printer.lab printer # office"}, []string{"files.lab,nas.lab"})
+	ph.SetAppSudo(true)
+	ph.SetRestartOutage(0)
 
 	// Five queries, newest first, a minute apart and ending a minute ago: two blocked, three answered, one of them
 	// cached and for AAAA.

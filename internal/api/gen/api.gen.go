@@ -744,6 +744,87 @@ func (e LDAPSettingsInputTlsMode) Valid() bool {
 	}
 }
 
+// Defines values for LocalDNSDriftDifference.
+const (
+	LocalDNSDriftDifferenceExtra   LocalDNSDriftDifference = "extra"
+	LocalDNSDriftDifferenceMissing LocalDNSDriftDifference = "missing"
+)
+
+// Valid indicates whether the value is a known member of the LocalDNSDriftDifference enum.
+func (e LocalDNSDriftDifference) Valid() bool {
+	switch e {
+	case LocalDNSDriftDifferenceExtra:
+		return true
+	case LocalDNSDriftDifferenceMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LocalDNSInstanceWritable.
+const (
+	LocalDNSInstanceWritableAppSudoOff LocalDNSInstanceWritable = "app_sudo_off"
+	LocalDNSInstanceWritableLocked     LocalDNSInstanceWritable = "locked"
+	LocalDNSInstanceWritableOk         LocalDNSInstanceWritable = "ok"
+	LocalDNSInstanceWritableUnknown    LocalDNSInstanceWritable = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the LocalDNSInstanceWritable enum.
+func (e LocalDNSInstanceWritable) Valid() bool {
+	switch e {
+	case LocalDNSInstanceWritableAppSudoOff:
+		return true
+	case LocalDNSInstanceWritableLocked:
+		return true
+	case LocalDNSInstanceWritableOk:
+		return true
+	case LocalDNSInstanceWritableUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LocalDNSKind.
+const (
+	Cname  LocalDNSKind = "cname"
+	Record LocalDNSKind = "record"
+)
+
+// Valid indicates whether the value is a known member of the LocalDNSKind enum.
+func (e LocalDNSKind) Valid() bool {
+	switch e {
+	case Cname:
+		return true
+	case Record:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LocalDNSMark.
+const (
+	Comment       LocalDNSMark = "comment"
+	MultipleNames LocalDNSMark = "multiple_names"
+	Unparsed      LocalDNSMark = "unparsed"
+)
+
+// Valid indicates whether the value is a known member of the LocalDNSMark enum.
+func (e LocalDNSMark) Valid() bool {
+	switch e {
+	case Comment:
+		return true
+	case MultipleNames:
+		return true
+	case Unparsed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LoginMethodsMethods.
 const (
 	LoginMethodsMethodsLdap  LoginMethodsMethods = "ldap"
@@ -1175,10 +1256,11 @@ func (e ReconcileItemResultAction) Valid() bool {
 
 // Defines values for ReconcileItemResultItem.
 const (
-	ReconcileItemResultItemClient ReconcileItemResultItem = "client"
-	ReconcileItemResultItemDomain ReconcileItemResultItem = "domain"
-	ReconcileItemResultItemGroup  ReconcileItemResultItem = "group"
-	ReconcileItemResultItemList   ReconcileItemResultItem = "list"
+	ReconcileItemResultItemClient   ReconcileItemResultItem = "client"
+	ReconcileItemResultItemDomain   ReconcileItemResultItem = "domain"
+	ReconcileItemResultItemGroup    ReconcileItemResultItem = "group"
+	ReconcileItemResultItemList     ReconcileItemResultItem = "list"
+	ReconcileItemResultItemLocalDns ReconcileItemResultItem = "local_dns"
 )
 
 // Valid indicates whether the value is a known member of the ReconcileItemResultItem enum.
@@ -1191,6 +1273,8 @@ func (e ReconcileItemResultItem) Valid() bool {
 	case ReconcileItemResultItemGroup:
 		return true
 	case ReconcileItemResultItemList:
+		return true
+	case ReconcileItemResultItemLocalDns:
 		return true
 	default:
 		return false
@@ -1639,6 +1723,70 @@ type BlockingWriteResults struct {
 	Results []BlockingWriteResult `json:"results"`
 }
 
+// CNAMEDelete defines model for CNAMEDelete.
+type CNAMEDelete struct {
+	// Cname Names an existing CNAME, either by `value` (Pi-hole's string as read) or by `alias`, `target` and `ttl`.
+	Cname CNAMERef `json:"cname"`
+
+	// Reason Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only.
+	Reason *LocalDNSReasonText `json:"reason,omitempty"`
+}
+
+// CNAMEFields defines model for CNAMEFields.
+type CNAMEFields struct {
+	Alias  string `json:"alias"`
+	Target string `json:"target"`
+
+	// Ttl Seconds. Absent uses Pi-hole's dns.localTTL.
+	Ttl *int `json:"ttl,omitempty"`
+}
+
+// CNAMEInput defines model for CNAMEInput.
+type CNAMEInput struct {
+	Alias string `json:"alias"`
+
+	// Reason Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only.
+	Reason *LocalDNSReasonText `json:"reason,omitempty"`
+	Target string              `json:"target"`
+	Ttl    *int                `json:"ttl,omitempty"`
+}
+
+// CNAMERecord defines model for CNAMERecord.
+type CNAMERecord struct {
+	Aliases []string       `json:"aliases"`
+	Comment *string        `json:"comment,omitempty"`
+	Key     string         `json:"key"`
+	Marks   []LocalDNSMark `json:"marks"`
+
+	// Reason The reason given with the latest change to the record made through the app.
+	Reason *LocalDNSReason `json:"reason,omitempty"`
+
+	// Target Absent for an unparsed entry.
+	Target *string `json:"target,omitempty"`
+	Ttl    *int    `json:"ttl,omitempty"`
+
+	// Value Pi-hole's string exactly. Pi-hole's text; show it as text.
+	Value string `json:"value"`
+}
+
+// CNAMERef Names an existing CNAME, either by `value` (Pi-hole's string as read) or by `alias`, `target` and `ttl`.
+type CNAMERef struct {
+	Alias  *string `json:"alias,omitempty"`
+	Target *string `json:"target,omitempty"`
+	Ttl    *int    `json:"ttl,omitempty"`
+	Value  *string `json:"value,omitempty"`
+}
+
+// CNAMEUpdate defines model for CNAMEUpdate.
+type CNAMEUpdate struct {
+	// From Names an existing CNAME, either by `value` (Pi-hole's string as read) or by `alias`, `target` and `ttl`.
+	From CNAMERef `json:"from"`
+
+	// Reason Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only.
+	Reason *LocalDNSReasonText `json:"reason,omitempty"`
+	To     CNAMEFields         `json:"to"`
+}
+
 // CSRFToken defines model for CSRFToken.
 type CSRFToken struct {
 	// CsrfToken Send as the X-CSRF-Token header on every state-changing request.
@@ -1966,6 +2114,69 @@ type CurrentSession struct {
 	User     SessionUser `json:"user"`
 }
 
+// DNSRecord defines model for DNSRecord.
+type DNSRecord struct {
+	Comment   *string  `json:"comment,omitempty"`
+	Hostnames []string `json:"hostnames"`
+
+	// Ip Absent for an unparsed entry.
+	Ip *string `json:"ip,omitempty"`
+
+	// Key The record's normalised form, which matches it across instances.
+	Key   string         `json:"key"`
+	Marks []LocalDNSMark `json:"marks"`
+
+	// Reason The reason given with the latest change to the record made through the app.
+	Reason *LocalDNSReason `json:"reason,omitempty"`
+
+	// Value Pi-hole's string exactly. Pi-hole's text; show it as text.
+	Value string `json:"value"`
+}
+
+// DNSRecordDelete defines model for DNSRecordDelete.
+type DNSRecordDelete struct {
+	// Reason Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only.
+	Reason *LocalDNSReasonText `json:"reason,omitempty"`
+
+	// Record Names an existing record, either by `value` (Pi-hole's string as read) or by `ip` and `hostname`.
+	Record DNSRecordRef `json:"record"`
+}
+
+// DNSRecordFields defines model for DNSRecordFields.
+type DNSRecordFields struct {
+	// Hostname Letters, digits, hyphens and dots, in labels of 1 to 63 characters.
+	Hostname string `json:"hostname"`
+
+	// Ip IPv4 or IPv6, without a zone.
+	Ip string `json:"ip"`
+}
+
+// DNSRecordInput defines model for DNSRecordInput.
+type DNSRecordInput struct {
+	Hostname string `json:"hostname"`
+	Ip       string `json:"ip"`
+
+	// Reason Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only.
+	Reason *LocalDNSReasonText `json:"reason,omitempty"`
+}
+
+// DNSRecordRef Names an existing record, either by `value` (Pi-hole's string as read) or by `ip` and `hostname`.
+type DNSRecordRef struct {
+	Hostname *string `json:"hostname,omitempty"`
+	Ip       *string `json:"ip,omitempty"`
+	Value    *string `json:"value,omitempty"`
+}
+
+// DNSRecordUpdate defines model for DNSRecordUpdate.
+type DNSRecordUpdate struct {
+	// From Names an existing record, either by `value` (Pi-hole's string as read) or by `ip` and `hostname`.
+	From DNSRecordRef `json:"from"`
+
+	// Reason Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only.
+	Reason *LocalDNSReasonText `json:"reason,omitempty"`
+	To     DNSRecordFields     `json:"to"`
+}
+
 // DNSRestartResult defines model for DNSRestartResult.
 type DNSRestartResult struct {
 	// Confirmed Present when ok. False when the connection dropped while the restart was being requested, which happens when the restart goes ahead: check the dashboard in a few seconds.
@@ -2145,10 +2356,11 @@ type DriftClientState struct {
 
 // DriftCounts defines model for DriftCounts.
 type DriftCounts struct {
-	Clients int `json:"clients"`
-	Domains int `json:"domains"`
-	Groups  int `json:"groups"`
-	Lists   int `json:"lists"`
+	Clients  int `json:"clients"`
+	Domains  int `json:"domains"`
+	Groups   int `json:"groups"`
+	Lists    int `json:"lists"`
+	LocalDns int `json:"local_dns"`
 }
 
 // DriftDifference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
@@ -2181,7 +2393,7 @@ type DriftReport struct {
 	// Domains Absent without domains.view on the group.
 	Domains *[]DomainDrift `json:"domains,omitempty"`
 
-	// Drifted Whether any member was found to differ from the primary, in any of the four kinds of item.
+	// Drifted Whether any member was found to differ from the primary, in any of the five kinds of item.
 	Drifted bool `json:"drifted"`
 
 	// Group The group's name.
@@ -2191,6 +2403,9 @@ type DriftReport struct {
 
 	// Lists Absent without lists.view on the group. Since v2.3.0.
 	Lists *[]PiholeListDrift `json:"lists,omitempty"`
+
+	// LocalDns Absent without localdns.view on the group. Since v2.4.0.
+	LocalDns *[]LocalDNSDrift `json:"local_dns,omitempty"`
 
 	// Members The enabled members as of the check, the primary first. Empty when not_checked.
 	Members []MemberRead `json:"members"`
@@ -2228,9 +2443,15 @@ type GeneralSettings struct {
 	AuditRetentionDays int `json:"audit_retention_days"`
 
 	// ClientResetSchedule When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is.
-	ClientResetSchedule    ClientResetSchedule `json:"client_reset_schedule"`
-	IdleTimeoutMinutes     int                 `json:"idle_timeout_minutes"`
-	SessionLifetimeMinutes int                 `json:"session_lifetime_minutes"`
+	ClientResetSchedule ClientResetSchedule `json:"client_reset_schedule"`
+	IdleTimeoutMinutes  int                 `json:"idle_timeout_minutes"`
+
+	// LocaldnsExtraDomains The extra directory domains for the local DNS check; none until saved.
+	LocaldnsExtraDomains []string `json:"localdns_extra_domains"`
+
+	// LocaldnsReasonRequired Whether a local DNS change needs a reason; true until saved.
+	LocaldnsReasonRequired bool `json:"localdns_reason_required"`
+	SessionLifetimeMinutes int  `json:"session_lifetime_minutes"`
 
 	// UpdatedAt Absent until the settings are first saved.
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
@@ -2250,6 +2471,12 @@ type GeneralSettingsInput struct {
 
 	// IdleTimeoutMinutes How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime.
 	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`
+
+	// LocaldnsExtraDomains Directory domains a local DNS name is checked against, besides the LDAP base DN's (since v2.4.0). Each follows the hostname rules; stored lowercased. Absent leaves them as they are.
+	LocaldnsExtraDomains *[]string `json:"localdns_extra_domains,omitempty"`
+
+	// LocaldnsReasonRequired Whether a local DNS change needs a reason (since v2.4.0). Absent leaves it as it is.
+	LocaldnsReasonRequired *bool `json:"localdns_reason_required,omitempty"`
 
 	// SessionLifetimeMinutes How long a session lasts at most, from login. 15 minutes to 30 days.
 	SessionLifetimeMinutes int `json:"session_lifetime_minutes"`
@@ -2509,8 +2736,10 @@ type InstanceTestErrorCode string
 
 // InstanceTestResult defines model for InstanceTestResult.
 type InstanceTestResult struct {
-	Error *InstanceTestError `json:"error,omitempty"`
-	Ok    bool               `json:"ok"`
+	// AppSudo When ok, whether the Pi-hole's webserver.api.app_sudo is on, which the app needs to change local DNS (since v2.4.0). Absent if it couldn't be read.
+	AppSudo *bool              `json:"app_sudo,omitempty"`
+	Error   *InstanceTestError `json:"error,omitempty"`
+	Ok      bool               `json:"ok"`
 }
 
 // LDAPBindPasswordStatus Where the bind password comes from. Never the password.
@@ -2687,6 +2916,102 @@ type LiveCounters struct {
 	Status        map[string]int `json:"status"`
 	TotalClients  int            `json:"total_clients"`
 	UniqueDomains int            `json:"unique_domains"`
+}
+
+// LocalDNS defines model for LocalDNS.
+type LocalDNS struct {
+	Cnames []CNAMERecord `json:"cnames"`
+
+	// Drifted For a mirrored group, whether the last drift check found its members' local DNS differing.
+	Drifted *bool `json:"drifted,omitempty"`
+
+	// Instances Per instance (every enabled member, for a mirrored group), whether the app can change its local DNS.
+	Instances []LocalDNSInstance `json:"instances"`
+
+	// Members For a mirrored group, how each member answered.
+	Members *[]MemberRead `json:"members,omitempty"`
+
+	// ReasonRequired Whether a change needs a reason (the general setting localdns_reason_required), so a form can say so.
+	ReasonRequired bool        `json:"reason_required"`
+	Records        []DNSRecord `json:"records"`
+}
+
+// LocalDNSDrift defines model for LocalDNSDrift.
+type LocalDNSDrift struct {
+	Difference LocalDNSDriftDifference `json:"difference"`
+	Instance   string                  `json:"instance"`
+	InstanceId int64                   `json:"instance_id"`
+	Key        string                  `json:"key"`
+	RecordKind LocalDNSKind            `json:"record_kind"`
+
+	// Value The string on the primary (missing) or on the member (extra). Pi-hole's text; show it as text.
+	Value string `json:"value"`
+
+	// Writable For a missing entry, whether reconcile can copy it (the app could have written it).
+	Writable *bool `json:"writable,omitempty"`
+}
+
+// LocalDNSDriftDifference defines model for LocalDNSDrift.Difference.
+type LocalDNSDriftDifference string
+
+// LocalDNSInstance defines model for LocalDNSInstance.
+type LocalDNSInstance struct {
+	// CnamesLocked Likewise for the CNAMEs.
+	CnamesLocked bool   `json:"cnames_locked"`
+	Instance     string `json:"instance"`
+	InstanceId   int64  `json:"instance_id"`
+
+	// RecordsLocked The records are set by an environment variable, so Pi-hole's API can't change them.
+	RecordsLocked bool `json:"records_locked"`
+
+	// Writable ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is read-only (misc.readOnly). unknown: the member couldn't be read.
+	Writable LocalDNSInstanceWritable `json:"writable"`
+}
+
+// LocalDNSInstanceWritable ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is read-only (misc.readOnly). unknown: the member couldn't be read.
+type LocalDNSInstanceWritable string
+
+// LocalDNSKind defines model for LocalDNSKind.
+type LocalDNSKind string
+
+// LocalDNSMark Why the app couldn't have written an entry: several hostnames or aliases on it, a # comment, or a string that doesn't parse as a record. Such entries can be deleted, but the app never writes one.
+type LocalDNSMark string
+
+// LocalDNSReason The reason given with the latest change to the record made through the app.
+type LocalDNSReason struct {
+	At time.Time `json:"at"`
+	By string    `json:"by"`
+
+	// Reason Empty when none was given (while reasons aren't required).
+	Reason string `json:"reason"`
+}
+
+// LocalDNSReasonText Why the change is made, at most 200 characters once trimmed; required while the general setting localdns_reason_required is on. Kept in the audit log only.
+type LocalDNSReasonText = string
+
+// LocalDNSWriteResult defines model for LocalDNSWriteResult.
+type LocalDNSWriteResult struct {
+	// Added For a failed change, the new record was added but the old one couldn't be deleted.
+	Added *bool `json:"added,omitempty"`
+
+	// AlreadyPresent For an add through a mirrored group, the member already had the record, so nothing was sent.
+	AlreadyPresent *bool `json:"already_present,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error      *WriteError `json:"error,omitempty"`
+	Instance   string      `json:"instance"`
+	InstanceId int64       `json:"instance_id"`
+
+	// RestartPending For a CNAME change, Pi-hole accepted it but hadn't answered again within 15 seconds of restarting its resolver.
+	RestartPending *bool `json:"restart_pending,omitempty"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// LocalDNSWriteResults defines model for LocalDNSWriteResults.
+type LocalDNSWriteResults struct {
+	Results []LocalDNSWriteResult `json:"results"`
 }
 
 // LoginMethods defines model for LoginMethods.
@@ -3220,11 +3545,12 @@ type ReconcileGroup struct {
 
 // ReconcileInput Either `all` true, or at least one item (at most 1000 in all). Each item names a member that isn't the primary.
 type ReconcileInput struct {
-	All     *bool              `json:"all,omitempty"`
-	Clients *[]ReconcileClient `json:"clients,omitempty"`
-	Domains *[]ReconcileDomain `json:"domains,omitempty"`
-	Groups  *[]ReconcileGroup  `json:"groups,omitempty"`
-	Lists   *[]ReconcileList   `json:"lists,omitempty"`
+	All      *bool                `json:"all,omitempty"`
+	Clients  *[]ReconcileClient   `json:"clients,omitempty"`
+	Domains  *[]ReconcileDomain   `json:"domains,omitempty"`
+	Groups   *[]ReconcileGroup    `json:"groups,omitempty"`
+	Lists    *[]ReconcileList     `json:"lists,omitempty"`
+	LocalDns *[]ReconcileLocalDNS `json:"local_dns,omitempty"`
 }
 
 // ReconcileItemResult defines model for ReconcileItemResult.
@@ -3243,17 +3569,24 @@ type ReconcileItemResult struct {
 	Error *WriteError `json:"error,omitempty"`
 
 	// Group For a Pi-hole group, its name.
-	Group      *string                  `json:"group,omitempty"`
-	Instance   string                   `json:"instance"`
-	InstanceId int64                    `json:"instance_id"`
-	Item       ReconcileItemResultItem  `json:"item"`
-	Kind       *ReconcileItemResultKind `json:"kind,omitempty"`
-	ListType   *PiholeListType          `json:"list_type,omitempty"`
+	Group      *string                 `json:"group,omitempty"`
+	Instance   string                  `json:"instance"`
+	InstanceId int64                   `json:"instance_id"`
+	Item       ReconcileItemResultItem `json:"item"`
+
+	// Key For a local DNS record or CNAME, with `record_kind`.
+	Key      *string                  `json:"key,omitempty"`
+	Kind     *ReconcileItemResultKind `json:"kind,omitempty"`
+	ListType *PiholeListType          `json:"list_type,omitempty"`
 
 	// NeedsGravity For a list added or enabled on the member, which waits for gravity there.
-	NeedsGravity *bool                     `json:"needs_gravity,omitempty"`
-	Status       ReconcileItemResultStatus `json:"status"`
-	Type         *ReconcileItemResultType  `json:"type,omitempty"`
+	NeedsGravity *bool         `json:"needs_gravity,omitempty"`
+	RecordKind   *LocalDNSKind `json:"record_kind,omitempty"`
+
+	// RestartPending For a CNAME change, the member hadn't answered again within 15 seconds of restarting its resolver.
+	RestartPending *bool                     `json:"restart_pending,omitempty"`
+	Status         ReconcileItemResultStatus `json:"status"`
+	Type           *ReconcileItemResultType  `json:"type,omitempty"`
 }
 
 // ReconcileItemResultAction none means the item already matched the primary, or (with an error) wasn't changed.
@@ -3277,6 +3610,15 @@ type ReconcileList struct {
 	Address    string         `json:"address"`
 	InstanceId int64          `json:"instance_id"`
 	Type       PiholeListType `json:"type"`
+}
+
+// ReconcileLocalDNS defines model for ReconcileLocalDNS.
+type ReconcileLocalDNS struct {
+	InstanceId int64 `json:"instance_id"`
+
+	// Key As the drift report shows it.
+	Key        string       `json:"key"`
+	RecordKind LocalDNSKind `json:"record_kind"`
 }
 
 // ReconcileResult defines model for ReconcileResult.
@@ -3670,7 +4012,7 @@ type VersionInfo struct {
 
 // WriteError Why an instance failed or was skipped. Present exactly when the status isn't ok.
 type WriteError struct {
-	// Code pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member), pihole_group_missing (it has no Pi-hole group with a name the change uses) or validation_failed (the Pi-hole group a rename or delete names is that member's Default group).
+	// Code pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member), pihole_group_missing (it has no Pi-hole group with a name the change uses) or validation_failed (the Pi-hole group a rename or delete names is that member's Default group). Since v2.4.0 also pihole_app_sudo_off and pihole_config_locked (the Pi-hole won't let the app change its config), and, for a member skipped by a CNAME write that goes one member at a time, stopped (an earlier member failed) or time_limit (the write ran out of time).
 	Code string `json:"code"`
 
 	// Message Safe to show to the user.
@@ -3760,6 +4102,9 @@ type InvalidOrRejected = Error
 
 // LDAPFailed defines model for LDAPFailed.
 type LDAPFailed = Error
+
+// LocalDNSConflict defines model for LocalDNSConflict.
+type LocalDNSConflict = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
@@ -3868,13 +4213,13 @@ type ListClientResetRunsParams struct {
 
 // SetRoleGrantsParams defines parameters for SetRoleGrants.
 type SetRoleGrantsParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // RemoveLDAPMappingParams defines parameters for RemoveLDAPMapping.
 type RemoveLDAPMappingParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -3952,7 +4297,7 @@ type DeletePiholeGroupParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -3961,7 +4306,7 @@ type UpdatePiholeGroupParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -3993,6 +4338,54 @@ type UpdateListParams struct {
 type AddListParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// DeleteCNAMEParams defines parameters for DeleteCNAME.
+type DeleteCNAMEParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// UpdateCNAMEParams defines parameters for UpdateCNAME.
+type UpdateCNAMEParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// AddCNAMEParams defines parameters for AddCNAME.
+type AddCNAMEParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// DeleteDNSRecordParams defines parameters for DeleteDNSRecord.
+type DeleteDNSRecordParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// UpdateDNSRecordParams defines parameters for UpdateDNSRecord.
+type UpdateDNSRecordParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// AddDNSRecordParams defines parameters for AddDNSRecord.
+type AddDNSRecordParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // ListQueriesParams defines parameters for ListQueries.
@@ -4039,19 +4432,19 @@ type ListQueriesParamsResult string
 
 // DeleteUserParams defines parameters for DeleteUser.
 type DeleteUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // DisableUserParams defines parameters for DisableUser.
 type DisableUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // SetUserRolesParams defines parameters for SetUserRoles.
 type SetUserRolesParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4159,6 +4552,24 @@ type UpdateListJSONRequestBody = PiholeListUpdate
 
 // AddListJSONRequestBody defines body for AddList for application/json ContentType.
 type AddListJSONRequestBody = PiholeListInput
+
+// DeleteCNAMEJSONRequestBody defines body for DeleteCNAME for application/json ContentType.
+type DeleteCNAMEJSONRequestBody = CNAMEDelete
+
+// UpdateCNAMEJSONRequestBody defines body for UpdateCNAME for application/json ContentType.
+type UpdateCNAMEJSONRequestBody = CNAMEUpdate
+
+// AddCNAMEJSONRequestBody defines body for AddCNAME for application/json ContentType.
+type AddCNAMEJSONRequestBody = CNAMEInput
+
+// DeleteDNSRecordJSONRequestBody defines body for DeleteDNSRecord for application/json ContentType.
+type DeleteDNSRecordJSONRequestBody = DNSRecordDelete
+
+// UpdateDNSRecordJSONRequestBody defines body for UpdateDNSRecord for application/json ContentType.
+type UpdateDNSRecordJSONRequestBody = DNSRecordUpdate
+
+// AddDNSRecordJSONRequestBody defines body for AddDNSRecord for application/json ContentType.
+type AddDNSRecordJSONRequestBody = DNSRecordInput
 
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = UserCreate
@@ -4447,6 +4858,27 @@ type ServerInterface interface {
 	// AddList Subscribe to a list
 	// (POST /api/v1/targets/{target}/lists)
 	AddList(w http.ResponseWriter, r *http.Request, target TargetID, params AddListParams)
+	// ListLocalDNS Local DNS records and CNAMEs
+	// (GET /api/v1/targets/{target}/local-dns)
+	ListLocalDNS(w http.ResponseWriter, r *http.Request, target TargetID)
+	// DeleteCNAME Delete a CNAME
+	// (DELETE /api/v1/targets/{target}/local-dns/cnames)
+	DeleteCNAME(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteCNAMEParams)
+	// UpdateCNAME Change a CNAME
+	// (PATCH /api/v1/targets/{target}/local-dns/cnames)
+	UpdateCNAME(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateCNAMEParams)
+	// AddCNAME Add a CNAME
+	// (POST /api/v1/targets/{target}/local-dns/cnames)
+	AddCNAME(w http.ResponseWriter, r *http.Request, target TargetID, params AddCNAMEParams)
+	// DeleteDNSRecord Delete a local DNS record
+	// (DELETE /api/v1/targets/{target}/local-dns/records)
+	DeleteDNSRecord(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteDNSRecordParams)
+	// UpdateDNSRecord Change a local DNS record
+	// (PATCH /api/v1/targets/{target}/local-dns/records)
+	UpdateDNSRecord(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateDNSRecordParams)
+	// AddDNSRecord Add a local DNS record
+	// (POST /api/v1/targets/{target}/local-dns/records)
+	AddDNSRecord(w http.ResponseWriter, r *http.Request, target TargetID, params AddDNSRecordParams)
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(w http.ResponseWriter, r *http.Request, target TargetID, params ListQueriesParams)
@@ -7021,6 +7453,336 @@ func (siw *ServerInterfaceWrapper) AddList(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// ListLocalDNS operation middleware
+func (siw *ServerInterfaceWrapper) ListLocalDNS(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLocalDNS(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteCNAME operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCNAME(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCNAMEParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteCNAME(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateCNAME operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCNAME(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateCNAMEParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateCNAME(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddCNAME operation middleware
+func (siw *ServerInterfaceWrapper) AddCNAME(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddCNAMEParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddCNAME(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDNSRecord operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDNSRecord(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteDNSRecordParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDNSRecord(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDNSRecord operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDNSRecord(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateDNSRecordParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDNSRecord(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddDNSRecord operation middleware
+func (siw *ServerInterfaceWrapper) AddDNSRecord(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddDNSRecordParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddDNSRecord(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListQueries operation middleware
 func (siw *ServerInterfaceWrapper) ListQueries(w http.ResponseWriter, r *http.Request) {
 
@@ -7681,6 +8443,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/gravity", wrapper.GetLatestGravity)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/gravity", wrapper.StartGravity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/gravity/{run}", wrapper.GetGravityRun)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns", wrapper.ListLocalDNS)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/records", wrapper.DeleteDNSRecord)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/records", wrapper.UpdateDNSRecord)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/records", wrapper.AddDNSRecord)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/cnames", wrapper.DeleteCNAME)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/cnames", wrapper.UpdateCNAME)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/cnames", wrapper.AddCNAME)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/queries", wrapper.ListQueries)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.GetClientResetRules)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.SetClientResetRules)
@@ -7705,6 +8474,8 @@ type InstanceGroupConflictJSONResponse Error
 type InvalidOrRejectedJSONResponse Error
 
 type LDAPFailedJSONResponse Error
+
+type LocalDNSConflictJSONResponse Error
 
 type NotFoundJSONResponse Error
 
@@ -16633,6 +17404,1038 @@ func (response AddList503JSONResponse) VisitAddListResponse(w http.ResponseWrite
 	return err
 }
 
+type ListLocalDNSRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListLocalDNSResponseObject interface {
+	VisitListLocalDNSResponse(w http.ResponseWriter) error
+}
+
+type ListLocalDNS200JSONResponse LocalDNS
+
+func (response ListLocalDNS200JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocalDNS400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListLocalDNS400JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocalDNS401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListLocalDNS401JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocalDNS403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListLocalDNS403JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocalDNS404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListLocalDNS404JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocalDNS409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListLocalDNS409JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocalDNS502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListLocalDNS502JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocalDNS503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListLocalDNS503JSONResponse) VisitListLocalDNSResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAMERequestObject struct {
+	Target TargetID `json:"target"`
+	Params DeleteCNAMEParams
+	Body   *DeleteCNAMEJSONRequestBody
+}
+
+type DeleteCNAMEResponseObject interface {
+	VisitDeleteCNAMEResponse(w http.ResponseWriter) error
+}
+
+type DeleteCNAME200JSONResponse LocalDNSWriteResults
+
+func (response DeleteCNAME200JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME207JSONResponse LocalDNSWriteResults
+
+func (response DeleteCNAME207JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response DeleteCNAME400JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteCNAME401JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteCNAME403JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteCNAME404JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME409JSONResponse struct{ LocalDNSConflictJSONResponse }
+
+func (response DeleteCNAME409JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DeleteCNAME415JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response DeleteCNAME502JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCNAME503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteCNAME503JSONResponse) VisitDeleteCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAMERequestObject struct {
+	Target TargetID `json:"target"`
+	Params UpdateCNAMEParams
+	Body   *UpdateCNAMEJSONRequestBody
+}
+
+type UpdateCNAMEResponseObject interface {
+	VisitUpdateCNAMEResponse(w http.ResponseWriter) error
+}
+
+type UpdateCNAME200JSONResponse LocalDNSWriteResults
+
+func (response UpdateCNAME200JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME207JSONResponse LocalDNSWriteResults
+
+func (response UpdateCNAME207JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateCNAME400JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateCNAME401JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateCNAME403JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateCNAME404JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME409JSONResponse struct{ LocalDNSConflictJSONResponse }
+
+func (response UpdateCNAME409JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateCNAME415JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateCNAME502JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCNAME503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateCNAME503JSONResponse) VisitUpdateCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAMERequestObject struct {
+	Target TargetID `json:"target"`
+	Params AddCNAMEParams
+	Body   *AddCNAMEJSONRequestBody
+}
+
+type AddCNAMEResponseObject interface {
+	VisitAddCNAMEResponse(w http.ResponseWriter) error
+}
+
+type AddCNAME200JSONResponse LocalDNSWriteResults
+
+func (response AddCNAME200JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME207JSONResponse LocalDNSWriteResults
+
+func (response AddCNAME207JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response AddCNAME400JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddCNAME401JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddCNAME403JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddCNAME404JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME409JSONResponse struct{ LocalDNSConflictJSONResponse }
+
+func (response AddCNAME409JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response AddCNAME415JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response AddCNAME502JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddCNAME503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response AddCNAME503JSONResponse) VisitAddCNAMEResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecordRequestObject struct {
+	Target TargetID `json:"target"`
+	Params DeleteDNSRecordParams
+	Body   *DeleteDNSRecordJSONRequestBody
+}
+
+type DeleteDNSRecordResponseObject interface {
+	VisitDeleteDNSRecordResponse(w http.ResponseWriter) error
+}
+
+type DeleteDNSRecord200JSONResponse LocalDNSWriteResults
+
+func (response DeleteDNSRecord200JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord207JSONResponse LocalDNSWriteResults
+
+func (response DeleteDNSRecord207JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response DeleteDNSRecord400JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteDNSRecord401JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteDNSRecord403JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteDNSRecord404JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord409JSONResponse struct{ LocalDNSConflictJSONResponse }
+
+func (response DeleteDNSRecord409JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DeleteDNSRecord415JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response DeleteDNSRecord502JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDNSRecord503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteDNSRecord503JSONResponse) VisitDeleteDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecordRequestObject struct {
+	Target TargetID `json:"target"`
+	Params UpdateDNSRecordParams
+	Body   *UpdateDNSRecordJSONRequestBody
+}
+
+type UpdateDNSRecordResponseObject interface {
+	VisitUpdateDNSRecordResponse(w http.ResponseWriter) error
+}
+
+type UpdateDNSRecord200JSONResponse LocalDNSWriteResults
+
+func (response UpdateDNSRecord200JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord207JSONResponse LocalDNSWriteResults
+
+func (response UpdateDNSRecord207JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateDNSRecord400JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateDNSRecord401JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateDNSRecord403JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateDNSRecord404JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord409JSONResponse struct{ LocalDNSConflictJSONResponse }
+
+func (response UpdateDNSRecord409JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateDNSRecord415JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateDNSRecord502JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDNSRecord503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateDNSRecord503JSONResponse) VisitUpdateDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecordRequestObject struct {
+	Target TargetID `json:"target"`
+	Params AddDNSRecordParams
+	Body   *AddDNSRecordJSONRequestBody
+}
+
+type AddDNSRecordResponseObject interface {
+	VisitAddDNSRecordResponse(w http.ResponseWriter) error
+}
+
+type AddDNSRecord200JSONResponse LocalDNSWriteResults
+
+func (response AddDNSRecord200JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord207JSONResponse LocalDNSWriteResults
+
+func (response AddDNSRecord207JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response AddDNSRecord400JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddDNSRecord401JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddDNSRecord403JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddDNSRecord404JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord409JSONResponse struct{ LocalDNSConflictJSONResponse }
+
+func (response AddDNSRecord409JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response AddDNSRecord415JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response AddDNSRecord502JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDNSRecord503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response AddDNSRecord503JSONResponse) VisitAddDNSRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListQueriesRequestObject struct {
 	Target TargetID `json:"target"`
 	Params ListQueriesParams
@@ -17904,6 +19707,27 @@ type StrictServerInterface interface {
 	// AddList Subscribe to a list
 	// (POST /api/v1/targets/{target}/lists)
 	AddList(ctx context.Context, request AddListRequestObject) (AddListResponseObject, error)
+	// ListLocalDNS Local DNS records and CNAMEs
+	// (GET /api/v1/targets/{target}/local-dns)
+	ListLocalDNS(ctx context.Context, request ListLocalDNSRequestObject) (ListLocalDNSResponseObject, error)
+	// DeleteCNAME Delete a CNAME
+	// (DELETE /api/v1/targets/{target}/local-dns/cnames)
+	DeleteCNAME(ctx context.Context, request DeleteCNAMERequestObject) (DeleteCNAMEResponseObject, error)
+	// UpdateCNAME Change a CNAME
+	// (PATCH /api/v1/targets/{target}/local-dns/cnames)
+	UpdateCNAME(ctx context.Context, request UpdateCNAMERequestObject) (UpdateCNAMEResponseObject, error)
+	// AddCNAME Add a CNAME
+	// (POST /api/v1/targets/{target}/local-dns/cnames)
+	AddCNAME(ctx context.Context, request AddCNAMERequestObject) (AddCNAMEResponseObject, error)
+	// DeleteDNSRecord Delete a local DNS record
+	// (DELETE /api/v1/targets/{target}/local-dns/records)
+	DeleteDNSRecord(ctx context.Context, request DeleteDNSRecordRequestObject) (DeleteDNSRecordResponseObject, error)
+	// UpdateDNSRecord Change a local DNS record
+	// (PATCH /api/v1/targets/{target}/local-dns/records)
+	UpdateDNSRecord(ctx context.Context, request UpdateDNSRecordRequestObject) (UpdateDNSRecordResponseObject, error)
+	// AddDNSRecord Add a local DNS record
+	// (POST /api/v1/targets/{target}/local-dns/records)
+	AddDNSRecord(ctx context.Context, request AddDNSRecordRequestObject) (AddDNSRecordResponseObject, error)
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(ctx context.Context, request ListQueriesRequestObject) (ListQueriesResponseObject, error)
@@ -20552,6 +22376,236 @@ func (sh *strictHandler) AddList(w http.ResponseWriter, r *http.Request, target 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AddListResponseObject); ok {
 		if err := validResponse.VisitAddListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListLocalDNS operation middleware
+func (sh *strictHandler) ListLocalDNS(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListLocalDNSRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLocalDNS(ctx, request.(ListLocalDNSRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLocalDNS")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLocalDNSResponseObject); ok {
+		if err := validResponse.VisitListLocalDNSResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteCNAME operation middleware
+func (sh *strictHandler) DeleteCNAME(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteCNAMEParams) {
+	var request DeleteCNAMERequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body DeleteCNAMEJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteCNAME(ctx, request.(DeleteCNAMERequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteCNAME")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteCNAMEResponseObject); ok {
+		if err := validResponse.VisitDeleteCNAMEResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateCNAME operation middleware
+func (sh *strictHandler) UpdateCNAME(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateCNAMEParams) {
+	var request UpdateCNAMERequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body UpdateCNAMEJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateCNAME(ctx, request.(UpdateCNAMERequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateCNAME")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateCNAMEResponseObject); ok {
+		if err := validResponse.VisitUpdateCNAMEResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddCNAME operation middleware
+func (sh *strictHandler) AddCNAME(w http.ResponseWriter, r *http.Request, target TargetID, params AddCNAMEParams) {
+	var request AddCNAMERequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body AddCNAMEJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddCNAME(ctx, request.(AddCNAMERequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddCNAME")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddCNAMEResponseObject); ok {
+		if err := validResponse.VisitAddCNAMEResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteDNSRecord operation middleware
+func (sh *strictHandler) DeleteDNSRecord(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteDNSRecordParams) {
+	var request DeleteDNSRecordRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body DeleteDNSRecordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteDNSRecord(ctx, request.(DeleteDNSRecordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteDNSRecord")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteDNSRecordResponseObject); ok {
+		if err := validResponse.VisitDeleteDNSRecordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateDNSRecord operation middleware
+func (sh *strictHandler) UpdateDNSRecord(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateDNSRecordParams) {
+	var request UpdateDNSRecordRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body UpdateDNSRecordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateDNSRecord(ctx, request.(UpdateDNSRecordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateDNSRecord")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateDNSRecordResponseObject); ok {
+		if err := validResponse.VisitUpdateDNSRecordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddDNSRecord operation middleware
+func (sh *strictHandler) AddDNSRecord(w http.ResponseWriter, r *http.Request, target TargetID, params AddDNSRecordParams) {
+	var request AddDNSRecordRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body AddDNSRecordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddDNSRecord(ctx, request.(AddDNSRecordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddDNSRecord")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddDNSRecordResponseObject); ok {
+		if err := validResponse.VisitAddDNSRecordResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

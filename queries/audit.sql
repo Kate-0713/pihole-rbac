@@ -30,3 +30,18 @@ LIMIT sqlc.arg(row_limit);
 
 -- name: DeleteAuditBefore :execrows
 DELETE FROM audit_log WHERE at < ?;
+
+-- name: ListLocalDNSChanges :many
+-- The newest local DNS changes made through the app on an instance, for each record's latest reason: the action,
+-- the record's key, the reason given and who and when. Rows recorded as failures don't count, except a change that
+-- added the new record before failing to delete the old one.
+SELECT action,
+       CAST(COALESCE(json_extract(detail, '$.key'), '') AS TEXT)    AS record_key,
+       CAST(COALESCE(json_extract(detail, '$.reason'), '') AS TEXT) AS reason,
+       username, at
+FROM audit_log
+WHERE instance_id = sqlc.arg(instance_id)
+  AND (result = 'success' OR json_extract(detail, '$.added') = 1)
+  AND action IN ('dnsrecord_add', 'dnsrecord_update', 'dnsrecord_delete', 'cname_add', 'cname_update', 'cname_delete')
+ORDER BY id DESC
+LIMIT sqlc.arg(row_limit);

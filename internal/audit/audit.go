@@ -104,6 +104,15 @@ const (
 	ActionListUpdate = "list_update"
 	ActionListDelete = "list_delete"
 
+	// Local DNS records and CNAMEs, since v2.4.0: once per instance, with the record's key and Pi-hole's string, and
+	// the reason. A change (add then delete, since Pi-hole has no edit) is one _update row.
+	ActionDNSRecordAdd    = "dnsrecord_add"
+	ActionDNSRecordUpdate = "dnsrecord_update"
+	ActionDNSRecordDelete = "dnsrecord_delete"
+	ActionCNAMEAdd        = "cname_add"
+	ActionCNAMEUpdate     = "cname_update"
+	ActionCNAMEDelete     = "cname_delete"
+
 	// Gravity runs, since v2.3.0: when a run starts, and per instance when its part ends.
 	ActionGravityStart = "gravity_start"
 	ActionGravityRun   = "gravity_run"

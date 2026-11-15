@@ -775,14 +775,15 @@ func quoteJoin(names []string) string {
 	return strings.Join(q, ", ")
 }
 
-// Test runs the connection test against an instance's stored settings, without changing anything. It isn't audited.
-func (s *Service) Test(ctx context.Context, a rbac.Actor, id int64) error {
+// Test runs the connection test against an instance's stored settings, without changing anything, and reports
+// whether the Pi-hole's webserver.api.app_sudo is on (nil if that couldn't be read). It isn't audited.
+func (s *Service) Test(ctx context.Context, a rbac.Actor, id int64) (appSudo *bool, err error) {
 	if err := s.precheck(ctx, a, audit.ActionInstanceTest, id); err != nil {
-		return err
+		return nil, err
 	}
 	inst, err := s.Get(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return s.Pool.Test(ctx, inst)
+	return s.Pool.TestAppSudo(ctx, inst)
 }

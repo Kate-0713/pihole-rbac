@@ -10,6 +10,7 @@ export type DomainDrift = Schemas['DomainDrift'];
 export type ClientDrift = Schemas['ClientDrift'];
 export type PiholeGroupDrift = Schemas['PiholeGroupDrift'];
 export type PiholeListDrift = Schemas['PiholeListDrift'];
+export type LocalDNSDrift = Schemas['LocalDNSDrift'];
 export type Difference = Schemas['DriftDifference'];
 
 export const differenceLabel: Record<Difference, string> = {
@@ -84,7 +85,8 @@ export function summary(r: DriftReport): string {
 		count(r.counts.domains, 'domain list entry', 'domain list entries'),
 		count(r.counts.clients, 'client', 'clients'),
 		count(r.counts.groups, 'Pi-hole group', 'Pi-hole groups'),
-		count(r.counts.lists, 'subscribed list', 'subscribed lists')
+		count(r.counts.lists, 'subscribed list', 'subscribed lists'),
+		count(r.counts.local_dns, 'local DNS entry', 'local DNS entries')
 	].filter((p) => p !== '');
 	return `Members differ from the primary in ${joinAnd(parts)}.`;
 }
@@ -105,9 +107,11 @@ export type MemberPlan = { member: string; lines: string[] };
 
 const verb: Record<Difference, string> = { missing: 'add', changed: 'change', extra: 'delete' };
 
-// plan says what "Reconcile all" will do, member by member, from the report: entries, clients and subscribed lists
-// added, changed or deleted, and Pi-hole groups created or changed (a group only a member has is kept). Types the user can't see are
-// counted at the end, since the report has their numbers but not who they belong to.
+// plan says what "Reconcile all" will do, member by member, from the report: entries, clients, subscribed lists and
+// local DNS entries added, changed or deleted, and Pi-hole groups created or changed (a group only a member has is
+// kept). A local DNS entry the app couldn't have written (several names, a comment) isn't copied, and is listed as
+// such. Types the user can't see are counted at the end, since the report has their numbers but not who they belong
+// to.
 export function plan(r: DriftReport): { members: MemberPlan[]; hidden: string[]; keptGroups: number } {
 	const byMember = new Map<string, Map<string, number>>();
 	const add = (member: string, line: string) => {
@@ -118,6 +122,11 @@ export function plan(r: DriftReport): { members: MemberPlan[]; hidden: string[];
 	for (const d of r.domains ?? []) add(d.instance, `${verb[d.difference]}|domain list entry|domain list entries`);
 	for (const c of r.clients ?? []) add(c.instance, `${verb[c.difference]}|client|clients`);
 	for (const l of r.lists ?? []) add(l.instance, `${verb[l.difference]}|subscribed list|subscribed lists`);
+	for (const d of r.local_dns ?? []) {
+		if (d.difference === 'missing' && d.writable === false) {
+			add(d.instance, "leave out|local DNS entry the app can't copy|local DNS entries the app can't copy");
+		} else add(d.instance, `${verb[d.difference]}|local DNS entry|local DNS entries`);
+	}
 	let keptGroups = 0;
 	for (const g of r.groups ?? []) {
 		if (g.difference === 'extra') keptGroups++;
@@ -134,6 +143,7 @@ export function plan(r: DriftReport): { members: MemberPlan[]; hidden: string[];
 	if (!r.domains && r.counts.domains > 0) hidden.push(count(r.counts.domains, 'domain list entry', 'domain list entries'));
 	if (!r.clients && r.counts.clients > 0) hidden.push(count(r.counts.clients, 'client', 'clients'));
 	if (!r.lists && r.counts.lists > 0) hidden.push(count(r.counts.lists, 'subscribed list', 'subscribed lists'));
+	if (!r.local_dns && r.counts.local_dns > 0) hidden.push(count(r.counts.local_dns, 'local DNS entry', 'local DNS entries'));
 	return { members, hidden, keptGroups };
 }
 
@@ -142,6 +152,7 @@ export function reconcileKey(r: ReconcileItemResult): string {
 	if (r.item === 'domain') return r.domain ?? '';
 	if (r.item === 'client') return r.client ?? '';
 	if (r.item === 'list') return r.address ?? '';
+	if (r.item === 'local_dns') return r.key ?? '';
 	return `the ${r.group ?? ''} group`;
 }
 

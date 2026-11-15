@@ -514,17 +514,41 @@ func (p *Pool) Test(ctx context.Context, inst Instance) error {
 
 // TestWith is Test with a given password, such as one about to be stored.
 func (p *Pool) TestWith(ctx context.Context, inst Instance, pw secrets.Value) error {
+	_, err := p.testWith(ctx, inst, pw, false)
+	return err
+}
+
+// TestAppSudo is Test that also reads, once the test has passed, whether the Pi-hole's webserver.api.app_sudo is
+// on, which the app needs to change its config. appSudo is nil when that read failed.
+func (p *Pool) TestAppSudo(ctx context.Context, inst Instance) (appSudo *bool, err error) {
+	pw, err := p.password(inst)
+	if err != nil {
+		return nil, err
+	}
+	return p.testWith(ctx, inst, pw, true)
+}
+
+func (p *Pool) testWith(ctx context.Context, inst Instance, pw secrets.Value, readSudo bool) (*bool, error) {
 	c, err := piholeapi.New(piholeapi.Options{
 		BaseURL: inst.BaseURL, Password: pw, TLSMode: inst.TLSMode, CAFile: inst.CAFile, Timeout: p.timeout,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrMisconfigured, err)
+		return nil, fmt.Errorf("%w: %v", ErrMisconfigured, err)
 	}
-	_, err = c.GetStatus(ctx)
 	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.timeout)
 	defer cancel()
-	_ = c.Close(closeCtx)
-	return err
+	defer func() { _ = c.Close(closeCtx) }()
+	if _, err := c.GetStatus(ctx); err != nil {
+		return nil, err
+	}
+	if !readSudo {
+		return nil, nil
+	}
+	on, err := c.AppSudo(ctx)
+	if err != nil {
+		return nil, nil
+	}
+	return &on, nil
 }
 
 // Close logs out every client and waits for the logouts, or for ctx. The pool can't be used afterwards.

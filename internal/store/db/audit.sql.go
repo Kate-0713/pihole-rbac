@@ -159,6 +159,64 @@ func (q *Queries) ListAudit(ctx context.Context, arg ListAuditParams) ([]AuditLo
 	return items, nil
 }
 
+const listLocalDNSChanges = `-- name: ListLocalDNSChanges :many
+SELECT action,
+       CAST(COALESCE(json_extract(detail, '$.key'), '') AS TEXT)    AS record_key,
+       CAST(COALESCE(json_extract(detail, '$.reason'), '') AS TEXT) AS reason,
+       username, at
+FROM audit_log
+WHERE instance_id = ?1
+  AND (result = 'success' OR json_extract(detail, '$.added') = 1)
+  AND action IN ('dnsrecord_add', 'dnsrecord_update', 'dnsrecord_delete', 'cname_add', 'cname_update', 'cname_delete')
+ORDER BY id DESC
+LIMIT ?2
+`
+
+type ListLocalDNSChangesParams struct {
+	InstanceID sql.NullInt64
+	RowLimit   int64
+}
+
+type ListLocalDNSChangesRow struct {
+	Action    string
+	RecordKey string
+	Reason    string
+	Username  string
+	At        int64
+}
+
+// The newest local DNS changes made through the app on an instance, for each record's latest reason: the action,
+// the record's key, the reason given and who and when. Rows recorded as failures don't count, except a change that
+// added the new record before failing to delete the old one.
+func (q *Queries) ListLocalDNSChanges(ctx context.Context, arg ListLocalDNSChangesParams) ([]ListLocalDNSChangesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLocalDNSChanges, arg.InstanceID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLocalDNSChangesRow{}
+	for rows.Next() {
+		var i ListLocalDNSChangesRow
+		if err := rows.Scan(
+			&i.Action,
+			&i.RecordKey,
+			&i.Reason,
+			&i.Username,
+			&i.At,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentAudit = `-- name: ListRecentAudit :many
 SELECT id, at, user_id, username, "action", target, instance_id, instance_name, result, detail, ip FROM audit_log ORDER BY id DESC LIMIT ?
 `
