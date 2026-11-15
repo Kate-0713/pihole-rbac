@@ -128,6 +128,15 @@ func (q *Queries) DeleteChannelRules(ctx context.Context, channelID int64) error
 	return err
 }
 
+const deleteProtectedGroup = `-- name: DeleteProtectedGroup :exec
+DELETE FROM notification_protected_groups WHERE id = ?
+`
+
+func (q *Queries) DeleteProtectedGroup(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteProtectedGroup, id)
+	return err
+}
+
 const getChannel = `-- name: GetChannel :one
 SELECT id, kind, name, env_name, config, secret_ciphertext, secret_nonce, secret_key_id, secret_updated_at, secret_updated_by, enabled, created_at FROM notification_channels WHERE id = ?
 `
@@ -329,6 +338,20 @@ func (q *Queries) ProtectedGroupsForInstance(ctx context.Context, instanceID sql
 		return nil, err
 	}
 	return items, nil
+}
+
+const renameProtectedGroup = `-- name: RenameProtectedGroup :exec
+UPDATE notification_protected_groups SET pihole_group = ? WHERE id = ?
+`
+
+type RenameProtectedGroupParams struct {
+	PiholeGroup string
+	ID          int64
+}
+
+func (q *Queries) RenameProtectedGroup(ctx context.Context, arg RenameProtectedGroupParams) error {
+	_, err := q.db.ExecContext(ctx, renameProtectedGroup, arg.PiholeGroup, arg.ID)
+	return err
 }
 
 const setChannelSecret = `-- name: SetChannelSecret :exec

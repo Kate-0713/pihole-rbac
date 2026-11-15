@@ -18,7 +18,9 @@ import (
 // SHA-256 (with line endings normalised to LF) is pinned here. A new migration is added to this list when the
 // release that contains it ships, never changed afterwards.
 var releasedMigrations = map[string]string{
-	"00001_initial.sql": "591c78db4325b3908552fa32d64d5acb39f2347c9c3d08a9f5390d8d2caa25cf", // v2.0.0
+	"00001_initial.sql":                      "591c78db4325b3908552fa32d64d5acb39f2347c9c3d08a9f5390d8d2caa25cf", // v2.0.0
+	"00002_blocking_indefinite.sql":          "535cbc74e10592a8d1fb651e1e791fc8e5bc2e126887ca446bb57197f56a90a9", // v2.1.0
+	"00003_client_reset_scheduled_event.sql": "17763399adcd6fdda0a87ca77fd98c17ef70102912471595596d8bf840f4b094", // v2.1.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
@@ -89,6 +91,43 @@ func TestUpgradeFromV2_0_0(t *testing.T) {
 	} {
 		if n := count(rules, tt.channel, tt.event); n != tt.want {
 			t.Errorf("channel %d, event %s: %d rules, want %d", tt.channel, tt.event, n, tt.want)
+		}
+	}
+}
+
+// TestUpgradeFromV2_2_0: a database as v2.2.0 left it (version 3, unchanged since v2.1.0) gets piholegroups.edit on
+// the builtin admin role only. A role that can edit domains and clients doesn't get it.
+func TestUpgradeFromV2_2_0(t *testing.T) {
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'domains.edit', 'all'), (10, 'clients.edit', 'all')`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	grants := `SELECT count(*) FROM role_grants WHERE role_id = ? AND permission = 'piholegroups.edit' AND scope_type = 'all'`
+	for _, tt := range []struct {
+		role int
+		want int
+	}{{1, 1}, {10, 0}} {
+		var n int
+		if err := s.r.QueryRow(grants, tt.role).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != tt.want {
+			t.Errorf("role %d has %d piholegroups.edit grants, want %d", tt.role, n, tt.want)
 		}
 	}
 }

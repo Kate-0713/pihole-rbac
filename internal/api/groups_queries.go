@@ -29,8 +29,12 @@ func (s *Server) ListPiholeGroups(ctx context.Context, req gen.ListPiholeGroupsR
 		return nil, err
 	}
 	out := gen.PiholeGroupList{Groups: make([]gen.PiholeGroup, 0, len(list))}
+	if rep, ok := s.reportOf(tg); ok {
+		drifted := rep.GroupsDrifted()
+		out.Drifted = &drifted
+	}
 	for _, g := range list {
-		out.Groups = append(out.Groups, gen.PiholeGroup{Id: g.ID, Name: g.Name, Comment: g.Comment, Enabled: g.Enabled})
+		out.Groups = append(out.Groups, piholeGroupJSON(g))
 	}
 	return gen.ListPiholeGroups200JSONResponse(out), nil
 }

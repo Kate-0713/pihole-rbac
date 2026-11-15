@@ -40,6 +40,11 @@ var actions = []ActionInfo{
 	{ActionDomainUpdate, GroupPihole, "A domain's groups or comment changed"},
 	{ActionDomainDelete, GroupPihole, "A domain removed"},
 	{ActionClientUpdate, GroupPihole, "A client's groups or comment changed"},
+	{ActionPiholeGroupAdd, GroupPihole, "A Pi-hole group added"},
+	{ActionPiholeGroupUpdate, GroupPihole, "A Pi-hole group renamed, or its comment changed"},
+	{ActionPiholeGroupEnable, GroupPihole, "A Pi-hole group enabled"},
+	{ActionPiholeGroupDisable, GroupPihole, "A Pi-hole group disabled, which changes blocking for every client in it"},
+	{ActionPiholeGroupDelete, GroupPihole, "A Pi-hole group deleted, which takes it off every domain, client and list"},
 	{ActionClientReset, GroupPihole, "Clients put back in their groups by a client reset, or a reset that failed"},
 	{ActionGroupReconcile, GroupPihole, "A mirrored group's member made to match the primary"},
 

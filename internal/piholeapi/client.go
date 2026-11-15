@@ -777,23 +777,55 @@ func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
 	return out.Groups, nil
 }
 
+// groupBody is what Pi-hole's group writes take. Pi-hole sets enabled to true when it's left out and clears the
+// comment, so every write sends all three.
+type groupBody struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment"`
+	Enabled bool   `json:"enabled"`
+}
+
 // AddGroup adds a Pi-hole group with g's name, comment and enabled flag. A name already taken is a RejectedError.
 func (c *Client) AddGroup(ctx context.Context, g Group) error {
-	body := struct {
-		Name    string `json:"name"`
-		Comment string `json:"comment"`
-		Enabled bool   `json:"enabled"`
-	}{g.Name, g.Comment, g.Enabled}
-	return c.write(ctx, http.MethodPost, "/api/groups", body, nil)
+	return c.write(ctx, http.MethodPost, "/api/groups", groupBody{g.Name, g.Comment, g.Enabled}, nil)
 }
 
 // UpdateGroup sets the comment and enabled flag of the Pi-hole group called g.Name. Pi-hole's PUT creates a group
 // that doesn't exist, so callers check that it does first.
 func (c *Client) UpdateGroup(ctx context.Context, g Group) error {
-	body := struct {
-		Name    string `json:"name"`
-		Comment string `json:"comment"`
-		Enabled bool   `json:"enabled"`
-	}{g.Name, g.Comment, g.Enabled}
-	return c.write(ctx, http.MethodPut, "/api/groups/"+url.PathEscape(g.Name), body, nil)
+	return c.write(ctx, http.MethodPut, "/api/groups/"+url.PathEscape(g.Name), groupBody{g.Name, g.Comment, g.Enabled}, nil)
+}
+
+// RenameGroup renames the Pi-hole group called from to g.Name and sets its comment and enabled flag. Pi-hole renames
+// with a PUT on the old name carrying the new one. A group that doesn't exist is left alone and the PUT still
+// succeeds, so callers check that it does first; a new name already taken is a RejectedError.
+func (c *Client) RenameGroup(ctx context.Context, from string, g Group) error {
+	return c.write(ctx, http.MethodPut, "/api/groups/"+url.PathEscape(from), groupBody{g.Name, g.Comment, g.Enabled}, nil)
+}
+
+// DeleteGroup deletes the Pi-hole group called name, which takes it off every domain, client and list. A name Pi-hole
+// doesn't have is a 404 StatusError. Pi-hole doesn't protect the Default group (ID 0): deleting it strips Default
+// from everything before Pi-hole recreates it empty, so callers refuse that first.
+func (c *Client) DeleteGroup(ctx context.Context, name string) error {
+	return c.do(ctx, http.MethodDelete, "/api/groups/"+url.PathEscape(name), nil, nil)
+}
+
+// ListEntry is a subscribed list (an adlist), as far as the app reads it so far.
+type ListEntry struct {
+	Address string `json:"address"`
+	Type    string `json:"type"` // "block" or "allow"
+	Comment string `json:"comment"`
+	Groups  []int  `json:"groups"`
+	Enabled bool   `json:"enabled"`
+}
+
+// ListLists returns the subscribed lists.
+func (c *Client) ListLists(ctx context.Context) ([]ListEntry, error) {
+	var out struct {
+		Lists []ListEntry `json:"lists"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/lists", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Lists, nil
 }

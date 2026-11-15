@@ -89,6 +89,16 @@ const (
 	ActionDomainDelete = "domain_delete"
 	ActionClientUpdate = "client_update"
 
+	// Pi-hole groups (not instance groups), recorded like other Pi-hole writes. A change to the enabled flag is
+	// piholegroup_enable or piholegroup_disable, with any rename or comment change in the same row, so a channel can
+	// hear about just those; piholegroup_update is a rename or comment change alone. A rename or delete lists the
+	// app's references to the group it changed or left (references_updated, references_to_check, references).
+	ActionPiholeGroupAdd     = "piholegroup_add"
+	ActionPiholeGroupUpdate  = "piholegroup_update"
+	ActionPiholeGroupEnable  = "piholegroup_enable"
+	ActionPiholeGroupDisable = "piholegroup_disable"
+	ActionPiholeGroupDelete  = "piholegroup_delete"
+
 	// Client reset: one row per instance a run changed or failed on (a run that found nothing to change writes none),
 	// listing the clients reset and those that failed, with Pi-hole groups by name. A scheduled run is SystemUser's.
 	ActionClientReset = "client_reset"

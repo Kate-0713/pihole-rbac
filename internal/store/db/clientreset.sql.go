@@ -304,3 +304,17 @@ func (q *Queries) StartClientResetRun(ctx context.Context, arg StartClientResetR
 	err := row.Scan(&id)
 	return id, err
 }
+
+const updateClientResetRuleGroups = `-- name: UpdateClientResetRuleGroups :exec
+UPDATE client_reset_targets SET target_groups = ? WHERE id = ?
+`
+
+type UpdateClientResetRuleGroupsParams struct {
+	TargetGroups string
+	ID           int64
+}
+
+func (q *Queries) UpdateClientResetRuleGroups(ctx context.Context, arg UpdateClientResetRuleGroupsParams) error {
+	_, err := q.db.ExecContext(ctx, updateClientResetRuleGroups, arg.TargetGroups, arg.ID)
+	return err
+}

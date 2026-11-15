@@ -85,7 +85,8 @@ func strp(s string) *string { return &s }
 
 // writeResult is what every per-instance write result has in common.
 type writeResult interface {
-	gen.BlockingWriteResult | gen.DNSRestartResult | gen.DomainWriteResult | gen.ClientWriteResult | gen.DeleteResult
+	gen.BlockingWriteResult | gen.DNSRestartResult | gen.DomainWriteResult | gen.ClientWriteResult | gen.DeleteResult |
+		gen.PiholeGroupWriteResult
 }
 
 // okResult checks that a write answered 200 with exactly one ok result, for pihole1, and returns it.

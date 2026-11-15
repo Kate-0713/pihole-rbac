@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package piholetest is a fake Pi-hole v6 API for tests. It implements login, logout and session checks, and keeps
-// blocking, domains, clients, groups and the query log in memory, with the Pi-hole behaviours the app has to cope
+// blocking, domains, clients, groups, lists and the query log in memory, with the Pi-hole behaviours the app has to cope
 // with: PUT creates an entry that doesn't exist, PUT without "enabled" enables the entry, a duplicate add is a 2xx
 // with the item under processed.errors, and malformed input is a 400 with an error body. Tests add or override
 // anything else with Handle.
@@ -53,6 +53,16 @@ type Group struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// List is a subscribed list (an adlist).
+type List struct {
+	ID      int    `json:"id"`
+	Address string `json:"address"`
+	Type    string `json:"type"`
+	Comment string `json:"comment"`
+	Groups  []int  `json:"groups"`
+	Enabled bool   `json:"enabled"`
+}
+
 // Query is a query log entry.
 type Query struct {
 	ID     int     `json:"id"`
@@ -88,6 +98,7 @@ type Server struct {
 	domains  []Domain
 	clients  []Client
 	groups   []Group
+	lists    []List
 	queries  []Query // the in-memory log, newest first
 	disk     []Query // the long-term database, newest first
 	nextID   int
@@ -232,6 +243,25 @@ func (s *Server) Clients() []Client {
 	return slices.Clone(s.clients)
 }
 
+// AddList adds a subscribed list directly and returns its ID. A nil Groups becomes the default group.
+func (s *Server) AddList(l List) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l.ID = s.id()
+	if l.Groups == nil {
+		l.Groups = []int{0}
+	}
+	s.lists = append(s.lists, l)
+	return l.ID
+}
+
+// Lists returns the subscribed lists.
+func (s *Server) Lists() []List {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.lists)
+}
+
 // SetQueries replaces the in-memory query log, newest first.
 func (s *Server) SetQueries(qs []Query) {
 	s.mu.Lock()
@@ -359,6 +389,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.putGroup(w, r, "", true)
 	case r.Method == http.MethodPut && seg[0] == "groups" && len(seg) == 2:
 		s.putGroup(w, r, seg[1], false)
+	case r.Method == http.MethodDelete && seg[0] == "groups" && len(seg) == 2:
+		s.deleteGroup(w, seg[1])
+	case route == "GET lists" && len(seg) == 1:
+		writeJSON(w, http.StatusOK, map[string]any{"lists": s.lists})
 	case route == "GET queries" && len(seg) == 1:
 		s.listQueries(w, r)
 	default:
@@ -564,40 +598,100 @@ func (s *Server) postClient(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// putGroup is called with s.mu held. POST (create) refuses a name already taken; PUT updates the group called name,
-// creating it if it doesn't exist, as Pi-hole does.
+// putGroup is called with s.mu held. It answers as FTL's group writes do. POST (create) refuses a name already
+// taken. PUT with no name in the body, or the same one, updates the group called name, creating it if it doesn't
+// exist. PUT with a different name renames, as FTL's UPDATE ... WHERE name = :item does: a group that doesn't exist
+// changes nothing and still answers 200, and a new name already taken fails the UNIQUE constraint with a 400. A
+// body without enabled sets it to true, and one without a comment clears it. Newlines are refused in any name.
 func (s *Server) putGroup(w http.ResponseWriter, r *http.Request, name string, create bool) {
 	var in struct {
 		Name    string `json:"name"`
 		Comment string `json:"comment"`
 		Enabled *bool  `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Name == "" {
-		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request"))
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || (create && in.Name == "") {
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request: No valid \"name\" in payload"))
 		return
 	}
 	if create {
 		name = in.Name
 	}
-	i := slices.IndexFunc(s.groups, func(g Group) bool { return g.Name == name })
-	if create && i >= 0 {
+	newName := name
+	if in.Name != "" {
+		newName = in.Name
+	}
+	if strings.ContainsAny(name+newName, "\r\n") {
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Newlines and carriage returns are not allowed in any input"))
+		return
+	}
+	enabled := in.Enabled == nil || *in.Enabled
+	i := s.groupIndex(name)
+	switch {
+	case create && i >= 0:
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"groups": []Group{},
 			"processed": map[string]any{"success": []any{},
 				"errors": []any{map[string]string{"item": in.Name, "error": "UNIQUE constraint failed: group.name"}}},
 		})
 		return
+	case newName != name:
+		if i >= 0 && s.groupIndex(newName) >= 0 {
+			writeJSON(w, http.StatusBadRequest, errBody("database_error", "Could not add to gravity database"))
+			return
+		}
+		if i >= 0 {
+			s.groups[i].Name, s.groups[i].Comment, s.groups[i].Enabled = newName, in.Comment, enabled
+		}
+	default:
+		if i < 0 {
+			s.groups = append(s.groups, Group{ID: s.id(), Name: name})
+			i = len(s.groups) - 1
+		}
+		s.groups[i].Comment, s.groups[i].Enabled = in.Comment, enabled
 	}
-	if i < 0 {
-		s.groups = append(s.groups, Group{ID: s.id()})
-		i = len(s.groups) - 1
+	status, reply := http.StatusOK, []Group{}
+	if create {
+		status = http.StatusCreated
 	}
-	g := &s.groups[i]
-	g.Name, g.Comment, g.Enabled = in.Name, in.Comment, in.Enabled == nil || *in.Enabled
-	writeJSON(w, http.StatusOK, map[string]any{
-		"groups":    []Group{*g},
-		"processed": map[string]any{"success": []any{map[string]string{"item": g.Name}}, "errors": []any{}},
+	if j := s.groupIndex(newName); j >= 0 {
+		reply = append(reply, s.groups[j])
+	}
+	writeJSON(w, status, map[string]any{
+		"groups":    reply,
+		"processed": map[string]any{"success": []any{map[string]string{"item": name}}, "errors": []any{}},
 	})
+}
+
+// deleteGroup is called with s.mu held. As in Pi-hole's database, deleting a group takes it off every domain, client
+// and list, and deleting the Default group (ID 0) is allowed: a trigger then recreates it, empty, with no comment.
+// A name that doesn't exist is a 404 with an empty body.
+func (s *Server) deleteGroup(w http.ResponseWriter, name string) {
+	i := s.groupIndex(name)
+	if i < 0 {
+		writeJSON(w, http.StatusNotFound, map[string]any{})
+		return
+	}
+	id := s.groups[i].ID
+	s.groups = slices.Delete(s.groups, i, i+1)
+	drop := func(ids []int) []int { return slices.DeleteFunc(ids, func(g int) bool { return g == id }) }
+	for j := range s.domains {
+		s.domains[j].Groups = drop(s.domains[j].Groups)
+	}
+	for j := range s.clients {
+		s.clients[j].Groups = drop(s.clients[j].Groups)
+	}
+	for j := range s.lists {
+		s.lists[j].Groups = drop(s.lists[j].Groups)
+	}
+	if id == 0 {
+		s.groups = slices.Insert(s.groups, 0, Group{ID: 0, Name: "Default", Enabled: true})
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// groupIndex is called with s.mu held. Names are compared exactly, as in Pi-hole's database.
+func (s *Server) groupIndex(name string) int {
+	return slices.IndexFunc(s.groups, func(g Group) bool { return g.Name == name })
 }
 
 // Groups returns the Pi-hole groups.

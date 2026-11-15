@@ -122,6 +122,15 @@ func (s *Server) piholeFailed(w http.ResponseWriter, r *http.Request, pf *pihole
 // changed nothing. The Pi-hole has already acted, so the row is written even if the client has gone away, and a failure to
 // write it is logged rather than reported to the client as a failure of the change.
 func (s *Server) auditPihole(ctx context.Context, ref instanceRef, action string, err error, detail map[string]any) {
+	e := s.piholeEntry(ctx, ref, action, err, detail)
+	if aerr := s.Audit.Record(context.WithoutCancel(ctx), s.Store, e); aerr != nil {
+		s.Logger.Error("recording a pi-hole write", "action", action, "instance", ref.name, "err", aerr)
+	}
+}
+
+// piholeEntry is the audit row of a Pi-hole write, for auditPihole or for a caller that writes it in a transaction
+// of its own (a Pi-hole group rename, with the app's references it updates).
+func (s *Server) piholeEntry(ctx context.Context, ref instanceRef, action string, err error, detail map[string]any) audit.Entry {
 	ri := info(ctx)
 	if detail == nil {
 		detail = map[string]any{}
@@ -142,12 +151,9 @@ func (s *Server) auditPihole(ctx context.Context, ref instanceRef, action string
 		detail["mirrored_member"] = true
 		detail["mirrored_group"] = ref.mirroredOf
 	}
-	e := audit.Entry{
+	return audit.Entry{
 		UserID: ri.sess.UserID, Username: ri.sess.Username, Action: action, Target: ref.target.String(),
 		InstanceID: ref.id, InstanceName: ref.name, Err: err, Detail: detail, IP: ri.ip,
-	}
-	if aerr := s.Audit.Record(context.WithoutCancel(ctx), s.Store, e); aerr != nil {
-		s.Logger.Error("recording a pi-hole write", "action", action, "instance", ref.name, "err", aerr)
 	}
 }
 

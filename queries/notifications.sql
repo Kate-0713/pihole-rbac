@@ -63,3 +63,9 @@ SELECT DISTINCT p.pihole_group FROM notification_protected_groups p
 WHERE p.instance_id = sqlc.arg(instance_id)
    OR p.group_id = (SELECT m.group_id FROM instance_group_members m
                     WHERE m.instance_id = sqlc.arg(instance_id) AND m.group_mode = 'mirrored');
+
+-- name: RenameProtectedGroup :exec
+UPDATE notification_protected_groups SET pihole_group = ? WHERE id = ?;
+
+-- name: DeleteProtectedGroup :exec
+DELETE FROM notification_protected_groups WHERE id = ?;

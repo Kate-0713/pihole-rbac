@@ -120,9 +120,11 @@ func (r Report) Drifted() bool {
 	return len(r.Domains)+len(r.Clients)+len(r.Groups) > 0
 }
 
-// DomainsDrifted and ClientsDrifted are the per-type flags behind the badges on the domains and clients pages.
+// DomainsDrifted, ClientsDrifted and GroupsDrifted are the per-type flags behind the badges on the domains, clients
+// and groups pages.
 func (r Report) DomainsDrifted() bool { return len(r.Domains) > 0 }
 func (r Report) ClientsDrifted() bool { return len(r.Clients) > 0 }
+func (r Report) GroupsDrifted() bool  { return len(r.Groups) > 0 }
 
 func (d *Drift) now() time.Time {
 	if d.Now != nil {

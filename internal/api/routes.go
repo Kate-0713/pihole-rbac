@@ -130,6 +130,10 @@ var routePermission = map[string]string{
 	"GET /api/v1/targets/{target}/clients":      targetPrefix + string(rbac.ClientsView),
 	"PATCH /api/v1/targets/{target}/clients":    targetPrefix + string(rbac.ClientsEdit),
 	"GET /api/v1/targets/{target}/groups":       accessTargetAny,
+	"POST /api/v1/targets/{target}/groups":      targetPrefix + string(rbac.PiholeGroupsEdit),
+	"PATCH /api/v1/targets/{target}/groups":     targetPrefix + string(rbac.PiholeGroupsEdit),
+	"DELETE /api/v1/targets/{target}/groups":    targetPrefix + string(rbac.PiholeGroupsEdit),
+	"GET /api/v1/targets/{target}/groups/usage": targetPrefix + string(rbac.PiholeGroupsEdit),
 	"GET /api/v1/targets/{target}/queries":      targetPrefix + string(rbac.QueryLogView),
 
 	"GET /api/v1/targets/{target}/client-reset/preview": targetPrefix + string(rbac.ClientResetRun),

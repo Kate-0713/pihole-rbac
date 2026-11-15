@@ -28,6 +28,7 @@ export type TargetPermission =
 	| 'blocking.indefinite'
 	| 'dns.restart'
 	| 'clientreset.run'
+	| 'piholegroups.edit'
 	| 'drift.view'
 	| 'drift.reconcile';
 

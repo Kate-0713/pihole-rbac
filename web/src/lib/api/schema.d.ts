@@ -1361,9 +1361,44 @@ export interface paths {
         };
         /**
          * The Pi-hole's groups
-         * @description Pi-hole's own groups (not instance groups), so group IDs on domains and clients can be shown by name. Needs any permission on the target.
+         * @description Pi-hole's own groups (not instance groups), so group IDs on domains and clients can be shown by name, and for the Groups page. Needs any permission on the target.
          */
         get: operations["listPiholeGroups"];
+        put?: never;
+        /**
+         * Add a Pi-hole group
+         * @description Adds a Pi-hole group (not an instance group), enabled unless `enabled` is false. A name already taken on an instance is a pihole_rejected failure there. Through a mirrored group it is added on every member. Answers with a result per instance (see WriteResults under the schemas). Audited as piholegroup_add.
+         */
+        post: operations["addPiholeGroup"];
+        /**
+         * Delete a Pi-hole group
+         * @description The body names the group exactly. Pi-hole takes it off every domain, client and list. A group that doesn't exist on the instance, or on a mirrored group's primary, is a 404, and the primary must answer. The Default group (ID 0) can't be deleted (400). Deleting a group the app refers to needs `confirm=true`; the references are listed in `references` for someone to fix, never removed. Through a mirrored group, a member without the group is ok. Answers with a result per instance (see WriteResults under the schemas). Audited as piholegroup_delete.
+         */
+        delete: operations["deletePiholeGroup"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a Pi-hole group, or change its comment or enabled flag
+         * @description The body names the group exactly and gives the fields to change; fields left out keep their value. A group that doesn't exist on the instance, or on a mirrored group's primary, is a 404, and the primary must answer. The Default group (ID 0) can't be renamed (400), and disabling it needs `confirm=true`. Renaming a group the app refers to (client reset rules, protected groups) also needs `confirm=true`; once Pi-hole has renamed it, the app updates those references where the old name is gone, and `references` says what changed and what to check. Through a mirrored group, a member without the group fails with not_found. Answers with a result per instance (see WriteResults under the schemas). Audited as piholegroup_enable or piholegroup_disable when the enabled flag changes, otherwise piholegroup_update.
+         */
+        patch: operations["updatePiholeGroup"];
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/groups/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * What uses a Pi-hole group
+         * @description For the delete dialog, read just before asking: how many domains, clients and lists are in the group on the instance or the mirrored group's primary, and the app's references to it. Reference counts are always given; the references themselves only to those who manage them (client reset rules with settings.manage, protected groups with notifications.manage). Reading isn't audited.
+         */
+        get: operations["getPiholeGroupUsage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2514,7 +2549,7 @@ export interface components {
         WriteStatus: "ok" | "failed" | "skipped";
         /** @description Why an instance failed or was skipped. Present exactly when the status isn't ok. */
         WriteError: {
-            /** @description pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member) or pihole_group_missing (it has no Pi-hole group with a name the change uses). */
+            /** @description pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member), pihole_group_missing (it has no Pi-hole group with a name the change uses) or validation_failed (the Pi-hole group a rename or delete names is that member's Default group). */
             code: string;
             /** @description Safe to show to the user. */
             message: string;
@@ -2670,6 +2705,8 @@ export interface components {
             groups?: number[];
         };
         PiholeGroupList: {
+            /** @description For a mirrored group: whether its members' Pi-hole groups differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them. */
+            drifted?: boolean;
             groups: components["schemas"]["PiholeGroup"][];
         };
         PiholeGroup: {
@@ -2678,6 +2715,100 @@ export interface components {
             name: string;
             comment: string;
             enabled: boolean;
+        };
+        /** @description Names a Pi-hole group exactly. Names are compared case-sensitively, as Pi-hole does. */
+        PiholeGroupKey: {
+            name: string;
+        };
+        PiholeGroupInput: {
+            /** @description No control characters, and no spaces at the start or end. */
+            name: string;
+            comment?: string;
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description The group to change, by name, and at least one change. */
+        PiholeGroupUpdate: {
+            name: string;
+            /** @description Renames the group. No control characters, and no spaces at the start or end. */
+            new_name?: string;
+            comment?: string;
+            enabled?: boolean;
+        };
+        /** @description The result per instance of adding or changing a Pi-hole group. */
+        PiholeGroupWriteResults: {
+            results: components["schemas"]["PiholeGroupWriteResult"][];
+            references?: components["schemas"]["PiholeGroupRenameReferences"];
+        };
+        PiholeGroupWriteResult: {
+            /** @description The instance's name. */
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Present when ok. The group as saved. */
+            entry?: components["schemas"]["PiholeGroup"];
+        };
+        /** @description The result per instance of deleting a Pi-hole group. */
+        PiholeGroupDeleteResults: {
+            results: components["schemas"]["DeleteResult"][];
+            references?: components["schemas"]["PiholeGroupReferences"];
+        };
+        /** @description The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage. */
+        PiholeGroupReferences: {
+            counts: components["schemas"]["PiholeGroupReferenceCounts"];
+            items: components["schemas"]["PiholeGroupReference"][];
+        };
+        PiholeGroupReferenceCounts: {
+            client_reset_rules: number;
+            protected_groups: number;
+        };
+        PiholeGroupReference: {
+            /** @enum {string} */
+            kind: "client_reset_rule" | "protected_group";
+            /** @enum {string} */
+            scope: "instance" | "group";
+            /** Format: int64 */
+            scope_id: number;
+            scope_name: string;
+            /** @description A client reset rule's comment prefix. */
+            comment_prefix?: string;
+            /**
+             * @description How a client reset rule matches Pi-hole groups.
+             * @enum {string}
+             */
+            match?: "names" | "prefixes";
+            /** @description A client reset rule's group names or prefixes, or a protected group's name (one). For an updated reference, the value after the rename. */
+            names: string[];
+            /** @description For an updated reference, the value before the rename. */
+            before?: string[];
+            /** @description For an updated protected group: removed, because its instance or group already listed the new name. */
+            dropped?: boolean;
+            /**
+             * @description For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach every instance the reference covers; or a protected group still matches another group left there.
+             * @enum {string}
+             */
+            reason?: "prefix_match_changes" | "not_renamed_everywhere" | "old_name_still_used";
+        };
+        /** @description Present on a rename. What happened to the app's references to the old name. */
+        PiholeGroupRenameReferences: {
+            updated: components["schemas"]["PiholeGroupReferences"];
+            to_check: components["schemas"]["PiholeGroupReferences"];
+            /** @description Set when Pi-hole renamed the group but the app couldn't update its references; `updated` then lists what would have changed, and nothing did. */
+            error?: string;
+        };
+        PiholeGroupUsage: {
+            name: string;
+            /** @description Pi-hole's ID for the group on the instance or primary read. */
+            id: number;
+            /** @description Domains in the group. */
+            domains: number;
+            /** @description Clients in the group. */
+            clients: number;
+            /** @description Subscribed lists in the group. */
+            lists: number;
+            references: components["schemas"]["PiholeGroupReferences"];
         };
         /** @description For a mirrored group, `members` says how each member answered. A member that didn't answer leaves the log and the total, and the request fails only when none answered. */
         QueryLog: {
@@ -3015,6 +3146,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The change needs `confirm=true` (code confirmation_required): `details.default_group` is true when it would disable the Default group, and `details.references` (a PiholeGroupReferences) lists the app's references to a group being renamed or deleted. Or an instance can't be used, as for TargetUnavailable: code instance_password_missing, instance_misconfigured or pihole_group_missing, with `details.results` on a write. */
+        PiholeGroupConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The target has no client reset rules, or (for a run) another client reset is running (code conflict); the message says which. */
         ClientResetConflict: {
             headers: {
@@ -3065,7 +3205,7 @@ export interface components {
         Members: number[];
         /** @description The role's ID. */
         RoleID: number;
-        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
         Confirm: boolean;
         /** @description The user's ID. */
         UserID: number;
@@ -4200,7 +4340,7 @@ export interface operations {
     setRoleGrants: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4298,7 +4438,7 @@ export interface operations {
     removeLDAPMapping: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4409,7 +4549,7 @@ export interface operations {
     deleteUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4465,7 +4605,7 @@ export interface operations {
     disableUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -4527,7 +4667,7 @@ export interface operations {
     setUserRoles: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -5612,6 +5752,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PiholeGroupList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    addPiholeGroup: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PiholeGroupInput"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded; each result has the group as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeGroupWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeGroupWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deletePiholeGroup: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PiholeGroupKey"];
+            };
+        };
+        responses: {
+            /** @description Deleted on every instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeGroupDeleteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeGroupDeleteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PiholeGroupConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updatePiholeGroup: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PiholeGroupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded; each result has the group as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeGroupWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeGroupWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["PiholeGroupConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getPiholeGroupUsage: {
+        parameters: {
+            query: {
+                /** @description The group's name, exactly. */
+                name: string;
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The group's use. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeGroupUsage"];
                 };
             };
             400: components["responses"]["ValidationFailed"];

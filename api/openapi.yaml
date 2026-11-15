@@ -2569,8 +2569,8 @@ paths:
     get:
       summary: The Pi-hole's groups
       description: >-
-        Pi-hole's own groups (not instance groups), so group IDs on domains and clients can be shown by name. Needs
-        any permission on the target.
+        Pi-hole's own groups (not instance groups), so group IDs on domains and clients can be shown by name, and for
+        the Groups page. Needs any permission on the target.
       operationId: listPiholeGroups
       x-permission: target:any
       responses:
@@ -2580,6 +2580,200 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PiholeGroupList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add a Pi-hole group
+      description: >-
+        Adds a Pi-hole group (not an instance group), enabled unless `enabled` is false. A name already taken on an
+        instance is a pihole_rejected failure there. Through a mirrored group it is added on every member. Answers
+        with a result per instance (see WriteResults under the schemas). Audited as piholegroup_add.
+      operationId: addPiholeGroup
+      x-permission: target:piholegroups.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiholeGroupInput"
+      responses:
+        "200":
+          description: Every instance succeeded; each result has the group as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    patch:
+      summary: Rename a Pi-hole group, or change its comment or enabled flag
+      description: >-
+        The body names the group exactly and gives the fields to change; fields left out keep their value. A group
+        that doesn't exist on the instance, or on a mirrored group's primary, is a 404, and the primary must answer.
+        The Default group (ID 0) can't be renamed (400), and disabling it needs `confirm=true`. Renaming a group the
+        app refers to (client reset rules, protected groups) also needs `confirm=true`; once Pi-hole has renamed it,
+        the app updates those references where the old name is gone, and `references` says what changed and what to
+        check. Through a mirrored group, a member without the group fails with not_found. Answers with a result per
+        instance (see WriteResults under the schemas). Audited as piholegroup_enable or piholegroup_disable when the
+        enabled flag changes, otherwise piholegroup_update.
+      operationId: updatePiholeGroup
+      x-permission: target:piholegroups.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
+        - $ref: "#/components/parameters/Confirm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiholeGroupUpdate"
+      responses:
+        "200":
+          description: Every instance succeeded; each result has the group as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PiholeGroupConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a Pi-hole group
+      description: >-
+        The body names the group exactly. Pi-hole takes it off every domain, client and list. A group that doesn't
+        exist on the instance, or on a mirrored group's primary, is a 404, and the primary must answer. The Default
+        group (ID 0) can't be deleted (400). Deleting a group the app refers to needs `confirm=true`; the references
+        are listed in `references` for someone to fix, never removed. Through a mirrored group, a member without the
+        group is ok. Answers with a result per instance (see WriteResults under the schemas). Audited as
+        piholegroup_delete.
+      operationId: deletePiholeGroup
+      x-permission: target:piholegroups.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
+        - $ref: "#/components/parameters/Confirm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiholeGroupKey"
+      responses:
+        "200":
+          description: Deleted on every instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupDeleteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupDeleteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/PiholeGroupConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/groups/usage:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: What uses a Pi-hole group
+      description: >-
+        For the delete dialog, read just before asking: how many domains, clients and lists are in the group on the
+        instance or the mirrored group's primary, and the app's references to it. Reference counts are always given;
+        the references themselves only to those who manage them (client reset rules with settings.manage, protected
+        groups with notifications.manage). Reading isn't audited.
+      operationId: getPiholeGroupUsage
+      x-permission: target:piholegroups.edit
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: The group's name, exactly.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      responses:
+        "200":
+          description: The group's use.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeGroupUsage"
         "400":
           $ref: "#/components/responses/ValidationFailed"
         "401":
@@ -3019,7 +3213,8 @@ components:
       required: false
       description: >-
         Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own
-        roles.manage or users.manage, or disable or delete their own account.
+        roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames
+        or deletes a group the app refers to, or disables the Default group.
       schema:
         type: boolean
         default: false
@@ -3192,6 +3387,16 @@ components:
         mirrored group's primary, `details.group` names the group and `details.primary` is true: reads of domains,
         clients and Pi-hole groups come from the primary alone. The underlying error goes to the server log only. On a write, this answer means no instance
         succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PiholeGroupConflict:
+      description: >-
+        The change needs `confirm=true` (code confirmation_required): `details.default_group` is true when it would
+        disable the Default group, and `details.references` (a PiholeGroupReferences) lists the app's references to a
+        group being renamed or deleted. Or an instance can't be used, as for TargetUnavailable: code
+        instance_password_missing, instance_misconfigured or pihole_group_missing, with `details.results` on a write.
       content:
         application/json:
           schema:
@@ -5269,7 +5474,8 @@ components:
           description: >-
             pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing
             or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't
-            on that member) or pihole_group_missing (it has no Pi-hole group with a name the change uses).
+            on that member), pihole_group_missing (it has no Pi-hole group with a name the change uses) or
+            validation_failed (the Pi-hole group a rename or delete names is that member's Default group).
         message:
           type: string
           description: Safe to show to the user.
@@ -5610,6 +5816,11 @@ components:
       additionalProperties: false
       required: [groups]
       properties:
+        drifted:
+          type: boolean
+          description: >-
+            For a mirrored group: whether its members' Pi-hole groups differed from the primary's at the last drift
+            check. Absent for an instance, and until a check has compared them.
         groups:
           type: array
           items:
@@ -5629,6 +5840,209 @@ components:
           type: string
         enabled:
           type: boolean
+
+    PiholeGroupKey:
+      type: object
+      additionalProperties: false
+      required: [name]
+      description: Names a Pi-hole group exactly. Names are compared case-sensitively, as Pi-hole does.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+
+    PiholeGroupInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: No control characters, and no spaces at the start or end.
+        comment:
+          type: string
+          maxLength: 500
+        enabled:
+          type: boolean
+          default: true
+
+    PiholeGroupUpdate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      description: The group to change, by name, and at least one change.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        new_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Renames the group. No control characters, and no spaces at the start or end.
+        comment:
+          type: string
+          maxLength: 500
+        enabled:
+          type: boolean
+
+    PiholeGroupWriteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of adding or changing a Pi-hole group.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PiholeGroupWriteResult"
+        references:
+          $ref: "#/components/schemas/PiholeGroupRenameReferences"
+
+    PiholeGroupWriteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+          description: The instance's name.
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
+        entry:
+          $ref: "#/components/schemas/PiholeGroup"
+          description: Present when ok. The group as saved.
+
+    PiholeGroupDeleteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of deleting a Pi-hole group.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeleteResult"
+        references:
+          $ref: "#/components/schemas/PiholeGroupReferences"
+
+    PiholeGroupReferences:
+      type: object
+      additionalProperties: false
+      required: [counts, items]
+      description: >-
+        The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller
+        manages: client reset rules with settings.manage, protected groups with notifications.manage.
+      properties:
+        counts:
+          $ref: "#/components/schemas/PiholeGroupReferenceCounts"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PiholeGroupReference"
+
+    PiholeGroupReferenceCounts:
+      type: object
+      additionalProperties: false
+      required: [client_reset_rules, protected_groups]
+      properties:
+        client_reset_rules:
+          type: integer
+        protected_groups:
+          type: integer
+
+    PiholeGroupReference:
+      type: object
+      additionalProperties: false
+      required: [kind, scope, scope_id, scope_name, names]
+      properties:
+        kind:
+          type: string
+          enum: [client_reset_rule, protected_group]
+        scope:
+          type: string
+          enum: [instance, group]
+        scope_id:
+          type: integer
+          format: int64
+        scope_name:
+          type: string
+        comment_prefix:
+          type: string
+          description: A client reset rule's comment prefix.
+        match:
+          type: string
+          enum: [names, prefixes]
+          description: How a client reset rule matches Pi-hole groups.
+        names:
+          type: array
+          items:
+            type: string
+          description: >-
+            A client reset rule's group names or prefixes, or a protected group's name (one). For an updated
+            reference, the value after the rename.
+        before:
+          type: array
+          items:
+            type: string
+          description: For an updated reference, the value before the rename.
+        dropped:
+          type: boolean
+          description: >-
+            For an updated protected group: removed, because its instance or group already listed the new name.
+        reason:
+          type: string
+          enum: [prefix_match_changes, not_renamed_everywhere, old_name_still_used]
+          description: >-
+            For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach
+            every instance the reference covers; or a protected group still matches another group left there.
+
+    PiholeGroupRenameReferences:
+      type: object
+      additionalProperties: false
+      required: [updated, to_check]
+      description: Present on a rename. What happened to the app's references to the old name.
+      properties:
+        updated:
+          $ref: "#/components/schemas/PiholeGroupReferences"
+        to_check:
+          $ref: "#/components/schemas/PiholeGroupReferences"
+        error:
+          type: string
+          description: >-
+            Set when Pi-hole renamed the group but the app couldn't update its references; `updated` then lists what
+            would have changed, and nothing did.
+
+    PiholeGroupUsage:
+      type: object
+      additionalProperties: false
+      required: [name, id, domains, clients, lists, references]
+      properties:
+        name:
+          type: string
+        id:
+          type: integer
+          description: Pi-hole's ID for the group on the instance or primary read.
+        domains:
+          type: integer
+          description: Domains in the group.
+        clients:
+          type: integer
+          description: Clients in the group.
+        lists:
+          type: integer
+          description: Subscribed lists in the group.
+        references:
+          $ref: "#/components/schemas/PiholeGroupReferences"
 
     QueryLog:
       type: object

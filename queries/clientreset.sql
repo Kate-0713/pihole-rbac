@@ -51,3 +51,6 @@ LIMIT sqlc.arg(row_limit);
 -- name: DeleteClientResetRunsBefore :execrows
 -- Finished runs older than the cutoff; one still running is never removed.
 DELETE FROM client_reset_runs WHERE status <> 'running' AND started_at < ?;
+
+-- name: UpdateClientResetRuleGroups :exec
+UPDATE client_reset_targets SET target_groups = ? WHERE id = ?;

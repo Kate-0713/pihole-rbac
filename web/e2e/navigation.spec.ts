@@ -11,7 +11,7 @@ const mainNav = (page: import('@playwright/test').Page) => page.getByRole('navig
 test('the admin sees every page and the Admin menu', async ({ page, state }) => {
 	await openAs(page, state.seeded.fixture.admin, '/');
 	const nav = mainNav(page);
-	for (const name of ['Dashboard', 'Domains', 'Clients', 'Query log']) {
+	for (const name of ['Dashboard', 'Domains', 'Clients', 'Pi-hole groups', 'Query log']) {
 		await expect(nav.getByRole('link', { name })).toHaveAttribute('href', /\?target=i-1$/);
 	}
 	await expect(nav.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
@@ -107,7 +107,7 @@ const stillMarked = (page: Page) => page.evaluate(() => (window as unknown as { 
 
 async function expectGroupPages(page: Page, id: number) {
 	const nav = mainNav(page);
-	for (const name of ['Dashboard', 'Domains', 'Clients', 'Query log', 'Drift']) {
+	for (const name of ['Dashboard', 'Domains', 'Clients', 'Pi-hole groups', 'Query log', 'Drift']) {
 		await expect(nav.getByRole('link', { name })).toHaveAttribute('href', new RegExp(`\\?target=g-${id}$`));
 	}
 }

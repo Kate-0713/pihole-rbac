@@ -128,16 +128,16 @@ func (e ClientResetInstanceResultStatus) Valid() bool {
 
 // Defines values for ClientResetMatch.
 const (
-	Names    ClientResetMatch = "names"
-	Prefixes ClientResetMatch = "prefixes"
+	ClientResetMatchNames    ClientResetMatch = "names"
+	ClientResetMatchPrefixes ClientResetMatch = "prefixes"
 )
 
 // Valid indicates whether the value is a known member of the ClientResetMatch enum.
 func (e ClientResetMatch) Valid() bool {
 	switch e {
-	case Names:
+	case ClientResetMatchNames:
 		return true
-	case Prefixes:
+	case ClientResetMatchPrefixes:
 		return true
 	default:
 		return false
@@ -714,6 +714,81 @@ func (e PermissionInfoClass) Valid() bool {
 	case PermissionInfoClassGroup:
 		return true
 	case PermissionInfoClassInstance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeGroupReferenceKind.
+const (
+	PiholeGroupReferenceKindClientResetRule PiholeGroupReferenceKind = "client_reset_rule"
+	PiholeGroupReferenceKindProtectedGroup  PiholeGroupReferenceKind = "protected_group"
+)
+
+// Valid indicates whether the value is a known member of the PiholeGroupReferenceKind enum.
+func (e PiholeGroupReferenceKind) Valid() bool {
+	switch e {
+	case PiholeGroupReferenceKindClientResetRule:
+		return true
+	case PiholeGroupReferenceKindProtectedGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeGroupReferenceMatch.
+const (
+	PiholeGroupReferenceMatchNames    PiholeGroupReferenceMatch = "names"
+	PiholeGroupReferenceMatchPrefixes PiholeGroupReferenceMatch = "prefixes"
+)
+
+// Valid indicates whether the value is a known member of the PiholeGroupReferenceMatch enum.
+func (e PiholeGroupReferenceMatch) Valid() bool {
+	switch e {
+	case PiholeGroupReferenceMatchNames:
+		return true
+	case PiholeGroupReferenceMatchPrefixes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeGroupReferenceReason.
+const (
+	NotRenamedEverywhere PiholeGroupReferenceReason = "not_renamed_everywhere"
+	OldNameStillUsed     PiholeGroupReferenceReason = "old_name_still_used"
+	PrefixMatchChanges   PiholeGroupReferenceReason = "prefix_match_changes"
+)
+
+// Valid indicates whether the value is a known member of the PiholeGroupReferenceReason enum.
+func (e PiholeGroupReferenceReason) Valid() bool {
+	switch e {
+	case NotRenamedEverywhere:
+		return true
+	case OldNameStillUsed:
+		return true
+	case PrefixMatchChanges:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeGroupReferenceScope.
+const (
+	PiholeGroupReferenceScopeGroup    PiholeGroupReferenceScope = "group"
+	PiholeGroupReferenceScopeInstance PiholeGroupReferenceScope = "instance"
+)
+
+// Valid indicates whether the value is a known member of the PiholeGroupReferenceScope enum.
+func (e PiholeGroupReferenceScope) Valid() bool {
+	switch e {
+	case PiholeGroupReferenceScopeGroup:
+		return true
+	case PiholeGroupReferenceScopeInstance:
 		return true
 	default:
 		return false
@@ -2492,6 +2567,13 @@ type PiholeGroup struct {
 	Name string `json:"name"`
 }
 
+// PiholeGroupDeleteResults The result per instance of deleting a Pi-hole group.
+type PiholeGroupDeleteResults struct {
+	// References The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	References *PiholeGroupReferences `json:"references,omitempty"`
+	Results    []DeleteResult         `json:"results"`
+}
+
 // PiholeGroupDrift defines model for PiholeGroupDrift.
 type PiholeGroupDrift struct {
 	// Difference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
@@ -2503,9 +2585,138 @@ type PiholeGroupDrift struct {
 	Primary    *DriftGroupState `json:"primary,omitempty"`
 }
 
+// PiholeGroupInput defines model for PiholeGroupInput.
+type PiholeGroupInput struct {
+	Comment *string `json:"comment,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty"`
+
+	// Name No control characters, and no spaces at the start or end.
+	Name string `json:"name"`
+}
+
+// PiholeGroupKey Names a Pi-hole group exactly. Names are compared case-sensitively, as Pi-hole does.
+type PiholeGroupKey struct {
+	Name string `json:"name"`
+}
+
 // PiholeGroupList defines model for PiholeGroupList.
 type PiholeGroupList struct {
-	Groups []PiholeGroup `json:"groups"`
+	// Drifted For a mirrored group: whether its members' Pi-hole groups differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them.
+	Drifted *bool         `json:"drifted,omitempty"`
+	Groups  []PiholeGroup `json:"groups"`
+}
+
+// PiholeGroupReference defines model for PiholeGroupReference.
+type PiholeGroupReference struct {
+	// Before For an updated reference, the value before the rename.
+	Before *[]string `json:"before,omitempty"`
+
+	// CommentPrefix A client reset rule's comment prefix.
+	CommentPrefix *string `json:"comment_prefix,omitempty"`
+
+	// Dropped For an updated protected group: removed, because its instance or group already listed the new name.
+	Dropped *bool                    `json:"dropped,omitempty"`
+	Kind    PiholeGroupReferenceKind `json:"kind"`
+
+	// Match How a client reset rule matches Pi-hole groups.
+	Match *PiholeGroupReferenceMatch `json:"match,omitempty"`
+
+	// Names A client reset rule's group names or prefixes, or a protected group's name (one). For an updated reference, the value after the rename.
+	Names []string `json:"names"`
+
+	// Reason For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach every instance the reference covers; or a protected group still matches another group left there.
+	Reason    *PiholeGroupReferenceReason `json:"reason,omitempty"`
+	Scope     PiholeGroupReferenceScope   `json:"scope"`
+	ScopeId   int64                       `json:"scope_id"`
+	ScopeName string                      `json:"scope_name"`
+}
+
+// PiholeGroupReferenceKind defines model for PiholeGroupReference.Kind.
+type PiholeGroupReferenceKind string
+
+// PiholeGroupReferenceMatch How a client reset rule matches Pi-hole groups.
+type PiholeGroupReferenceMatch string
+
+// PiholeGroupReferenceReason For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach every instance the reference covers; or a protected group still matches another group left there.
+type PiholeGroupReferenceReason string
+
+// PiholeGroupReferenceScope defines model for PiholeGroupReference.Scope.
+type PiholeGroupReferenceScope string
+
+// PiholeGroupReferenceCounts defines model for PiholeGroupReferenceCounts.
+type PiholeGroupReferenceCounts struct {
+	ClientResetRules int `json:"client_reset_rules"`
+	ProtectedGroups  int `json:"protected_groups"`
+}
+
+// PiholeGroupReferences The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+type PiholeGroupReferences struct {
+	Counts PiholeGroupReferenceCounts `json:"counts"`
+	Items  []PiholeGroupReference     `json:"items"`
+}
+
+// PiholeGroupRenameReferences Present on a rename. What happened to the app's references to the old name.
+type PiholeGroupRenameReferences struct {
+	// Error Set when Pi-hole renamed the group but the app couldn't update its references; `updated` then lists what would have changed, and nothing did.
+	Error *string `json:"error,omitempty"`
+
+	// ToCheck The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	ToCheck PiholeGroupReferences `json:"to_check"`
+
+	// Updated The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	Updated PiholeGroupReferences `json:"updated"`
+}
+
+// PiholeGroupUpdate The group to change, by name, and at least one change.
+type PiholeGroupUpdate struct {
+	Comment *string `json:"comment,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty"`
+	Name    string  `json:"name"`
+
+	// NewName Renames the group. No control characters, and no spaces at the start or end.
+	NewName *string `json:"new_name,omitempty"`
+}
+
+// PiholeGroupUsage defines model for PiholeGroupUsage.
+type PiholeGroupUsage struct {
+	// Clients Clients in the group.
+	Clients int `json:"clients"`
+
+	// Domains Domains in the group.
+	Domains int `json:"domains"`
+
+	// Id Pi-hole's ID for the group on the instance or primary read.
+	Id int `json:"id"`
+
+	// Lists Subscribed lists in the group.
+	Lists int    `json:"lists"`
+	Name  string `json:"name"`
+
+	// References The app's references to Pi-hole groups by name. `counts` covers them all; `items` holds only those the caller manages: client reset rules with settings.manage, protected groups with notifications.manage.
+	References PiholeGroupReferences `json:"references"`
+}
+
+// PiholeGroupWriteResult defines model for PiholeGroupWriteResult.
+type PiholeGroupWriteResult struct {
+	// Entry Present when ok. The group as saved.
+	Entry *PiholeGroup `json:"entry,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Instance The instance's name.
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// PiholeGroupWriteResults The result per instance of adding or changing a Pi-hole group.
+type PiholeGroupWriteResults struct {
+	// References Present on a rename. What happened to the app's references to the old name.
+	References *PiholeGroupRenameReferences `json:"references,omitempty"`
+	Results    []PiholeGroupWriteResult     `json:"results"`
 }
 
 // ProtectedGroupChoice defines model for ProtectedGroupChoice.
@@ -3071,7 +3282,7 @@ type VersionInfo struct {
 
 // WriteError Why an instance failed or was skipped. Present exactly when the status isn't ok.
 type WriteError struct {
-	// Code pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member) or pihole_group_missing (it has no Pi-hole group with a name the change uses).
+	// Code pihole_unreachable, pihole_auth_rejected, pihole_status_error, pihole_rejected, instance_password_missing or instance_misconfigured; and, for a member of a mirrored group, not_found (the entry a change names isn't on that member), pihole_group_missing (it has no Pi-hole group with a name the change uses) or validation_failed (the Pi-hole group a rename or delete names is that member's Default group).
 	Code string `json:"code"`
 
 	// Message Safe to show to the user.
@@ -3164,6 +3375,9 @@ type NotFound = Error
 
 // PiholeFailed defines model for PiholeFailed.
 type PiholeFailed = Error
+
+// PiholeGroupConflict defines model for PiholeGroupConflict.
+type PiholeGroupConflict = Error
 
 // RateLimited defines model for RateLimited.
 type RateLimited = Error
@@ -3263,13 +3477,13 @@ type ListClientResetRunsParams struct {
 
 // SetRoleGrantsParams defines parameters for SetRoleGrants.
 type SetRoleGrantsParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // RemoveLDAPMappingParams defines parameters for RemoveLDAPMapping.
 type RemoveLDAPMappingParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -3330,6 +3544,36 @@ type AddDomainParams struct {
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 }
 
+// DeletePiholeGroupParams defines parameters for DeletePiholeGroup.
+type DeletePiholeGroupParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// UpdatePiholeGroupParams defines parameters for UpdatePiholeGroup.
+type UpdatePiholeGroupParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// AddPiholeGroupParams defines parameters for AddPiholeGroup.
+type AddPiholeGroupParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// GetPiholeGroupUsageParams defines parameters for GetPiholeGroupUsage.
+type GetPiholeGroupUsageParams struct {
+	// Name The group's name, exactly.
+	Name string `form:"name" json:"name"`
+}
+
 // ListQueriesParams defines parameters for ListQueries.
 type ListQueriesParams struct {
 	// Page The page, from 1. Default 1. A page past the last has no entries.
@@ -3374,19 +3618,19 @@ type ListQueriesParamsResult string
 
 // DeleteUserParams defines parameters for DeleteUser.
 type DeleteUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // DisableUserParams defines parameters for DisableUser.
 type DisableUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // SetUserRolesParams defines parameters for SetUserRoles.
 type SetUserRolesParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -3476,6 +3720,15 @@ type UpdateDomainJSONRequestBody = DomainUpdate
 
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody = DomainInput
+
+// DeletePiholeGroupJSONRequestBody defines body for DeletePiholeGroup for application/json ContentType.
+type DeletePiholeGroupJSONRequestBody = PiholeGroupKey
+
+// UpdatePiholeGroupJSONRequestBody defines body for UpdatePiholeGroup for application/json ContentType.
+type UpdatePiholeGroupJSONRequestBody = PiholeGroupUpdate
+
+// AddPiholeGroupJSONRequestBody defines body for AddPiholeGroup for application/json ContentType.
+type AddPiholeGroupJSONRequestBody = PiholeGroupInput
 
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = UserCreate
@@ -3728,9 +3981,21 @@ type ServerInterface interface {
 	// AddDomain Add a domain to a list
 	// (POST /api/v1/targets/{target}/domains)
 	AddDomain(w http.ResponseWriter, r *http.Request, target TargetID, params AddDomainParams)
+	// DeletePiholeGroup Delete a Pi-hole group
+	// (DELETE /api/v1/targets/{target}/groups)
+	DeletePiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params DeletePiholeGroupParams)
 	// ListPiholeGroups The Pi-hole's groups
 	// (GET /api/v1/targets/{target}/groups)
 	ListPiholeGroups(w http.ResponseWriter, r *http.Request, target TargetID)
+	// UpdatePiholeGroup Rename a Pi-hole group, or change its comment or enabled flag
+	// (PATCH /api/v1/targets/{target}/groups)
+	UpdatePiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params UpdatePiholeGroupParams)
+	// AddPiholeGroup Add a Pi-hole group
+	// (POST /api/v1/targets/{target}/groups)
+	AddPiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params AddPiholeGroupParams)
+	// GetPiholeGroupUsage What uses a Pi-hole group
+	// (GET /api/v1/targets/{target}/groups/usage)
+	GetPiholeGroupUsage(w http.ResponseWriter, r *http.Request, target TargetID, params GetPiholeGroupUsageParams)
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(w http.ResponseWriter, r *http.Request, target TargetID, params ListQueriesParams)
@@ -5814,6 +6079,61 @@ func (siw *ServerInterfaceWrapper) AddDomain(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// DeletePiholeGroup operation middleware
+func (siw *ServerInterfaceWrapper) DeletePiholeGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeletePiholeGroupParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePiholeGroup(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPiholeGroups operation middleware
 func (siw *ServerInterfaceWrapper) ListPiholeGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -5831,6 +6151,145 @@ func (siw *ServerInterfaceWrapper) ListPiholeGroups(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListPiholeGroups(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePiholeGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePiholeGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdatePiholeGroupParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePiholeGroup(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddPiholeGroup operation middleware
+func (siw *ServerInterfaceWrapper) AddPiholeGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddPiholeGroupParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddPiholeGroup(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPiholeGroupUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetPiholeGroupUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPiholeGroupUsageParams
+
+	// ------------- Required query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPiholeGroupUsage(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6488,7 +6947,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/domains", wrapper.AddDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/clients", wrapper.ListClients)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/clients", wrapper.UpdateClient)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.DeletePiholeGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.ListPiholeGroups)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.UpdatePiholeGroup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.AddPiholeGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/groups/usage", wrapper.GetPiholeGroupUsage)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/queries", wrapper.ListQueries)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.GetClientResetRules)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.SetClientResetRules)
@@ -6517,6 +6980,8 @@ type LDAPFailedJSONResponse Error
 type NotFoundJSONResponse Error
 
 type PiholeFailedJSONResponse Error
+
+type PiholeGroupConflictJSONResponse Error
 
 type RateLimitedResponseHeaders struct {
 	RetryAfter *int
@@ -13883,6 +14348,160 @@ func (response AddDomain503JSONResponse) VisitAddDomainResponse(w http.ResponseW
 	return err
 }
 
+type DeletePiholeGroupRequestObject struct {
+	Target TargetID `json:"target"`
+	Params DeletePiholeGroupParams
+	Body   *DeletePiholeGroupJSONRequestBody
+}
+
+type DeletePiholeGroupResponseObject interface {
+	VisitDeletePiholeGroupResponse(w http.ResponseWriter) error
+}
+
+type DeletePiholeGroup200JSONResponse PiholeGroupDeleteResults
+
+func (response DeletePiholeGroup200JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup207JSONResponse PiholeGroupDeleteResults
+
+func (response DeletePiholeGroup207JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response DeletePiholeGroup400JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeletePiholeGroup401JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeletePiholeGroup403JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeletePiholeGroup404JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup409JSONResponse struct {
+	PiholeGroupConflictJSONResponse
+}
+
+func (response DeletePiholeGroup409JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DeletePiholeGroup415JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response DeletePiholeGroup502JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePiholeGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeletePiholeGroup503JSONResponse) VisitDeletePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPiholeGroupsRequestObject struct {
 	Target TargetID `json:"target"`
 }
@@ -13992,6 +14611,433 @@ func (response ListPiholeGroups502JSONResponse) VisitListPiholeGroupsResponse(w 
 type ListPiholeGroups503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response ListPiholeGroups503JSONResponse) VisitListPiholeGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroupRequestObject struct {
+	Target TargetID `json:"target"`
+	Params UpdatePiholeGroupParams
+	Body   *UpdatePiholeGroupJSONRequestBody
+}
+
+type UpdatePiholeGroupResponseObject interface {
+	VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdatePiholeGroup200JSONResponse PiholeGroupWriteResults
+
+func (response UpdatePiholeGroup200JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup207JSONResponse PiholeGroupWriteResults
+
+func (response UpdatePiholeGroup207JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdatePiholeGroup400JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdatePiholeGroup401JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdatePiholeGroup403JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdatePiholeGroup404JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup409JSONResponse struct {
+	PiholeGroupConflictJSONResponse
+}
+
+func (response UpdatePiholeGroup409JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdatePiholeGroup415JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdatePiholeGroup502JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePiholeGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdatePiholeGroup503JSONResponse) VisitUpdatePiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroupRequestObject struct {
+	Target TargetID `json:"target"`
+	Params AddPiholeGroupParams
+	Body   *AddPiholeGroupJSONRequestBody
+}
+
+type AddPiholeGroupResponseObject interface {
+	VisitAddPiholeGroupResponse(w http.ResponseWriter) error
+}
+
+type AddPiholeGroup200JSONResponse PiholeGroupWriteResults
+
+func (response AddPiholeGroup200JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup207JSONResponse PiholeGroupWriteResults
+
+func (response AddPiholeGroup207JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response AddPiholeGroup400JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddPiholeGroup401JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddPiholeGroup403JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddPiholeGroup404JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response AddPiholeGroup409JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response AddPiholeGroup415JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response AddPiholeGroup502JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPiholeGroup503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response AddPiholeGroup503JSONResponse) VisitAddPiholeGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsageRequestObject struct {
+	Target TargetID `json:"target"`
+	Params GetPiholeGroupUsageParams
+}
+
+type GetPiholeGroupUsageResponseObject interface {
+	VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error
+}
+
+type GetPiholeGroupUsage200JSONResponse PiholeGroupUsage
+
+func (response GetPiholeGroupUsage200JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsage400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetPiholeGroupUsage400JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsage401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetPiholeGroupUsage401JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsage403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetPiholeGroupUsage403JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsage404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetPiholeGroupUsage404JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsage409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response GetPiholeGroupUsage409JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsage502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response GetPiholeGroupUsage502JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPiholeGroupUsage503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetPiholeGroupUsage503JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -15238,9 +16284,21 @@ type StrictServerInterface interface {
 	// AddDomain Add a domain to a list
 	// (POST /api/v1/targets/{target}/domains)
 	AddDomain(ctx context.Context, request AddDomainRequestObject) (AddDomainResponseObject, error)
+	// DeletePiholeGroup Delete a Pi-hole group
+	// (DELETE /api/v1/targets/{target}/groups)
+	DeletePiholeGroup(ctx context.Context, request DeletePiholeGroupRequestObject) (DeletePiholeGroupResponseObject, error)
 	// ListPiholeGroups The Pi-hole's groups
 	// (GET /api/v1/targets/{target}/groups)
 	ListPiholeGroups(ctx context.Context, request ListPiholeGroupsRequestObject) (ListPiholeGroupsResponseObject, error)
+	// UpdatePiholeGroup Rename a Pi-hole group, or change its comment or enabled flag
+	// (PATCH /api/v1/targets/{target}/groups)
+	UpdatePiholeGroup(ctx context.Context, request UpdatePiholeGroupRequestObject) (UpdatePiholeGroupResponseObject, error)
+	// AddPiholeGroup Add a Pi-hole group
+	// (POST /api/v1/targets/{target}/groups)
+	AddPiholeGroup(ctx context.Context, request AddPiholeGroupRequestObject) (AddPiholeGroupResponseObject, error)
+	// GetPiholeGroupUsage What uses a Pi-hole group
+	// (GET /api/v1/targets/{target}/groups/usage)
+	GetPiholeGroupUsage(ctx context.Context, request GetPiholeGroupUsageRequestObject) (GetPiholeGroupUsageResponseObject, error)
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(ctx context.Context, request ListQueriesRequestObject) (ListQueriesResponseObject, error)
@@ -17532,6 +18590,40 @@ func (sh *strictHandler) AddDomain(w http.ResponseWriter, r *http.Request, targe
 	}
 }
 
+// DeletePiholeGroup operation middleware
+func (sh *strictHandler) DeletePiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params DeletePiholeGroupParams) {
+	var request DeletePiholeGroupRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body DeletePiholeGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePiholeGroup(ctx, request.(DeletePiholeGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePiholeGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePiholeGroupResponseObject); ok {
+		if err := validResponse.VisitDeletePiholeGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListPiholeGroups operation middleware
 func (sh *strictHandler) ListPiholeGroups(w http.ResponseWriter, r *http.Request, target TargetID) {
 	var request ListPiholeGroupsRequestObject
@@ -17551,6 +18643,101 @@ func (sh *strictHandler) ListPiholeGroups(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListPiholeGroupsResponseObject); ok {
 		if err := validResponse.VisitListPiholeGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdatePiholeGroup operation middleware
+func (sh *strictHandler) UpdatePiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params UpdatePiholeGroupParams) {
+	var request UpdatePiholeGroupRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body UpdatePiholeGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdatePiholeGroup(ctx, request.(UpdatePiholeGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdatePiholeGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdatePiholeGroupResponseObject); ok {
+		if err := validResponse.VisitUpdatePiholeGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddPiholeGroup operation middleware
+func (sh *strictHandler) AddPiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params AddPiholeGroupParams) {
+	var request AddPiholeGroupRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body AddPiholeGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddPiholeGroup(ctx, request.(AddPiholeGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddPiholeGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddPiholeGroupResponseObject); ok {
+		if err := validResponse.VisitAddPiholeGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPiholeGroupUsage operation middleware
+func (sh *strictHandler) GetPiholeGroupUsage(w http.ResponseWriter, r *http.Request, target TargetID, params GetPiholeGroupUsageParams) {
+	var request GetPiholeGroupUsageRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPiholeGroupUsage(ctx, request.(GetPiholeGroupUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPiholeGroupUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPiholeGroupUsageResponseObject); ok {
+		if err := validResponse.VisitGetPiholeGroupUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

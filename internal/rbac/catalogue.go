@@ -26,6 +26,7 @@ const (
 	BlockingIndefinite Permission = "blocking.indefinite"
 	DNSRestart         Permission = "dns.restart"
 	ClientResetRun     Permission = "clientreset.run"
+	PiholeGroupsEdit   Permission = "piholegroups.edit"
 	DriftView          Permission = "drift.view"
 	DriftReconcile     Permission = "drift.reconcile"
 	InstancesManage    Permission = "instances.manage"
@@ -82,6 +83,7 @@ var catalogue = []Info{
 	{BlockingIndefinite, ClassInstance, "Disable blocking with no timer (also needs blocking.toggle)"},
 	{DNSRestart, ClassInstance, "Restart DNS"},
 	{ClientResetRun, ClassInstance, "Run client reset manually"},
+	{PiholeGroupsEdit, ClassInstance, "Create, rename, comment, enable, disable and delete Pi-hole groups"},
 	{DriftView, ClassGroup, "View the drift report for a mirrored group"},
 	{DriftReconcile, ClassGroup, "Reconcile a mirrored group"},
 	{InstancesManage, ClassGlobal, "Add, edit and group instances"},
