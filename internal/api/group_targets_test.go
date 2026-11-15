@@ -247,16 +247,31 @@ func TestGroupReads(t *testing.T) {
 	ge.ph["alpha"].SetQueries([]piholetest.Query{q(300, "a3"), q(100, "a1")})
 	ge.ph["beta"].SetQueries([]piholetest.Query{q(200, "b2")})
 	ge.ph["gamma"].SetQueries([]piholetest.Query{q(400, "g4")})
-	log := decode[gen.QueryLog](t, ge.admin.do(http.MethodGet, ge.path("/queries?length=3"), nil))
+	log := decode[gen.QueryLog](t, ge.admin.do(http.MethodGet, ge.path("/queries?page_size=25"), nil))
 	var got []string
 	for _, e := range log.Queries {
 		got = append(got, e.Instance+"/"+e.Domain)
 	}
-	if !slices.Equal(got, []string{"gamma/g4", "alpha/a3", "beta/b2"}) {
-		t.Errorf("merged log %v", got)
+	if !slices.Equal(got, []string{"gamma/g4", "alpha/a3", "beta/b2", "alpha/a1"}) || log.Total != 4 || log.Pages != 1 || log.Capped {
+		t.Errorf("merged log %v, total %d, pages %d", got, log.Total, log.Pages)
 	}
 	if log.Members == nil || len(*log.Members) != 3 {
-		t.Errorf("log members %+v", log.Members)
+		t.Fatalf("log members %+v", log.Members)
+	}
+	memberID := map[string]int64{}
+	for _, m := range *log.Members {
+		memberID[m.Instance] = m.InstanceId
+	}
+	// One member alone, through the group: the group's permission is enough, and only that member is listed.
+	alpha := decode[gen.QueryLog](t, ge.admin.do(http.MethodGet, ge.path("/queries?member="+strconv.FormatInt(memberID["alpha"], 10)), nil))
+	if len(alpha.Queries) != 2 || alpha.Queries[0].Instance != "alpha" || alpha.Total != 2 || alpha.Members == nil ||
+		len(*alpha.Members) != 1 || (*alpha.Members)[0].Instance != "alpha" {
+		t.Errorf("alpha alone %+v", alpha)
+	}
+	for _, bad := range []string{"0", "999999", "abc"} {
+		if res := ge.admin.do(http.MethodGet, ge.path("/queries?member="+bad), nil); res.Code != http.StatusBadRequest {
+			t.Errorf("member=%s: %d %s", bad, res.Code, res.Body)
+		}
 	}
 	// An instance's own log names it too, and has no members.
 	one := decode[gen.QueryLog](t, ge.admin.do(http.MethodGet, ge.instPath("beta", "/queries"), nil))
@@ -296,6 +311,55 @@ func TestGroupReads(t *testing.T) {
 			t.Errorf("summary with every member down: %d %s", res.Code, res.Body)
 		}
 	})
+}
+
+// TestGroupQueryLogCap: a merged log pages no deeper than the newest 5,000 entries, while one member alone pages all
+// of its own; the snapshot holds each member's cursor.
+func TestGroupQueryLogCap(t *testing.T) {
+	ge := newGroupEnv(t)
+	fill := func(name string, n int, offset float64) {
+		qs := make([]piholetest.Query, n)
+		for i := range qs {
+			qs[i].ID, qs[i].Time, qs[i].Type, qs[i].Domain, qs[i].Status = n-i, offset+float64(n-i)*2, "A", name+".example", "CACHE"
+			qs[i].Client.IP = "10.0.0.2"
+		}
+		ge.ph[name].SetQueries(qs)
+	}
+	fill("alpha", 3000, 0)
+	fill("beta", 3000, 1)
+	ge.ph["gamma"].SetQueries(nil)
+	get := func(query string) gen.QueryLog {
+		t.Helper()
+		res := ge.admin.do(http.MethodGet, ge.path("/queries?page_size=250"+query), nil)
+		mustStatus(t, res, http.StatusOK)
+		return decode[gen.QueryLog](t, res)
+	}
+	first := get("")
+	if first.Total != 6000 || first.Pages != 20 || !first.Capped || len(first.Queries) != 250 ||
+		first.Queries[0].Instance != "beta" || first.Queries[1].Instance != "alpha" {
+		t.Fatalf("first page: total %d, pages %d, capped %v, %d entries", first.Total, first.Pages, first.Capped, len(first.Queries))
+	}
+	if last := get("&page=20&snapshot=" + first.Snapshot); len(last.Queries) != 250 {
+		t.Errorf("the last page under the cap has %d entries", len(last.Queries))
+	}
+	if past := get("&page=21&snapshot=" + first.Snapshot); len(past.Queries) != 0 || past.Pages != 20 {
+		t.Errorf("past the cap: %d entries, pages %d", len(past.Queries), past.Pages)
+	}
+	alpha := get("&page=12&member=" + strconv.FormatInt(ge.ids["alpha"], 10))
+	if alpha.Total != 3000 || alpha.Pages != 12 || alpha.Capped || len(alpha.Queries) != 250 {
+		t.Errorf("alpha alone: total %d, pages %d, capped %v, %d entries", alpha.Total, alpha.Pages, alpha.Capped, len(alpha.Queries))
+	}
+	snap, err := decodeSnapshot(first.Snapshot)
+	cursor := func(name string) int64 {
+		if c := snap[ge.ids[name]].Cursor; c != nil {
+			return *c
+		}
+		return -1
+	}
+	// gamma's log is empty, so Pi-hole points at nothing (-1), and the snapshot holds no cursor for it.
+	if err != nil || cursor("alpha") != 3000 || cursor("beta") != 3000 || cursor("gamma") != -1 || len(snap) != 3 {
+		t.Errorf("snapshot %v, %v", snap, err)
+	}
 }
 
 func TestGroupBlocking(t *testing.T) {

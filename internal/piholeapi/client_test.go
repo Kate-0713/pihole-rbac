@@ -398,14 +398,10 @@ func TestPathValuesAreEscaped(t *testing.T) {
 	if err := c.DeleteDomain(ctx, "a/b?c", "deny", "regex"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.ListQueries(ctx, 5000); err != nil {
-		t.Fatal(err)
-	}
 	want := []string{
 		"/api/clients/10.0.0.0%2F24?",
 		"/api/domains/deny/exact/a%2Fb%3Fc?",
 		"/api/domains/deny/regex/a%2Fb%3Fc?",
-		"/api/queries?length=1000",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("paths:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

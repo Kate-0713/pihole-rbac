@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
@@ -556,7 +557,7 @@ func TestQueries(t *testing.T) {
 	var qs []piholetest.Query
 	for i, d := range []string{"ads.example", "news.example", "ADS.other", "mail.example"} {
 		var q piholetest.Query
-		q.ID, q.Time, q.Type, q.Domain, q.Status = i, 1790000000.25-float64(i), "A", d, "FORWARDED"
+		q.ID, q.Time, q.Type, q.Domain, q.Status = 4-i, 1790000000.25-float64(i), "A", d, "FORWARDED"
 		q.Client.IP, q.Client.Name = "10.0.0."+strconv.Itoa(i+1), map[bool]string{true: "laptop.lan"}[i == 1]
 		q.Reply.Type, q.Reply.Time = "IP", 0.5
 		qs = append(qs, q)
@@ -570,8 +571,9 @@ func TestQueries(t *testing.T) {
 		return decode[gen.QueryLog](t, res)
 	}
 	all := get("")
-	if len(all.Queries) != 4 {
-		t.Fatalf("got %d entries", len(all.Queries))
+	if len(all.Queries) != 4 || all.Page != 1 || all.PageSize != 100 || all.Total != 4 || all.Pages != 1 ||
+		all.Capped || all.Source != "memory" || all.Snapshot == "" || all.Members != nil {
+		t.Fatalf("log %s", mustJSON(t, all))
 	}
 	q := all.Queries[0]
 	if q.Domain != "ads.example" || q.Time.UnixMilli() != 1790000000250 || q.ClientName != nil ||
@@ -581,22 +583,118 @@ func TestQueries(t *testing.T) {
 	if n := all.Queries[1].ClientName; n == nil || *n != "laptop.lan" {
 		t.Errorf("client name %v", n)
 	}
-	if got := get("?domain=ads"); len(got.Queries) != 2 {
-		t.Errorf("domain filter: %d entries, want 2 (case-insensitive)", len(got.Queries))
+	if got := get("?domain=ads"); len(got.Queries) != 2 || got.Total != 2 {
+		t.Errorf("domain filter: %d entries, total %d, want 2 (case-insensitive)", len(got.Queries), got.Total)
 	}
 	if got := get("?client=laptop"); len(got.Queries) != 1 {
 		t.Errorf("client name filter: %d entries", len(got.Queries))
 	}
-	if got := get("?length=2&domain=ads"); len(got.Queries) != 1 {
-		t.Errorf("filters apply to the entries read: %d entries, want 1", len(got.Queries))
+	if got := get("?client=10.0.0.3"); len(got.Queries) != 1 || got.Queries[0].Domain != "ADS.other" {
+		t.Errorf("client address filter: %s", mustJSON(t, got.Queries))
 	}
-	if !slices.Contains(te.ph.Requests(), "GET /api/queries") {
-		t.Errorf("requests %v", te.ph.Requests())
+	if got := get("?page=2&page_size=25"); len(got.Queries) != 0 || got.Page != 2 || got.Pages != 1 || got.Total != 4 {
+		t.Errorf("past the last page: %s", mustJSON(t, got))
 	}
-	for _, bad := range []string{"?length=0", "?length=1001", "?length=abc", "?domain=" + strings.Repeat("a", 256)} {
-		if res := te.admin.do(http.MethodGet, te.path("/queries"+bad), nil); res.Code != http.StatusBadRequest {
-			t.Errorf("%s: %d", bad, res.Code)
+
+	// Every filter goes to Pi-hole, checked first.
+	var sent []string
+	te.ph.Handle(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/api/queries" {
+			sent = append(sent, r.URL.RawQuery)
 		}
+		return false
+	})
+	get("?status=GRAVITY&type=AAAA&result=blocked&client=Lap_top&domain=Ads&page=3&page_size=50")
+	if len(sent) != 1 {
+		t.Fatalf("sent %v", sent)
+	}
+	for _, want := range []string{"status=GRAVITY", "type=AAAA", "upstream=blocklist", "domain=%2Aads%2A", "start=100",
+		"length=50", "columns%5B4%5D%5Bdata%5D=client", "columns%5B4%5D%5Bsearch%5D%5Bvalue%5D=lap%5C_top"} {
+		if !strings.Contains("&"+sent[0]+"&", "&"+want+"&") {
+			t.Errorf("sent %s, missing %s", sent[0], want)
+		}
+	}
+	if strings.Contains(sent[0], "disk") || strings.Contains(sent[0], "cursor") {
+		t.Errorf("a first page read from disk or with a cursor: %s", sent[0])
+	}
+
+	// A range starting before the in-memory log is read again from disk, and the snapshot keeps it there.
+	old := piholetest.Query{ID: 1, Time: 1780000000, Type: "A", Domain: "old.example", Status: "FORWARDED"}
+	te.ph.SetDiskQueries(append(slices.Clone(qs), old))
+	sent = nil
+	from := "?from=" + time.Unix(1779999000, 0).UTC().Format(time.RFC3339)
+	disk := get(from)
+	if disk.Source != "disk" || disk.Total != 5 || len(disk.Queries) != 5 || len(sent) != 2 ||
+		strings.Contains(sent[0], "disk") || !strings.Contains(sent[1], "disk=true") {
+		t.Errorf("older range: source %s, total %d, sent %v", disk.Source, disk.Total, sent)
+	}
+	sent = nil
+	if again := get(from + "&page=2&page_size=25&snapshot=" + disk.Snapshot); again.Source != "disk" || len(sent) != 1 ||
+		!strings.Contains(sent[0], "disk=true") || !strings.Contains(sent[0], "cursor=4") {
+		t.Errorf("with the snapshot: source %s, sent %v", again.Source, sent)
+	}
+	sent = nil
+	if until := get("?until=" + time.Unix(1785000000, 0).UTC().Format(time.RFC3339)); until.Source != "disk" ||
+		len(until.Queries) != 1 || len(sent) != 1 {
+		t.Errorf("a range with no start: %s, sent %v", mustJSON(t, until), sent)
+	}
+
+	bad := []string{"?page=0", "?page=1000001", "?page_size=30", "?page_size=abc", "?snapshot=junk", "?status=gravity",
+		"?type=TYPE65", "?result=denied", "?domain=a%25b", "?client=a%20b", "?domain=" + strings.Repeat("a", 256),
+		"?member=" + strconv.FormatInt(te.id, 10),
+		"?from=2026-11-14T10:00:00Z&until=2026-11-14T09:00:00Z"}
+	n := len(te.ph.Requests())
+	for _, b := range bad {
+		if res := te.admin.do(http.MethodGet, te.path("/queries"+b), nil); res.Code != http.StatusBadRequest ||
+			res.errorCode() != "validation_failed" {
+			t.Errorf("%s: %d %s", b, res.Code, res.Body)
+		}
+	}
+	if len(te.ph.Requests()) != n {
+		t.Error("a refused request reached Pi-hole")
+	}
+}
+
+func TestQueriesSnapshot(t *testing.T) {
+	te := newTargetEnv(t)
+	entries := func(newest int) []piholetest.Query {
+		var qs []piholetest.Query
+		for id := newest; id >= 1; id-- {
+			var q piholetest.Query
+			q.ID, q.Time, q.Type, q.Domain, q.Status = id, 1790000000+float64(id), "A", "d"+strconv.Itoa(id)+".example", "CACHE"
+			q.Client.IP = "10.0.0.2"
+			qs = append(qs, q)
+		}
+		return qs
+	}
+	te.ph.SetQueries(entries(60))
+	ids := func(l gen.QueryLog) (out []string) {
+		for _, q := range l.Queries {
+			out = append(out, strings.TrimSuffix(strings.TrimPrefix(q.Domain, "d"), ".example"))
+		}
+		return out
+	}
+	get := func(query string) gen.QueryLog {
+		t.Helper()
+		res := te.admin.do(http.MethodGet, te.path("/queries?page_size=25"+query), nil)
+		mustStatus(t, res, http.StatusOK)
+		return decode[gen.QueryLog](t, res)
+	}
+	first := get("")
+	if first.Pages != 3 || first.Total != 60 || ids(first)[0] != "60" || ids(first)[24] != "36" {
+		t.Fatalf("first page %v, pages %d", ids(first), first.Pages)
+	}
+	te.ph.SetQueries(entries(62)) // two new queries arrive
+	if p := get("&page=2&snapshot=" + first.Snapshot); ids(p)[0] != "35" || p.Snapshot != first.Snapshot {
+		t.Errorf("page 2 with the snapshot starts at %s (snapshot %q)", ids(p)[0], p.Snapshot)
+	}
+	if p := get("&page=2"); ids(p)[0] != "37" {
+		t.Errorf("page 2 without it starts at %s", ids(p)[0])
+	}
+	// Pi-hole's log was flushed: the snapshot's cursor is refused, and the page is read afresh.
+	te.ph.SetQueries(entries(10))
+	if p := get("&snapshot=" + first.Snapshot); len(p.Queries) != 10 || ids(p)[0] != "10" {
+		t.Errorf("after a flush: %v", ids(p))
 	}
 }
 

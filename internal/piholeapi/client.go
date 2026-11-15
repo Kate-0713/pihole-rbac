@@ -40,11 +40,14 @@ const (
 // DefaultTimeout bounds each request to Pi-hole, including the login it may need first.
 const DefaultTimeout = 10 * time.Second
 
+// DefaultQueryTimeout bounds a query log read, which can take much longer than other requests: a filtered read of
+// Pi-hole's long-term database counts every matching entry.
+const DefaultQueryTimeout = 30 * time.Second
+
 const (
-	maxResponseBytes = 16 << 20 // the query log is the largest response, at up to 1000 entries
+	maxResponseBytes = 32 << 20 // the query log is the largest response, at up to MaxQueryPage entries
 	maxAuthBytes     = 64 << 10
 	refreshMargin    = 30 * time.Second // log in again this long before Pi-hole's session expires
-	maxQueryLog      = 1000
 )
 
 // Options configures a Client.
@@ -54,6 +57,8 @@ type Options struct {
 	TLSMode  TLSMode // TLSVerify if empty
 	CAFile   string  // extra trusted CAs (PEM), only with TLSVerify
 	Timeout  time.Duration
+	// QueryTimeout bounds query log reads; DefaultQueryTimeout if zero.
+	QueryTimeout time.Duration
 }
 
 // Client talks to one Pi-hole. It is safe for concurrent use.
@@ -61,6 +66,7 @@ type Client struct {
 	baseURL   string
 	password  secrets.Value
 	http      *http.Client
+	slow      *http.Client // for query log reads: the same transport with a longer timeout
 	transport *http.Transport
 	now       func() time.Time
 
@@ -98,15 +104,23 @@ func New(opts Options) (*Client, error) {
 		IdleConnTimeout:     90 * time.Second,
 		ForceAttemptHTTP2:   true,
 	}
+	queryTimeout := opts.QueryTimeout
+	if queryTimeout <= 0 {
+		queryTimeout = DefaultQueryTimeout
+	}
+	hc := &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+		// A redirect would send the session ID, and on login the password, somewhere else.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	slow := *hc
+	slow.Timeout = queryTimeout
 	return &Client{
-		baseURL:  base,
-		password: opts.Password,
-		http: &http.Client{
-			Transport: transport,
-			Timeout:   timeout,
-			// A redirect would send the session ID, and on login the password, somewhere else.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
+		baseURL:   base,
+		password:  opts.Password,
+		http:      hc,
+		slow:      &slow,
 		transport: transport,
 		now:       time.Now,
 	}, nil
@@ -297,6 +311,11 @@ func (c *Client) forget(sid string) {
 // answers 401 to a cached session, the session is dropped and the request is tried once more with a new login: a
 // 401 means Pi-hole refused it before acting on it, so the retry is safe for writes too.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+	return c.doWith(ctx, c.http, method, path, body, out)
+}
+
+// doWith is do with a chosen HTTP client, for requests that need a different timeout.
+func (c *Client) doWith(ctx context.Context, hc *http.Client, method, path string, body, out any) error {
 	var payload []byte
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -310,7 +329,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		if err != nil {
 			return err
 		}
-		code, err := c.send(ctx, method, path, sid, payload, out)
+		code, err := c.send(ctx, hc, method, path, sid, payload, out)
 		if code == http.StatusUnauthorized && attempt == 0 {
 			c.forget(sid)
 			continue
@@ -319,7 +338,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 }
 
-func (c *Client) send(ctx context.Context, method, path, sid string, payload []byte, out any) (int, error) {
+func (c *Client) send(ctx context.Context, hc *http.Client, method, path, sid string, payload []byte, out any) (int, error) {
 	var body io.Reader
 	if payload != nil {
 		body = bytes.NewReader(payload)
@@ -334,7 +353,7 @@ func (c *Client) send(ctx context.Context, method, path, sid string, payload []b
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-FTL-SID", sid)
 
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return 0, c.transportError(ctx, "calling", err)
 	}
@@ -668,18 +687,6 @@ type QueryLogEntry struct {
 		Type string  `json:"type"`
 		Time float64 `json:"time"` // seconds
 	} `json:"reply"`
-}
-
-// ListQueries returns the newest length entries of the query log, newest first. length is clamped to 1..1000.
-func (c *Client) ListQueries(ctx context.Context, length int) ([]QueryLogEntry, error) {
-	length = min(max(length, 1), maxQueryLog)
-	var out struct {
-		Queries []QueryLogEntry `json:"queries"`
-	}
-	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/queries?length=%d", length), nil, &out); err != nil {
-		return nil, err
-	}
-	return out.Queries, nil
 }
 
 // ClientEntry is one entry from /api/clients. Pi-hole identifies a client by the IP, MAC address, hostname or subnet

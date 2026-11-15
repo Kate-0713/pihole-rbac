@@ -4,11 +4,9 @@
 package api
 
 import (
-	"cmp"
 	"context"
 	"math"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
@@ -37,40 +35,54 @@ func (s *Server) ListPiholeGroups(ctx context.Context, req gen.ListPiholeGroupsR
 	return gen.ListPiholeGroups200JSONResponse(out), nil
 }
 
-// defaultQueryLength is how many query log entries are read when the request doesn't say.
-const defaultQueryLength = 100
-
-// ListQueries reads the newest entries and filters them here, as v1 did, so the filters only ever look at what was
-// read.
+// ListQueries reads one page of the query log, with every filter applied by Pi-hole. An instance, or one member of
+// a mirrored group picked with member, is read a page at a time; a group's merged log reads each member from the
+// start, merges and cuts the page, no deeper than mergedQueryDepth entries.
 func (s *Server) ListQueries(ctx context.Context, req gen.ListQueriesRequestObject) (gen.ListQueriesResponseObject, error) {
-	length := defaultQueryLength
-	if req.Params.Length != nil {
-		length = *req.Params.Length
-		if length < 1 || length > 1000 {
-			return nil, invalid("length", "The length must be between 1 and 1000.")
-		}
+	p := req.Params
+	f, err := queryFilters{
+		from: p.From, until: p.Until, domain: p.Domain, client: p.Client,
+		status: asString(p.Status), qtype: asString(p.Type), result: asString(p.Result),
+	}.filter()
+	if err != nil {
+		return nil, err
 	}
-	var domainFilter, clientFilter string
-	if req.Params.Domain != nil {
-		if err := checkText("domain filter", *req.Params.Domain, maxFilterRunes); err != nil {
-			return nil, err
-		}
-		domainFilter = strings.ToLower(strings.TrimSpace(*req.Params.Domain))
+	page, size, err := queryPaging(p.Page, asInt(p.PageSize))
+	if err != nil {
+		return nil, err
 	}
-	if req.Params.Client != nil {
-		if err := checkText("client filter", *req.Params.Client, maxFilterRunes); err != nil {
-			return nil, err
+	var snap querySnapshot
+	if p.Snapshot != nil && *p.Snapshot != "" {
+		if snap, err = decodeSnapshot(*p.Snapshot); err != nil {
+			return nil, invalid("snapshot", "The snapshot isn't one this server gave out. Search again without it.")
 		}
-		clientFilter = strings.ToLower(strings.TrimSpace(*req.Params.Client))
 	}
 	tg, err := s.resolveTarget(ctx, req.Target, rbac.QueryLogView)
 	if err != nil {
 		return nil, err
 	}
-	lists := make([][]piholeapi.QueryLogEntry, len(tg.members))
-	outs, err := s.fanOut(ctx, tg, func(ctx context.Context, i int, _ instanceRef, c *piholeapi.Client) error {
+	if p.Member != nil {
+		if !tg.isGroup() {
+			return nil, invalid("member", "A member can only be picked for a mirrored group.")
+		}
+		i := slices.IndexFunc(tg.members, func(m instanceRef) bool { return m.id == *p.Member })
+		if i < 0 {
+			return nil, invalid("member", "Instance %d isn't an enabled member of %s.", *p.Member, tg.group)
+		}
+		tg.members = tg.members[i : i+1]
+	}
+	merged := tg.isGroup() && p.Member == nil
+	f.Start, f.Length = queryWindow(merged, page, size)
+
+	pages := make([]*piholeapi.QueryPage, len(tg.members))
+	seen := make([]snapshotMember, len(tg.members))
+	outs, err := s.fanOut(ctx, tg, func(ctx context.Context, i int, m instanceRef, c *piholeapi.Client) error {
+		var prev *snapshotMember
+		if sm, ok := snap[m.id]; ok {
+			prev = &sm
+		}
 		var err error
-		lists[i], err = c.ListQueries(ctx, length)
+		pages[i], seen[i], err = readMember(ctx, c.QueryLog, f, prev)
 		return err
 	})
 	if err != nil {
@@ -79,37 +91,39 @@ func (s *Server) ListQueries(ctx context.Context, req gen.ListQueriesRequestObje
 	if !anyOK(outs) {
 		return nil, firstFailure(outs)
 	}
-	// Each member's newest entries, merged newest first and cut to length, so a group's log reads like one Pi-hole's.
-	type tagged struct {
-		q        piholeapi.QueryLogEntry
-		instance string
-	}
-	var merged []tagged
+
+	next := querySnapshot{}
+	var lists [][]taggedQuery
+	var disk []bool
+	total := 0
 	for i, o := range outs {
 		if !o.ok() {
+			if sm, ok := snap[o.ref.id]; ok {
+				next[o.ref.id] = sm // kept, so the member's later pages match if it comes back
+			}
 			continue
 		}
-		for _, q := range lists[i] {
-			merged = append(merged, tagged{q, o.ref.name})
+		next[o.ref.id] = seen[i]
+		disk = append(disk, seen[i].Disk)
+		total += pages[i].Filtered
+		list := make([]taggedQuery, 0, len(pages[i].Queries))
+		for _, q := range pages[i].Queries {
+			list = append(list, taggedQuery{q, o.ref.name})
 		}
+		lists = append(lists, list)
 	}
-	if tg.isGroup() {
-		slices.SortStableFunc(merged, func(a, b tagged) int { return cmp.Compare(b.q.Time, a.q.Time) })
-		if len(merged) > length {
-			merged = merged[:length]
-		}
+	entries := slices.Concat(lists...)
+	if merged {
+		entries = pageOf(mergeQueries(lists), page, size)
 	}
-	out := gen.QueryLog{Queries: make([]gen.QueryLogEntry, 0, len(merged)), Members: memberReads(tg, outs, nil)}
-	for _, t := range merged {
-		q := t.q
-		if domainFilter != "" && !strings.Contains(strings.ToLower(q.Domain), domainFilter) {
-			continue
-		}
-		if clientFilter != "" && !strings.Contains(strings.ToLower(q.Client.IP), clientFilter) &&
-			!strings.Contains(strings.ToLower(q.Client.Name), clientFilter) {
-			continue
-		}
-		out.Queries = append(out.Queries, queryJSON(q, t.instance))
+	n, capped := pagesFor(merged, total, size)
+	out := gen.QueryLog{
+		Queries: make([]gen.QueryLogEntry, 0, len(entries)), Members: memberReads(tg, outs, nil),
+		Page: page, PageSize: size, Total: total, Pages: n, Capped: capped,
+		Snapshot: next.encode(), Source: gen.QuerySource(sourceOf(disk)),
+	}
+	for _, t := range entries {
+		out.Queries = append(out.Queries, queryJSON(t.q, t.instance))
 	}
 	return gen.ListQueries200JSONResponse(out), nil
 }

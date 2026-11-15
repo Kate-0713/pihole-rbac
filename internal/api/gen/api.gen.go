@@ -738,6 +738,156 @@ func (e ProtectedGroupScope) Valid() bool {
 	}
 }
 
+// Defines values for QuerySource.
+const (
+	QuerySourceDisk   QuerySource = "disk"
+	QuerySourceMemory QuerySource = "memory"
+	QuerySourceMixed  QuerySource = "mixed"
+)
+
+// Valid indicates whether the value is a known member of the QuerySource enum.
+func (e QuerySource) Valid() bool {
+	switch e {
+	case QuerySourceDisk:
+		return true
+	case QuerySourceMemory:
+		return true
+	case QuerySourceMixed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryStatus.
+const (
+	CACHE                QueryStatus = "CACHE"
+	CACHESTALE           QueryStatus = "CACHE_STALE"
+	DBBUSY               QueryStatus = "DBBUSY"
+	DENYLIST             QueryStatus = "DENYLIST"
+	DENYLISTCNAME        QueryStatus = "DENYLIST_CNAME"
+	EXTERNALBLOCKEDEDE15 QueryStatus = "EXTERNAL_BLOCKED_EDE15"
+	EXTERNALBLOCKEDIP    QueryStatus = "EXTERNAL_BLOCKED_IP"
+	EXTERNALBLOCKEDNULL  QueryStatus = "EXTERNAL_BLOCKED_NULL"
+	EXTERNALBLOCKEDNXRA  QueryStatus = "EXTERNAL_BLOCKED_NXRA"
+	FORWARDED            QueryStatus = "FORWARDED"
+	GRAVITY              QueryStatus = "GRAVITY"
+	GRAVITYCNAME         QueryStatus = "GRAVITY_CNAME"
+	INPROGRESS           QueryStatus = "IN_PROGRESS"
+	REGEX                QueryStatus = "REGEX"
+	REGEXCNAME           QueryStatus = "REGEX_CNAME"
+	RETRIED              QueryStatus = "RETRIED"
+	RETRIEDDNSSEC        QueryStatus = "RETRIED_DNSSEC"
+	SPECIALDOMAIN        QueryStatus = "SPECIAL_DOMAIN"
+	UNKNOWN              QueryStatus = "UNKNOWN"
+)
+
+// Valid indicates whether the value is a known member of the QueryStatus enum.
+func (e QueryStatus) Valid() bool {
+	switch e {
+	case CACHE:
+		return true
+	case CACHESTALE:
+		return true
+	case DBBUSY:
+		return true
+	case DENYLIST:
+		return true
+	case DENYLISTCNAME:
+		return true
+	case EXTERNALBLOCKEDEDE15:
+		return true
+	case EXTERNALBLOCKEDIP:
+		return true
+	case EXTERNALBLOCKEDNULL:
+		return true
+	case EXTERNALBLOCKEDNXRA:
+		return true
+	case FORWARDED:
+		return true
+	case GRAVITY:
+		return true
+	case GRAVITYCNAME:
+		return true
+	case INPROGRESS:
+		return true
+	case REGEX:
+		return true
+	case REGEXCNAME:
+		return true
+	case RETRIED:
+		return true
+	case RETRIEDDNSSEC:
+		return true
+	case SPECIALDOMAIN:
+		return true
+	case UNKNOWN:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QueryType.
+const (
+	A      QueryType = "A"
+	AAAA   QueryType = "AAAA"
+	ANY    QueryType = "ANY"
+	DNSKEY QueryType = "DNSKEY"
+	DS     QueryType = "DS"
+	HTTPS  QueryType = "HTTPS"
+	MX     QueryType = "MX"
+	NAPTR  QueryType = "NAPTR"
+	NS     QueryType = "NS"
+	OTHER  QueryType = "OTHER"
+	PTR    QueryType = "PTR"
+	RRSIG  QueryType = "RRSIG"
+	SOA    QueryType = "SOA"
+	SRV    QueryType = "SRV"
+	SVCB   QueryType = "SVCB"
+	TXT    QueryType = "TXT"
+)
+
+// Valid indicates whether the value is a known member of the QueryType enum.
+func (e QueryType) Valid() bool {
+	switch e {
+	case A:
+		return true
+	case AAAA:
+		return true
+	case ANY:
+		return true
+	case DNSKEY:
+		return true
+	case DS:
+		return true
+	case HTTPS:
+		return true
+	case MX:
+		return true
+	case NAPTR:
+		return true
+	case NS:
+		return true
+	case OTHER:
+		return true
+	case PTR:
+		return true
+	case RRSIG:
+		return true
+	case SOA:
+		return true
+	case SRV:
+		return true
+	case SVCB:
+		return true
+	case TXT:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReconcileDomainKind.
 const (
 	ReconcileDomainKindExact ReconcileDomainKind = "exact"
@@ -1116,6 +1266,51 @@ func (e ExportAuditParamsResult) Valid() bool {
 	case ExportAuditParamsResultFailure:
 		return true
 	case ExportAuditParamsResultSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListQueriesParamsPageSize.
+const (
+	N100 ListQueriesParamsPageSize = 100
+	N25  ListQueriesParamsPageSize = 25
+	N250 ListQueriesParamsPageSize = 250
+	N50  ListQueriesParamsPageSize = 50
+)
+
+// Valid indicates whether the value is a known member of the ListQueriesParamsPageSize enum.
+func (e ListQueriesParamsPageSize) Valid() bool {
+	switch e {
+	case N100:
+		return true
+	case N25:
+		return true
+	case N250:
+		return true
+	case N50:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListQueriesParamsResult.
+const (
+	Allowed ListQueriesParamsResult = "allowed"
+	Blocked ListQueriesParamsResult = "blocked"
+	Cached  ListQueriesParamsResult = "cached"
+)
+
+// Valid indicates whether the value is a known member of the ListQueriesParamsResult enum.
+func (e ListQueriesParamsResult) Valid() bool {
+	switch e {
+	case Allowed:
+		return true
+	case Blocked:
+		return true
+	case Cached:
 		return true
 	default:
 		return false
@@ -2352,11 +2547,28 @@ type ProtectedGroupsInput struct {
 	} `json:"entries"`
 }
 
-// QueryLog For a mirrored group, each enabled member's newest `length` entries are read, merged newest first and cut to `length`, then filtered; `members` says how each member answered. A member that didn't answer leaves the log, and the request fails only when none answered.
+// QueryLog For a mirrored group, `members` says how each member answered. A member that didn't answer leaves the log and the total, and the request fails only when none answered.
 type QueryLog struct {
-	// Members For a mirrored group, its enabled members, the primary first. Absent for an instance.
-	Members *[]MemberRead   `json:"members,omitempty"`
+	// Capped A merged group log with more matching entries than can be paged through; narrow the search or pick a member.
+	Capped bool `json:"capped"`
+
+	// Members For a mirrored group, its enabled members, the primary first (only the one asked for with `member`). Absent for an instance.
+	Members  *[]MemberRead `json:"members,omitempty"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"page_size"`
+
+	// Pages The pages that can be reached; for a merged group log, no further than the newest 5,000 entries.
+	Pages   int             `json:"pages"`
 	Queries []QueryLogEntry `json:"queries"`
+
+	// Snapshot Send back with later pages of this search.
+	Snapshot string `json:"snapshot"`
+
+	// Source Where the entries were read: Pi-hole's in-memory log, its long-term database, or, for a group, some members from each.
+	Source QuerySource `json:"source"`
+
+	// Total Entries matching the filters (summed over the members that answered). Without a filter it is Pi-hole's whole in-memory count, which can include a few entries newer than the snapshot.
+	Total int `json:"total"`
 }
 
 // QueryLogEntry defines model for QueryLogEntry.
@@ -2387,6 +2599,15 @@ type QueryLogEntry struct {
 	// Upstream Absent when the query wasn't forwarded.
 	Upstream *string `json:"upstream,omitempty"`
 }
+
+// QuerySource Where the entries were read: Pi-hole's in-memory log, its long-term database, or, for a group, some members from each.
+type QuerySource string
+
+// QueryStatus FTL's status names (Pi-hole v6).
+type QueryStatus string
+
+// QueryType defines model for QueryType.
+type QueryType string
 
 // ReconcileClient defines model for ReconcileClient.
 type ReconcileClient struct {
@@ -3111,15 +3332,45 @@ type AddDomainParams struct {
 
 // ListQueriesParams defines parameters for ListQueries.
 type ListQueriesParams struct {
-	// Length How many of the newest entries to read, 1 to 1000. Default 100.
-	Length *int `form:"length,omitempty" json:"length,omitempty"`
+	// Page The page, from 1. Default 1. A page past the last has no entries.
+	Page *int `form:"page,omitempty" json:"page,omitempty"`
 
-	// Domain Keep entries whose domain contains this, ignoring case.
+	// PageSize Entries per page. Default 100.
+	PageSize *ListQueriesParamsPageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
+
+	// Snapshot The `snapshot` of an earlier answer for the same search, so later pages stay stable.
+	Snapshot *string `form:"snapshot,omitempty" json:"snapshot,omitempty"`
+
+	// From Only entries at or after this time.
+	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
+
+	// Until Only entries before this time; after `from`.
+	Until *time.Time `form:"until,omitempty" json:"until,omitempty"`
+
+	// Domain Keep entries whose domain contains this, ignoring case. Letters, digits, `.`, `-`, `_` and `*` (any run of characters).
 	Domain *string `form:"domain,omitempty" json:"domain,omitempty"`
 
-	// Client Keep entries whose client address or name contains this, ignoring case.
+	// Client Keep entries whose client address or name contains this, ignoring case. As `domain`, plus `:`.
 	Client *string `form:"client,omitempty" json:"client,omitempty"`
+
+	// Status Keep entries with this FTL status.
+	Status *QueryStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Type Keep entries for this record type; OTHER is every type without a name of its own.
+	Type *QueryType `form:"type,omitempty" json:"type,omitempty"`
+
+	// Result Keep blocked entries, allowed ones (answered from the cache or forwarded), or cached ones.
+	Result *ListQueriesParamsResult `form:"result,omitempty" json:"result,omitempty"`
+
+	// Member Mirrored groups only: read this member (an enabled member's instance ID) alone. A 400 for an instance target or an ID that isn't an enabled member.
+	Member *int64 `form:"member,omitempty" json:"member,omitempty"`
 }
+
+// ListQueriesParamsPageSize defines parameters for ListQueries.
+type ListQueriesParamsPageSize int
+
+// ListQueriesParamsResult defines parameters for ListQueries.
+type ListQueriesParamsResult string
 
 // DeleteUserParams defines parameters for DeleteUser.
 type DeleteUserParams struct {
@@ -3480,7 +3731,7 @@ type ServerInterface interface {
 	// ListPiholeGroups The Pi-hole's groups
 	// (GET /api/v1/targets/{target}/groups)
 	ListPiholeGroups(w http.ResponseWriter, r *http.Request, target TargetID)
-	// ListQueries The newest entries of the query log
+	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(w http.ResponseWriter, r *http.Request, target TargetID, params ListQueriesParams)
 	// GetTargetSummary Dashboard figures for a target
@@ -5607,15 +5858,67 @@ func (siw *ServerInterfaceWrapper) ListQueries(w http.ResponseWriter, r *http.Re
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListQueriesParams
 
-	// ------------- Optional query parameter "length" -------------
+	// ------------- Optional query parameter "page" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "length", r.URL.Query(), &params.Length, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "length"})
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
 		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "length", Err: err})
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "snapshot" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "snapshot", r.URL.Query(), &params.Snapshot, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "snapshot"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "snapshot", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "until" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "until", r.URL.Query(), &params.Until, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "until"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "until", Err: err})
 		}
 		return
 	}
@@ -5642,6 +5945,58 @@ func (siw *ServerInterfaceWrapper) ListQueries(w http.ResponseWriter, r *http.Re
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "type", r.URL.Query(), &params.Type, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "result" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "result", r.URL.Query(), &params.Result, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "result"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "result", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "member" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "member", r.URL.Query(), &params.Member, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "member"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "member", Err: err})
 		}
 		return
 	}
@@ -14886,7 +15241,7 @@ type StrictServerInterface interface {
 	// ListPiholeGroups The Pi-hole's groups
 	// (GET /api/v1/targets/{target}/groups)
 	ListPiholeGroups(ctx context.Context, request ListPiholeGroupsRequestObject) (ListPiholeGroupsResponseObject, error)
-	// ListQueries The newest entries of the query log
+	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(ctx context.Context, request ListQueriesRequestObject) (ListQueriesResponseObject, error)
 	// GetTargetSummary Dashboard figures for a target

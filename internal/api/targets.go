@@ -157,7 +157,6 @@ const (
 	maxRegexBytes       = 1024
 	maxCommentRunes     = 500
 	maxClientIDBytes    = 255
-	maxFilterRunes      = 255
 	maxGroupIDs         = 1000
 	maxBlockingTimer    = 86400 // seconds
 )

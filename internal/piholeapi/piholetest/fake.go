@@ -16,7 +16,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -89,7 +88,8 @@ type Server struct {
 	domains  []Domain
 	clients  []Client
 	groups   []Group
-	queries  []Query // newest first
+	queries  []Query // the in-memory log, newest first
+	disk     []Query // the long-term database, newest first
 	nextID   int
 	now      int64
 	requests []string
@@ -232,11 +232,19 @@ func (s *Server) Clients() []Client {
 	return slices.Clone(s.clients)
 }
 
-// SetQueries replaces the query log, newest first.
+// SetQueries replaces the in-memory query log, newest first.
 func (s *Server) SetQueries(qs []Query) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.queries = slices.Clone(qs)
+}
+
+// SetDiskQueries replaces the long-term database, which reads with disk=true see, newest first. Real Pi-holes keep
+// the in-memory log there too, a minute or so behind; tests give it whatever they need.
+func (s *Server) SetDiskQueries(qs []Query) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disk = slices.Clone(qs)
 }
 
 // id returns a new row ID. Called with s.mu held.
@@ -352,11 +360,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPut && seg[0] == "groups" && len(seg) == 2:
 		s.putGroup(w, r, seg[1], false)
 	case route == "GET queries" && len(seg) == 1:
-		n := len(s.queries)
-		if l, err := strconv.Atoi(r.URL.Query().Get("length")); err == nil && l >= 0 && l < n {
-			n = l
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"queries": s.queries[:n]})
+		s.listQueries(w, r)
 	default:
 		writeJSON(w, http.StatusNotFound, errBody("not_found", "Not found"))
 	}

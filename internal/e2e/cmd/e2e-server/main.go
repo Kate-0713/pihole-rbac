@@ -90,6 +90,7 @@ func run() error {
 	defer ph1.Close()
 	defer ph2.Close()
 	fillPihole(ph1)
+	fillQueryPages(ph2)
 	// A directory for the LDAP page's tests. The seeded server doesn't use it until a test saves its settings.
 	directory, err := ldaptest.Start("127.0.0.1:0")
 	if err != nil {
@@ -230,7 +231,8 @@ func fillPihole(ph *piholetest.Server) {
 	ph.AddClient(piholetest.Client{Client: "10.0.0.0/24", Comment: "lab subnet", Groups: []int{0}})
 	ph.AddClient(piholetest.Client{Client: "10.0.1.5", Name: "printer.lan", Groups: []int{kids}})
 
-	// Five queries, newest first, a minute apart and ending a minute ago: two blocked, three answered.
+	// Five queries, newest first, a minute apart and ending a minute ago: two blocked, three answered, one of them
+	// cached and for AAAA.
 	now := time.Now()
 	q := func(i int, domain, ip, name, status, reply, upstream string, replySec float64) piholetest.Query {
 		e := piholetest.Query{ID: 5 - i, Time: float64(now.Add(-time.Duration(i+1)*time.Minute).UnixMilli()) / 1000,
@@ -239,13 +241,35 @@ func fillPihole(ph *piholetest.Server) {
 		e.Reply.Type, e.Reply.Time = reply, replySec
 		return e
 	}
-	ph.SetQueries([]piholetest.Query{
+	qs := []piholetest.Query{
 		q(0, "ads.example", "10.0.1.5", "printer.lan", "GRAVITY", "IP", "", 0.0001),
 		q(1, "school.example", "10.0.0.7", "", "FORWARDED", "IP", "9.9.9.9#53", 0.0123),
 		q(2, "games.example", "10.0.1.5", "printer.lan", "DENYLIST", "IP", "", 0.0002),
 		q(3, "school.example", "10.0.0.8", "", "CACHE", "IP", "", 0.0003),
 		q(4, "news.example", "10.0.0.7", "", "FORWARDED", "IP", "9.9.9.9#53", 0.021),
-	})
+	}
+	qs[3].Type = "AAAA" // so the type filter has something to find
+	ph.SetQueries(qs)
+}
+
+// fillQueryPages gives the second Pi-hole a query log long enough to page through: 60 cached queries a minute
+// apart, newest first, ending ten minutes ago (page-60.example to page-01.example), and in its long-term database
+// one more from two days ago (archive.example), which only a read reaching that far back finds.
+func fillQueryPages(ph *piholetest.Server) {
+	now := time.Now()
+	var qs []piholetest.Query
+	for n := 60; n >= 1; n-- {
+		e := piholetest.Query{ID: 100 + n, Time: float64(now.Add(-time.Duration(70-n)*time.Minute).UnixMilli()) / 1000,
+			Type: "A", Domain: fmt.Sprintf("page-%02d.example", n), Status: "CACHE"}
+		e.Client.IP = "10.0.0.9"
+		e.Reply.Type, e.Reply.Time = "IP", 0.0001
+		qs = append(qs, e)
+	}
+	ph.SetQueries(qs)
+	archive := piholetest.Query{ID: 100, Time: float64(now.Add(-48*time.Hour).UnixMilli()) / 1000, Type: "A",
+		Domain: "archive.example", Status: "FORWARDED", Upstream: "9.9.9.9#53"}
+	archive.Client.IP = "10.0.0.9"
+	ph.SetDiskQueries(append(qs, archive))
 }
 
 // unusedAddr returns a local address nothing listens on: it is taken and released at once.

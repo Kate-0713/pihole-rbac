@@ -1383,8 +1383,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The newest entries of the query log
-         * @description Reads the newest `length` entries, newest first, then keeps those matching the filters, so a filtered result can hold fewer than `length` entries.
+         * One page of the query log
+         * @description One page of the entries matching the filters, newest first, with every filter applied by Pi-hole. The first answer carries a `snapshot`; send it back with later pages so they show the same entries however many queries have arrived since, and leave it out for a new search. A member is read from Pi-hole's long-term database instead of its in-memory log (about the last 24 hours) when a time is given and the range starts before the oldest in-memory entry, or has no start; `source` says which was used. For a mirrored group, each member answering is read and the entries merged newest first, up to the newest 5,000 merged entries (`capped` when more match); `member` reads one member alone, with full paging.
          */
         get: operations["listQueries"];
         put?: never;
@@ -2679,12 +2679,35 @@ export interface components {
             comment: string;
             enabled: boolean;
         };
-        /** @description For a mirrored group, each enabled member's newest `length` entries are read, merged newest first and cut to `length`, then filtered; `members` says how each member answered. A member that didn't answer leaves the log, and the request fails only when none answered. */
+        /** @description For a mirrored group, `members` says how each member answered. A member that didn't answer leaves the log and the total, and the request fails only when none answered. */
         QueryLog: {
             queries: components["schemas"]["QueryLogEntry"][];
-            /** @description For a mirrored group, its enabled members, the primary first. Absent for an instance. */
+            /** @description For a mirrored group, its enabled members, the primary first (only the one asked for with `member`). Absent for an instance. */
             members?: components["schemas"]["MemberRead"][];
+            page: number;
+            page_size: number;
+            /** @description Entries matching the filters (summed over the members that answered). Without a filter it is Pi-hole's whole in-memory count, which can include a few entries newer than the snapshot. */
+            total: number;
+            /** @description The pages that can be reached; for a merged group log, no further than the newest 5,000 entries. */
+            pages: number;
+            /** @description A merged group log with more matching entries than can be paged through; narrow the search or pick a member. */
+            capped: boolean;
+            /** @description Send back with later pages of this search. */
+            snapshot: string;
+            source: components["schemas"]["QuerySource"];
         };
+        /**
+         * @description Where the entries were read: Pi-hole's in-memory log, its long-term database, or, for a group, some members from each.
+         * @enum {string}
+         */
+        QuerySource: "memory" | "disk" | "mixed";
+        /**
+         * @description FTL's status names (Pi-hole v6).
+         * @enum {string}
+         */
+        QueryStatus: "UNKNOWN" | "GRAVITY" | "FORWARDED" | "CACHE" | "REGEX" | "DENYLIST" | "EXTERNAL_BLOCKED_IP" | "EXTERNAL_BLOCKED_NULL" | "EXTERNAL_BLOCKED_NXRA" | "GRAVITY_CNAME" | "REGEX_CNAME" | "DENYLIST_CNAME" | "RETRIED" | "RETRIED_DNSSEC" | "IN_PROGRESS" | "DBBUSY" | "SPECIAL_DOMAIN" | "CACHE_STALE" | "EXTERNAL_BLOCKED_EDE15";
+        /** @enum {string} */
+        QueryType: "A" | "AAAA" | "ANY" | "SRV" | "SOA" | "PTR" | "TXT" | "NAPTR" | "MX" | "DS" | "RRSIG" | "DNSKEY" | "NS" | "SVCB" | "HTTPS" | "OTHER";
         QueryLogEntry: {
             /** @description The instance that answered the query. */
             instance: string;
@@ -5603,12 +5626,28 @@ export interface operations {
     listQueries: {
         parameters: {
             query?: {
-                /** @description How many of the newest entries to read, 1 to 1000. Default 100. */
-                length?: number;
-                /** @description Keep entries whose domain contains this, ignoring case. */
+                /** @description The page, from 1. Default 1. A page past the last has no entries. */
+                page?: number;
+                /** @description Entries per page. Default 100. */
+                page_size?: 25 | 50 | 100 | 250;
+                /** @description The `snapshot` of an earlier answer for the same search, so later pages stay stable. */
+                snapshot?: string;
+                /** @description Only entries at or after this time. */
+                from?: string;
+                /** @description Only entries before this time; after `from`. */
+                until?: string;
+                /** @description Keep entries whose domain contains this, ignoring case. Letters, digits, `.`, `-`, `_` and `*` (any run of characters). */
                 domain?: string;
-                /** @description Keep entries whose client address or name contains this, ignoring case. */
+                /** @description Keep entries whose client address or name contains this, ignoring case. As `domain`, plus `:`. */
                 client?: string;
+                /** @description Keep entries with this FTL status. */
+                status?: components["schemas"]["QueryStatus"];
+                /** @description Keep entries for this record type; OTHER is every type without a name of its own. */
+                type?: components["schemas"]["QueryType"];
+                /** @description Keep blocked entries, allowed ones (answered from the cache or forwarded), or cached ones. */
+                result?: "blocked" | "allowed" | "cached";
+                /** @description Mirrored groups only: read this member (an enabled member's instance ID) alone. A 400 for an instance target or an ID that isn't an enabled member. */
+                member?: number;
             };
             header?: never;
             path: {
