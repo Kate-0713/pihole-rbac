@@ -12,6 +12,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/lists"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
@@ -46,6 +47,8 @@ func (s *Server) ReconcileGroup(ctx context.Context, req gen.ReconcileGroupReque
 	if err != nil {
 		return nil, err
 	}
+	allowFile := s.allowFileLists()
+	sel.CheckList = func(address string) error { return lists.CheckAddress(address, allowFile) }
 
 	res, err := s.Drift.Reconcile(ctx, req.Id, sel)
 	var pe *instances.PrimaryError
@@ -130,6 +133,13 @@ func (s *Server) ReconcileGroup(ctx context.Context, req gen.ReconcileGroupReque
 		case instances.ItemGroup:
 			gn := it.Group
 			r.Group = &gn
+		case instances.ItemList:
+			a, lt := lists.Redacted(it.List.Address), gen.PiholeListType(it.List.Type)
+			r.Address, r.ListType = &a, &lt
+			if it.NeedsGravity {
+				needs := true
+				r.NeedsGravity = &needs
+			}
 		}
 		if it.Err != nil {
 			partial = true
@@ -158,6 +168,9 @@ func (s *Server) selection(b *gen.ReconcileInput, g instances.Group) (instances.
 	}
 	if b.Groups != nil {
 		n += len(*b.Groups)
+	}
+	if b.Lists != nil {
+		n += len(*b.Lists)
 	}
 	switch {
 	case all && n > 0:
@@ -212,6 +225,18 @@ func (s *Server) selection(b *gen.ReconcileInput, g instances.Group) (instances.
 			sel.Groups = append(sel.Groups, instances.GroupKey{Member: gr.InstanceId, Name: gr.Name})
 		}
 	}
+	if b.Lists != nil {
+		for _, l := range *b.Lists {
+			if err := member("lists", l.InstanceId); err != nil {
+				return sel, err
+			}
+			key, err := checkListKey(l.Address, string(l.Type))
+			if err != nil {
+				return sel, err
+			}
+			sel.Lists = append(sel.Lists, instances.ListKey{Member: l.InstanceId, Address: key.Address, Type: key.Type})
+		}
+	}
 	return sel, nil
 }
 
@@ -221,12 +246,21 @@ func itemKey(it instances.ReconcileItem) string {
 		return it.Domain.Domain + " (" + it.Domain.Type + ", " + it.Domain.Kind + ")"
 	case instances.ItemClient:
 		return it.Client
+	case instances.ItemList:
+		return it.List.Type + " " + lists.Redacted(it.List.Address)
 	}
 	return it.Group
 }
 
 // reconcileError describes an item that failed, as a write's per-instance error is described.
 func reconcileError(it instances.ReconcileItem) *gen.WriteError {
+	var ae *lists.AddressError
+	if errors.As(it.Err, &ae) {
+		return &gen.WriteError{
+			Code:    string(rbac.CodeValidation),
+			Message: "The primary's list wasn't copied to " + it.MemberName + ". " + ae.Message + ".",
+		}
+	}
 	if errors.Is(it.Err, instances.ErrNotReconcilable) {
 		return &gen.WriteError{Code: codeNotReconcilable, Message: "Pi-hole groups only a member has aren't deleted: entries or clients outside the group may use them."}
 	}

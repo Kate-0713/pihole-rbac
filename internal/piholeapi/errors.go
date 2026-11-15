@@ -130,6 +130,10 @@ const (
 	CodeAuthRejected = "pihole_auth_rejected"
 	CodeStatusError  = "pihole_status_error"
 	CodeRejected     = "pihole_rejected"
+	// CodeGravityRunning is Pi-hole refusing a gravity run because it is already running one.
+	CodeGravityRunning = "gravity_running"
+	// CodeGravityFailed is a gravity run Pi-hole reported as failed, or whose output was cut short.
+	CodeGravityFailed = "gravity_failed"
 )
 
 // Kind returns the API error code for err, or "" if err isn't a Pi-hole failure (a cancelled request, say, or a bug).
@@ -139,6 +143,10 @@ func Kind(err error) string {
 	switch {
 	case errors.Is(err, ErrRejected):
 		return CodeRejected
+	case errors.Is(err, ErrGravityRunning):
+		return CodeGravityRunning
+	case errors.Is(err, ErrGravityFailed):
+		return CodeGravityFailed
 	case errors.Is(err, ErrUnreachable):
 		return CodeUnreachable
 	case errors.Is(err, ErrAuthRejected):

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/lists"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
@@ -75,7 +76,7 @@ func (s *Server) driftGroup(ctx context.Context, id int64) (instances.Group, *rb
 }
 
 // driftJSON reports a drift check. Domain differences are only given to callers who can list the group's domains,
-// and client differences to those who can list its clients, so drift.view never reveals entries the caller couldn't
+// client differences to those who can list its clients, and list differences to those who can list its lists, so drift.view never reveals entries the caller couldn't
 // otherwise see; the counts are always given.
 func driftJSON(g instances.Group, rep instances.Report, set *rbac.Set) gen.DriftReport {
 	t := rbac.GroupTarget(g.ID)
@@ -83,7 +84,7 @@ func driftJSON(g instances.Group, rep instances.Report, set *rbac.Set) gen.Drift
 	out := gen.DriftReport{
 		GroupId: g.ID, Group: g.Name, State: gen.DriftReportState("checked"), CheckedAt: &at,
 		Drifted: rep.Drifted(), Members: make([]gen.MemberRead, len(rep.Members)),
-		Counts: gen.DriftCounts{Domains: len(rep.Domains), Clients: len(rep.Clients), Groups: len(rep.Groups)},
+		Counts: gen.DriftCounts{Domains: len(rep.Domains), Clients: len(rep.Clients), Groups: len(rep.Groups), Lists: len(rep.Lists)},
 		Groups: &[]gen.PiholeGroupDrift{},
 	}
 	if !rep.PrimaryOK {
@@ -118,6 +119,17 @@ func driftJSON(g instances.Group, rep instances.Report, set *rbac.Set) gen.Drift
 		}
 		out.Clients = &list
 	}
+	if set.Can(rbac.ListsView, t) {
+		list := make([]gen.PiholeListDrift, len(rep.Lists))
+		for i, l := range rep.Lists {
+			list[i] = gen.PiholeListDrift{
+				Instance: l.MemberName, InstanceId: l.Member, Address: lists.Redacted(l.Address),
+				Type: gen.PiholeListType(l.Type), Difference: gen.DriftDifference(l.Difference),
+				Primary: listState(l.Primary), Member: listState(l.Other),
+			}
+		}
+		out.Lists = &list
+	}
 	for _, gd := range rep.Groups {
 		*out.Groups = append(*out.Groups, gen.PiholeGroupDrift{
 			Instance: gd.MemberName, InstanceId: gd.Member, Name: gd.Name, Difference: gen.DriftDifference(gd.Difference),
@@ -139,6 +151,13 @@ func clientState(s *instances.ClientState) *gen.DriftClientState {
 		return nil
 	}
 	return &gen.DriftClientState{Comment: s.Comment, Groups: nonNilStrings(s.Groups)}
+}
+
+func listState(s *instances.ListState) *gen.DriftDomainState {
+	if s == nil {
+		return nil
+	}
+	return &gen.DriftDomainState{Comment: s.Comment, Groups: nonNilStrings(s.Groups), Enabled: s.Enabled}
 }
 
 func groupState(s *instances.GroupState) *gen.DriftGroupState {

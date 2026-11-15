@@ -19,7 +19,7 @@ import (
 
 // Drift keeps, in memory, what differs between the members of each mirrored group: every enabled member is compared
 // with the primary, the group's source of truth. Domains are matched by domain, type and kind, clients by their
-// identifier, and Pi-hole groups by name, since Pi-hole's IDs differ per instance; group memberships are compared by
+// identifier, Pi-hole groups by name, and subscribed lists by address and type, since Pi-hole's IDs differ per instance; group memberships are compared by
 // group name for the same reason. A group is checked when Run starts, every Interval after that, and soon after Poke
 // (a write through the group, say). Nothing is stored: a restart checks again.
 type Drift struct {
@@ -94,6 +94,26 @@ type GroupDrift struct {
 	Other      *GroupState
 }
 
+// ListState is a subscribed list's settings, with its Pi-hole groups by name, sorted. Its download status, count and
+// dates aren't compared: they differ per member, and aren't mirrored.
+type ListState struct {
+	Comment string
+	Groups  []string
+	Enabled bool
+}
+
+// ListDrift is a subscribed list that differs. Address is as Pi-hole has it, which can hold a password: the API
+// redacts it.
+type ListDrift struct {
+	Member     int64
+	MemberName string
+	Address    string
+	Type       string
+	Difference Difference
+	Primary    *ListState
+	Other      *ListState
+}
+
 // MemberCheck is how reading one member went. Code is empty when it answered, otherwise the error's code (Kind).
 type MemberCheck struct {
 	ID      int64
@@ -112,12 +132,13 @@ type Report struct {
 	Domains   []DomainDrift
 	Clients   []ClientDrift
 	Groups    []GroupDrift
+	Lists     []ListDrift
 }
 
 // Drifted says whether any member was found to differ from the primary. Members that didn't answer don't count:
 // they are unknown, not different.
 func (r Report) Drifted() bool {
-	return len(r.Domains)+len(r.Clients)+len(r.Groups) > 0
+	return len(r.Domains)+len(r.Clients)+len(r.Groups)+len(r.Lists) > 0
 }
 
 // DomainsDrifted, ClientsDrifted and GroupsDrifted are the per-type flags behind the badges on the domains, clients
@@ -125,6 +146,7 @@ func (r Report) Drifted() bool {
 func (r Report) DomainsDrifted() bool { return len(r.Domains) > 0 }
 func (r Report) ClientsDrifted() bool { return len(r.Clients) > 0 }
 func (r Report) GroupsDrifted() bool  { return len(r.Groups) > 0 }
+func (r Report) ListsDrifted() bool   { return len(r.Lists) > 0 }
 
 func (d *Drift) now() time.Time {
 	if d.Now != nil {
@@ -340,11 +362,12 @@ func (d *Drift) log() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// snapshot is what one member has: its lists, clients and Pi-hole groups.
+// snapshot is what one member has: its domain lists, clients, Pi-hole groups and subscribed lists.
 type snapshot struct {
 	domains []piholeapi.DomainEntry
 	clients []piholeapi.ClientEntry
 	groups  []piholeapi.Group
+	lists   []piholeapi.ListEntry
 }
 
 func readSnapshot(ctx context.Context, c *piholeapi.Client) (snapshot, error) {
@@ -356,7 +379,10 @@ func readSnapshot(ctx context.Context, c *piholeapi.Client) (snapshot, error) {
 	if s.clients, err = c.ListClients(ctx); err != nil {
 		return s, err
 	}
-	s.groups, err = c.ListGroups(ctx)
+	if s.groups, err = c.ListGroups(ctx); err != nil {
+		return s, err
+	}
+	s.lists, err = c.ListLists(ctx)
 	return s, err
 }
 
@@ -486,4 +512,43 @@ func compare(rep *Report, primary, other snapshot, m MemberCheck) {
 	}
 	slices.SortFunc(groups, func(a, b GroupDrift) int { return cmp.Compare(a.Name, b.Name) })
 	rep.Groups = append(rep.Groups, groups...)
+
+	type lkey struct{ address, typ string }
+	pl := map[lkey]piholeapi.ListEntry{}
+	for _, l := range primary.lists {
+		pl[lkey{l.Address, l.Type}] = l
+	}
+	ol := map[lkey]piholeapi.ListEntry{}
+	for _, l := range other.lists {
+		ol[lkey{l.Address, l.Type}] = l
+	}
+	lstate := func(s snapshot, l piholeapi.ListEntry) *ListState {
+		return &ListState{Comment: l.Comment, Groups: s.names(l.Groups), Enabled: l.Enabled}
+	}
+	var lists []ListDrift
+	for k, p := range pl {
+		ld := ListDrift{Member: m.ID, MemberName: m.Name, Address: k.address, Type: k.typ}
+		ps := lstate(primary, p)
+		o, ok := ol[k]
+		if !ok {
+			ld.Difference, ld.Primary = Missing, ps
+		} else {
+			os := lstate(other, o)
+			if os.Comment == ps.Comment && os.Enabled == ps.Enabled && slices.Equal(os.Groups, ps.Groups) {
+				continue
+			}
+			ld.Difference, ld.Primary, ld.Other = Changed, ps, os
+		}
+		lists = append(lists, ld)
+	}
+	for k, o := range ol {
+		if _, ok := pl[k]; !ok {
+			lists = append(lists, ListDrift{Member: m.ID, MemberName: m.Name, Address: k.address, Type: k.typ,
+				Difference: Extra, Other: lstate(other, o)})
+		}
+	}
+	slices.SortFunc(lists, func(a, b ListDrift) int {
+		return cmp.Or(cmp.Compare(a.Address, b.Address), cmp.Compare(a.Type, b.Type))
+	})
+	rep.Lists = append(rep.Lists, lists...)
 }

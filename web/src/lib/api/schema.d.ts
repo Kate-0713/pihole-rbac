@@ -1407,6 +1407,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/targets/{target}/lists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The subscribed lists (adlists)
+         * @description Every blocklist and allowlist the Pi-hole subscribes to, unpaged, with its download status from the last gravity run. For a mirrored group the settings (comment, groups, enabled) are the primary's, and each list also carries every member's status in `members`, since download status isn't mirrored. An address with a user name or password in it is shown with that part replaced by `xxxxx`. Reading isn't audited. Since v2.3.0.
+         */
+        get: operations["listLists"];
+        put?: never;
+        /**
+         * Subscribe to a list
+         * @description Adds a list, enabled unless `enabled` is false. Only http and https addresses with a host are accepted, with no user name or password in them; file: addresses only while the general setting `allow_file_lists` is on. Without `groups` the list goes in the Default group (ID 0); an empty list puts it in no group. An address already subscribed as that type is a pihole_rejected failure. The list isn't downloaded until gravity runs. Answers with a result per instance (see WriteResults under the schemas). Audited as list_add.
+         */
+        post: operations["addList"];
+        /**
+         * Unsubscribe from a list
+         * @description The body names the list by address and type, as for a change. A list that doesn't exist is a 404. Answers with a result per instance. Audited as list_delete, with the list's comment, groups and enabled flag.
+         */
+        delete: operations["deleteList"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a list's comment, groups or enabled flag
+         * @description The body names the list by address and type, which must match it exactly (or the address as this API shows it, for one with a user name or password), and gives the fields to change; fields left out keep their value. The address and type can't be changed. A list that doesn't exist is a 404: it is never created. Disabling a list and changing its groups take effect at once; enabling a list that was disabled at the last gravity run waits for gravity. Answers with a result per instance. Audited as list_update.
+         */
+        patch: operations["updateList"];
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/gravity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The target's latest gravity run
+         * @description The latest run started through this target since the app started, running or finished, with the newest output lines after `after`. 404 if there hasn't been one. Since v2.3.0.
+         */
+        get: operations["getLatestGravity"];
+        put?: never;
+        /**
+         * Start a gravity update
+         * @description Starts gravity on the instance, or on a mirrored group's members one at a time (the primary first, then the others by name), and answers at once with the run; poll it for progress. Through a group the run stops at the first member that fails or ends with no domains when it had some, and the rest are skipped; a member that can't be reached is skipped and the run goes on. Pi-hole keeps blocking with its old lists while gravity builds. Refused with 409 conflict while any instance the run would cover is already in a run started by this app (`details.instances` names them). Runs are kept in memory, so they are lost on a restart (the Pi-hole finishes a run anyway). Audited as gravity_start when it starts and gravity_run per instance as its part ends. Since v2.3.0.
+         */
+        post: operations["startGravity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/gravity/{run}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                run: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * A gravity run
+         * @description One run started through this target, with the newest output lines after `after`. 404 once it has been dropped (an hour after it ends, unless it is the target's latest) or after a restart. Since v2.3.0.
+         */
+        get: operations["getGravityRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/targets/{target}/queries": {
         parameters: {
             query?: never;
@@ -1921,7 +2007,7 @@ export interface components {
              * @description When the check ran. Absent when not_checked.
              */
             checked_at?: string;
-            /** @description Whether any member was found to differ from the primary, in any of the three lists. */
+            /** @description Whether any member was found to differ from the primary, in any of the four kinds of item. */
             drifted: boolean;
             /** @description The enabled members as of the check, the primary first. Empty when not_checked. */
             members: components["schemas"]["MemberRead"][];
@@ -1931,11 +2017,14 @@ export interface components {
             /** @description Absent without clients.view on the group. */
             clients?: components["schemas"]["ClientDrift"][];
             groups?: components["schemas"]["PiholeGroupDrift"][];
+            /** @description Absent without lists.view on the group. Since v2.3.0. */
+            lists?: components["schemas"]["PiholeListDrift"][];
         };
         DriftCounts: {
             domains: number;
             clients: number;
             groups: number;
+            lists: number;
         };
         /**
          * @description missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
@@ -1984,6 +2073,17 @@ export interface components {
             primary?: components["schemas"]["DriftGroupState"];
             member?: components["schemas"]["DriftGroupState"];
         };
+        PiholeListDrift: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            /** @description As in the lists, with a user name or password replaced by `xxxxx`. */
+            address: string;
+            type: components["schemas"]["PiholeListType"];
+            difference: components["schemas"]["DriftDifference"];
+            primary?: components["schemas"]["DriftDomainState"];
+            member?: components["schemas"]["DriftDomainState"];
+        };
         DriftGroupState: {
             comment: string;
             enabled: boolean;
@@ -1994,6 +2094,14 @@ export interface components {
             domains?: components["schemas"]["ReconcileDomain"][];
             clients?: components["schemas"]["ReconcileClient"][];
             groups?: components["schemas"]["ReconcileGroup"][];
+            lists?: components["schemas"]["ReconcileList"][];
+        };
+        ReconcileList: {
+            /** Format: int64 */
+            instance_id: number;
+            /** @description As the drift report shows it. */
+            address: string;
+            type: components["schemas"]["PiholeListType"];
         };
         ReconcileDomain: {
             /** Format: int64 */
@@ -2025,9 +2133,14 @@ export interface components {
             /** Format: int64 */
             instance_id: number;
             /** @enum {string} */
-            item: "domain" | "client" | "group";
+            item: "domain" | "client" | "group" | "list";
             /** @description For a domain list entry, with `type` and `kind`. */
             domain?: string;
+            /** @description For a subscribed list, with `list_type`; a user name or password in it is replaced by `xxxxx`. */
+            address?: string;
+            list_type?: components["schemas"]["PiholeListType"];
+            /** @description For a list added or enabled on the member, which waits for gravity there. */
+            needs_gravity?: boolean;
             /** @enum {string} */
             type?: "allow" | "deny";
             /** @enum {string} */
@@ -2468,6 +2581,8 @@ export interface components {
             /** @description How many days audit entries are kept, 30 to 3650. Absent leaves it as it is. */
             audit_retention_days?: number;
             client_reset_schedule?: components["schemas"]["ClientResetSchedule"];
+            /** @description Whether file: lists can be added (since v2.3.0). They make a Pi-hole read a file on its own host. Turning it off leaves existing ones alone. Absent leaves it as it is. */
+            allow_file_lists?: boolean;
         };
         /** @description When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is. */
         ClientResetSchedule: {
@@ -2478,6 +2593,8 @@ export interface components {
             time_zone: string;
         };
         GeneralSettings: {
+            /** @description Whether file: lists can be added; false until saved. */
+            allow_file_lists: boolean;
             session_lifetime_minutes: number;
             idle_timeout_minutes: number;
             /** @description How many days audit entries, and client reset runs, are kept; 365 until saved. */
@@ -2703,6 +2820,161 @@ export interface components {
             comment?: string;
             /** @description Replaces the client's groups. */
             groups?: number[];
+        };
+        PiholeListList: {
+            /** @description For a mirrored group: whether its members' lists differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them. */
+            drifted?: boolean;
+            /**
+             * Format: date-time
+             * @description When gravity last finished on the instance, or on the mirrored group's primary. Absent if it never has.
+             */
+            gravity_last_update?: string;
+            /** @description For a mirrored group, how each enabled member answered, the primary first. Absent for an instance. */
+            members?: components["schemas"]["MemberRead"][];
+            lists: components["schemas"]["PiholeList"][];
+        };
+        /** @enum {string} */
+        PiholeListType: "block" | "allow";
+        /**
+         * @description How the last download went. never: not downloaded yet. updated: downloaded, with changes. unchanged: downloaded, the same as before. cached: the download failed and the copy from an earlier run was used. failed: the download failed and there was no earlier copy.
+         * @enum {string}
+         */
+        PiholeListStatus: "never" | "updated" | "unchanged" | "cached" | "failed";
+        PiholeList: {
+            /** @description The address, with a user name or password in it replaced by `xxxxx`. */
+            address: string;
+            type: components["schemas"]["PiholeListType"];
+            comment: string;
+            /** @description IDs of the Pi-hole groups the list applies to. See the target's groups for their names. */
+            groups: number[];
+            enabled: boolean;
+            status: components["schemas"]["PiholeListStatus"];
+            /** @description How many domains the list had at its last download. */
+            domains: number;
+            /** @description Lines that weren't valid domains at the last download. */
+            invalid_domains: number;
+            /** Format: date-time */
+            added_at?: string;
+            /**
+             * Format: date-time
+             * @description When the address, enabled flag or comment last changed (Pi-hole doesn't track group changes).
+             */
+            modified_at?: string;
+            /**
+             * Format: date-time
+             * @description When a download last changed the list's content. Absent if that never happened.
+             */
+            updated_at?: string;
+            /** @description The list is enabled and was added, enabled again, or had its comment changed since the last gravity run, so it may not be in use until gravity runs. Through a mirrored group, true when it is for any member. */
+            needs_gravity: boolean;
+            /** @description Why the list wouldn't be accepted if it were added now: file (a file: list, whatever allow_file_lists says), scheme (another scheme Pi-hole accepts, such as ftp) or credentials (a user name or password in the address). Empty for an ordinary list. Such lists can still be changed and deleted. */
+            marks: ("file" | "scheme" | "credentials")[];
+            /** @description For a mirrored group: the list on each enabled member, the primary first. Absent for an instance. */
+            members?: components["schemas"]["PiholeListMemberStatus"][];
+        };
+        /** @description The list on one member. state ok: the member has it, with its own status. missing: the member doesn't have it (drift). unreadable: the member couldn't be read; see the answer's `members` for why. */
+        PiholeListMemberStatus: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            primary: boolean;
+            /** @enum {string} */
+            state: "ok" | "missing" | "unreadable";
+            status?: components["schemas"]["PiholeListStatus"];
+            domains?: number;
+            invalid_domains?: number;
+            /** Format: date-time */
+            updated_at?: string;
+            needs_gravity?: boolean;
+        };
+        /** @description Names a list. The same address can be both a blocklist and an allowlist. */
+        PiholeListKey: {
+            address: string;
+            type: components["schemas"]["PiholeListType"];
+        };
+        PiholeListInput: {
+            /** @description Surrounding spaces are ignored. http:// or https:// with a host, and no user name or password; file: with an absolute path only while allow_file_lists is on. The address is shown to everyone who can see the lists, so a token in it isn't secret. */
+            address: string;
+            type: components["schemas"]["PiholeListType"];
+            comment?: string;
+            groups?: number[];
+            /** @default true */
+            enabled: boolean;
+        };
+        /** @description Names the list and gives at least one of comment, groups and enabled. */
+        PiholeListUpdate: {
+            address: string;
+            type: components["schemas"]["PiholeListType"];
+            comment?: string;
+            /** @description Replaces the list's groups. */
+            groups?: number[];
+            enabled?: boolean;
+        };
+        /** @description The result per instance of adding or changing a list. */
+        PiholeListWriteResults: {
+            results: components["schemas"]["PiholeListWriteResult"][];
+        };
+        PiholeListWriteResult: {
+            /** @description The instance's name. */
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Present when ok. The list as saved, with its status from before any gravity run; `needs_gravity` here says whether the write left it waiting for gravity (added enabled, or enabled again). */
+            entry?: components["schemas"]["PiholeList"];
+        };
+        GravityRun: {
+            id: string;
+            /** @description The target the run was started through. */
+            target: string;
+            /** @enum {string} */
+            status: "running" | "done";
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            finished_at?: string;
+            /** @description The username of who started it. */
+            started_by: string;
+            /** @description One per instance, in the order they run. */
+            results: components["schemas"]["GravityInstanceResult"][];
+            /** @description Output lines after `after`, oldest first: the newest 200 of them. Each instance keeps its newest 2000. Lines are plain text, cleaned of terminal codes; show them as text. */
+            output: components["schemas"]["GravityLine"][];
+            /** @description The `seq` of the newest line so far, to send as `after` next time; 0 when there is none. */
+            output_last_seq: number;
+            /** @description Lines after `after` were left out before the first one in `output`. */
+            output_truncated: boolean;
+        };
+        GravityLine: {
+            seq: number;
+            /** Format: int64 */
+            instance_id: number;
+            text: string;
+        };
+        GravityInstanceResult: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            primary: boolean;
+            /** @enum {string} */
+            status: "pending" | "running" | "ok" | "failed" | "skipped";
+            /**
+             * @description For skipped: stopped, an earlier member failed; down, the instance couldn't be reached (in a run through a group).
+             * @enum {string}
+             */
+            reason?: "stopped" | "down";
+            error?: components["schemas"]["WriteError"];
+            /** @description The domain count gravity ended with. */
+            domains?: number;
+            /**
+             * Format: date-time
+             * @description When Pi-hole says gravity finished.
+             */
+            last_update?: string;
+            /** Format: int64 */
+            duration_ms?: number;
+            /** @description Enabled lists whose download failed (cached copy used, or none). These don't stop a run. */
+            lists_failed?: number;
         };
         PiholeGroupList: {
             /** @description For a mirrored group: whether its members' Pi-hole groups differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them. */
@@ -3177,6 +3449,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description Only output lines with a higher `seq`; the newest 200 of them. 0 or absent for the newest 200 of all. */
+        GravityAfter: number;
         /** @description How many runs to return, 1 to 200. */
         RunLimit: number;
         /** @description The `next_cursor` of the previous page. */
@@ -5938,6 +6212,268 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["TargetUnavailable"];
             502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listLists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The lists. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeListList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    addList: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PiholeListInput"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded; each result has the list as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeListWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeListWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteList: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PiholeListKey"];
+            };
+        };
+        responses: {
+            /** @description Deleted on every instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateList: {
+        parameters: {
+            query?: {
+                /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
+                members?: components["parameters"]["Members"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PiholeListUpdate"];
+            };
+        };
+        responses: {
+            /** @description Every instance succeeded; each result has the list as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeListWriteResults"];
+                };
+            };
+            /** @description The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several members, can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PiholeListWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getLatestGravity: {
+        parameters: {
+            query?: {
+                /** @description Only output lines with a higher `seq`; the newest 200 of them. 0 or absent for the newest 200 of all. */
+                after?: components["parameters"]["GravityAfter"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GravityRun"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    startGravity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run has started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GravityRun"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getGravityRun: {
+        parameters: {
+            query?: {
+                /** @description Only output lines with a higher `seq`; the newest 200 of them. 0 or absent for the newest 200 of all. */
+                after?: components["parameters"]["GravityAfter"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GravityRun"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             503: components["responses"]["SetupRequired"];
         };
     };

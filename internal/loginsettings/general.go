@@ -22,7 +22,8 @@ import (
 // GeneralKey is the settings row holding the general settings.
 const GeneralKey = "general"
 
-// General are the general settings: how long sessions last, how long audit rows are kept, and when client reset runs.
+// General are the general settings: how long sessions last, how long audit rows are kept, when client reset runs, and
+// whether file: lists can be added.
 type General struct {
 	SessionLifetimeMinutes int `json:"session_lifetime_minutes"` // absolute, from login
 	IdleTimeoutMinutes     int `json:"idle_timeout_minutes"`     // since the last request
@@ -32,6 +33,9 @@ type General struct {
 	// ClientReset is the client reset schedule. Rows saved before the setting existed have none, which loads as
 	// DefaultResetSchedule.
 	ClientReset *ResetSchedule `json:"client_reset_schedule,omitempty"`
+	// AllowFileLists says whether file: lists can be added. Rows saved before the setting existed have none, which
+	// loads as off. On a save, nil keeps it as it is.
+	AllowFileLists *bool `json:"allow_file_lists,omitempty"`
 }
 
 // ResetSchedule is when client reset runs by itself: daily at Time ("HH:MM", 24-hour) in TimeZone (an IANA name),
@@ -146,10 +150,18 @@ func (s *Service) loadGeneral(ctx context.Context, q *db.Queries) error {
 	s.generalAt, s.generalBy = store.FromMillis(row.UpdatedAt), row.UpdatedBy
 	s.retention = g.AuditRetentionDays
 	s.schedule = g.schedule()
+	s.allowFile = g.AllowFileLists != nil && *g.AllowFileLists
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
 	}
 	return nil
+}
+
+// AllowFileLists reports whether file: lists can be added, saved or default (off).
+func (s *Service) AllowFileLists() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.allowFile
 }
 
 // ResetSchedule returns the client reset schedule, saved or default.
@@ -189,10 +201,11 @@ func (s *Service) General() GeneralView {
 	if schedule.Time == "" {
 		schedule = DefaultResetSchedule
 	}
+	allowFile := s.allowFile
 	return GeneralView{
 		General: General{
 			SessionLifetimeMinutes: int(lifetime / time.Minute), IdleTimeoutMinutes: int(idle / time.Minute),
-			AuditRetentionDays: retention, ClientReset: &schedule,
+			AuditRetentionDays: retention, ClientReset: &schedule, AllowFileLists: &allowFile,
 		},
 		UpdatedAt: s.generalAt, UpdatedBy: s.generalBy,
 	}
@@ -226,6 +239,14 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	if *before.ClientReset != schedule {
 		changed = append(changed, "client_reset_schedule")
 	}
+	if g.AllowFileLists == nil {
+		g.AllowFileLists = before.AllowFileLists // likewise
+	}
+	allowFile := *g.AllowFileLists
+	g.AllowFileLists = &allowFile
+	if *before.AllowFileLists != allowFile {
+		changed = append(changed, "allow_file_lists")
+	}
 	if len(changed) == 0 {
 		return nil
 	}
@@ -237,6 +258,7 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 		t.entry.Detail["idle_timeout_minutes"] = g.IdleTimeoutMinutes
 		t.entry.Detail["audit_retention_days"] = g.AuditRetentionDays
 		t.entry.Detail["client_reset_schedule"] = schedule
+		t.entry.Detail["allow_file_lists"] = allowFile
 		value, err := json.Marshal(g)
 		if err != nil {
 			return err
@@ -252,6 +274,7 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	s.generalAt, s.generalBy = store.FromMillis(store.Millis(now)), a.Username
 	s.retention = g.AuditRetentionDays
 	s.schedule = schedule
+	s.allowFile = allowFile
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
 	}

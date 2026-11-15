@@ -5,10 +5,13 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
 	"testing"
+
+	"github.com/pressly/goose/v3"
 
 	"github.com/Kate-0713/pihole-rbac/migrations"
 )
@@ -22,6 +25,7 @@ var releasedMigrations = map[string]string{
 	"00002_blocking_indefinite.sql":          "535cbc74e10592a8d1fb651e1e791fc8e5bc2e126887ca446bb57197f56a90a9", // v2.1.0
 	"00003_client_reset_scheduled_event.sql": "17763399adcd6fdda0a87ca77fd98c17ef70102912471595596d8bf840f4b094", // v2.1.0
 	"00004_piholegroups_edit.sql":            "47b6db8acabd7369e41a283d7137099eb1531119c75a783fe649c72306f5def0", // v2.2.0
+	"00005_lists_gravity.sql":                "e021f6da7d3a49a4d49eba551b3e0c19ea690577a06e24d9777141f925a5842a", // v2.3.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
@@ -131,4 +135,67 @@ func TestUpgradeFromV2_1_3(t *testing.T) {
 			t.Errorf("role %d has %d piholegroups.edit grants, want %d", tt.role, n, tt.want)
 		}
 	}
+}
+
+// TestUpgradeFromV2_2_0: a database as v2.2.0 left it (version 4) gets lists.view, lists.edit and gravity.run on the
+// builtin admin role only. A role that can edit domains and Pi-hole groups doesn't get them. Migrating down to 4
+// removes them everywhere, and up again restores the builtin admin's.
+func TestUpgradeFromV2_2_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'domains.edit', 'all'), (10, 'piholegroups.edit', 'all')`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	perms := []string{"lists.view", "lists.edit", "gravity.run"}
+	check := func(when string, want map[int]int) {
+		t.Helper()
+		for role, n := range want {
+			for _, p := range perms {
+				var got int
+				q := `SELECT count(*) FROM role_grants WHERE role_id = ? AND permission = ? AND scope_type = 'all'`
+				if err := s.r.QueryRow(q, role, p).Scan(&got); err != nil {
+					t.Fatal(err)
+				}
+				if got != n {
+					t.Errorf("%s: role %d has %d %s grants, want %d", when, role, got, p, n)
+				}
+			}
+		}
+	}
+	check("after upgrading", map[int]int{1: 1, 10: 0})
+
+	// A grant on another role, so the Down section's first DELETE has something to remove.
+	if _, err := s.w.Exec(`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'lists.view', 'all')`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 4); err != nil {
+		t.Fatalf("down to 4: %v", err)
+	}
+	check("after migrating down", map[int]int{1: 0, 10: 0})
+	if _, err := s.w.Exec(`DELETE FROM role_grants WHERE role_id = 1 AND permission = 'domains.view'`); err == nil {
+		t.Error("the builtin admin's grants can be deleted after migrating down: the trigger wasn't recreated")
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	check("after migrating up again", map[int]int{1: 1, 10: 0})
 }

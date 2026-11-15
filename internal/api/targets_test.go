@@ -36,10 +36,10 @@ type targetEnv struct {
 	target string
 }
 
-func newTargetEnv(t *testing.T) *targetEnv {
+func newTargetEnv(t *testing.T, modify ...func(*Options)) *targetEnv {
 	t.Helper()
 	ph := piholetest.New(t, piholePassword)
-	e := newTestEnv(t, withInstances(t, map[string]string{secrets.InstanceVar("PIHOLE1"): piholePassword}))
+	e := newTestEnv(t, append([]func(*Options){withInstances(t, map[string]string{secrets.InstanceVar("PIHOLE1"): piholePassword})}, modify...)...)
 	e.addUser("admin", "admin-password-1", true)
 	admin := e.loggedIn("admin", "admin-password-1")
 	res := admin.do(http.MethodPost, "/api/v1/instances", gen.InstanceInput{Name: "pihole1", BaseUrl: ph.URL, EnvName: ptr("PIHOLE1"), Password: ptr(piholePassword)})
@@ -86,7 +86,7 @@ func strp(s string) *string { return &s }
 // writeResult is what every per-instance write result has in common.
 type writeResult interface {
 	gen.BlockingWriteResult | gen.DNSRestartResult | gen.DomainWriteResult | gen.ClientWriteResult | gen.DeleteResult |
-		gen.PiholeGroupWriteResult
+		gen.PiholeGroupWriteResult | gen.PiholeListWriteResult
 }
 
 // okResult checks that a write answered 200 with exactly one ok result, for pihole1, and returns it.

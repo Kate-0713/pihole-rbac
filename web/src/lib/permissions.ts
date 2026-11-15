@@ -29,6 +29,9 @@ export type TargetPermission =
 	| 'dns.restart'
 	| 'clientreset.run'
 	| 'piholegroups.edit'
+	| 'lists.view'
+	| 'lists.edit'
+	| 'gravity.run'
 	| 'drift.view'
 	| 'drift.reconcile';
 

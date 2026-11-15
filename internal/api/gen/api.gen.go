@@ -404,19 +404,19 @@ func (e DomainUpdateType) Valid() bool {
 
 // Defines values for DriftDifference.
 const (
-	Changed DriftDifference = "changed"
-	Extra   DriftDifference = "extra"
-	Missing DriftDifference = "missing"
+	DriftDifferenceChanged DriftDifference = "changed"
+	DriftDifferenceExtra   DriftDifference = "extra"
+	DriftDifferenceMissing DriftDifference = "missing"
 )
 
 // Valid indicates whether the value is a known member of the DriftDifference enum.
 func (e DriftDifference) Valid() bool {
 	switch e {
-	case Changed:
+	case DriftDifferenceChanged:
 		return true
-	case Extra:
+	case DriftDifferenceExtra:
 		return true
-	case Missing:
+	case DriftDifferenceMissing:
 		return true
 	default:
 		return false
@@ -459,6 +459,69 @@ func (e GrantScope) Valid() bool {
 	case GrantScopeGroup:
 		return true
 	case GrantScopeInstance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GravityInstanceResultReason.
+const (
+	GravityInstanceResultReasonDown    GravityInstanceResultReason = "down"
+	GravityInstanceResultReasonStopped GravityInstanceResultReason = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the GravityInstanceResultReason enum.
+func (e GravityInstanceResultReason) Valid() bool {
+	switch e {
+	case GravityInstanceResultReasonDown:
+		return true
+	case GravityInstanceResultReasonStopped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GravityInstanceResultStatus.
+const (
+	GravityInstanceResultStatusFailed  GravityInstanceResultStatus = "failed"
+	GravityInstanceResultStatusOk      GravityInstanceResultStatus = "ok"
+	GravityInstanceResultStatusPending GravityInstanceResultStatus = "pending"
+	GravityInstanceResultStatusRunning GravityInstanceResultStatus = "running"
+	GravityInstanceResultStatusSkipped GravityInstanceResultStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the GravityInstanceResultStatus enum.
+func (e GravityInstanceResultStatus) Valid() bool {
+	switch e {
+	case GravityInstanceResultStatusFailed:
+		return true
+	case GravityInstanceResultStatusOk:
+		return true
+	case GravityInstanceResultStatusPending:
+		return true
+	case GravityInstanceResultStatusRunning:
+		return true
+	case GravityInstanceResultStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GravityRunStatus.
+const (
+	GravityRunStatusDone    GravityRunStatus = "done"
+	GravityRunStatusRunning GravityRunStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the GravityRunStatus enum.
+func (e GravityRunStatus) Valid() bool {
+	switch e {
+	case GravityRunStatusDone:
+		return true
+	case GravityRunStatusRunning:
 		return true
 	default:
 		return false
@@ -795,6 +858,93 @@ func (e PiholeGroupReferenceScope) Valid() bool {
 	}
 }
 
+// Defines values for PiholeListMarks.
+const (
+	PiholeListMarksCredentials PiholeListMarks = "credentials"
+	PiholeListMarksFile        PiholeListMarks = "file"
+	PiholeListMarksScheme      PiholeListMarks = "scheme"
+)
+
+// Valid indicates whether the value is a known member of the PiholeListMarks enum.
+func (e PiholeListMarks) Valid() bool {
+	switch e {
+	case PiholeListMarksCredentials:
+		return true
+	case PiholeListMarksFile:
+		return true
+	case PiholeListMarksScheme:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeListMemberStatusState.
+const (
+	PiholeListMemberStatusStateMissing    PiholeListMemberStatusState = "missing"
+	PiholeListMemberStatusStateOk         PiholeListMemberStatusState = "ok"
+	PiholeListMemberStatusStateUnreadable PiholeListMemberStatusState = "unreadable"
+)
+
+// Valid indicates whether the value is a known member of the PiholeListMemberStatusState enum.
+func (e PiholeListMemberStatusState) Valid() bool {
+	switch e {
+	case PiholeListMemberStatusStateMissing:
+		return true
+	case PiholeListMemberStatusStateOk:
+		return true
+	case PiholeListMemberStatusStateUnreadable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeListStatus.
+const (
+	PiholeListStatusCached    PiholeListStatus = "cached"
+	PiholeListStatusFailed    PiholeListStatus = "failed"
+	PiholeListStatusNever     PiholeListStatus = "never"
+	PiholeListStatusUnchanged PiholeListStatus = "unchanged"
+	PiholeListStatusUpdated   PiholeListStatus = "updated"
+)
+
+// Valid indicates whether the value is a known member of the PiholeListStatus enum.
+func (e PiholeListStatus) Valid() bool {
+	switch e {
+	case PiholeListStatusCached:
+		return true
+	case PiholeListStatusFailed:
+		return true
+	case PiholeListStatusNever:
+		return true
+	case PiholeListStatusUnchanged:
+		return true
+	case PiholeListStatusUpdated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PiholeListType.
+const (
+	PiholeListTypeAllow PiholeListType = "allow"
+	PiholeListTypeBlock PiholeListType = "block"
+)
+
+// Valid indicates whether the value is a known member of the PiholeListType enum.
+func (e PiholeListType) Valid() bool {
+	switch e {
+	case PiholeListTypeAllow:
+		return true
+	case PiholeListTypeBlock:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProtectedGroupScope.
 const (
 	ProtectedGroupScopeGroup    ProtectedGroupScope = "group"
@@ -1028,6 +1178,7 @@ const (
 	ReconcileItemResultItemClient ReconcileItemResultItem = "client"
 	ReconcileItemResultItemDomain ReconcileItemResultItem = "domain"
 	ReconcileItemResultItemGroup  ReconcileItemResultItem = "group"
+	ReconcileItemResultItemList   ReconcileItemResultItem = "list"
 )
 
 // Valid indicates whether the value is a known member of the ReconcileItemResultItem enum.
@@ -1038,6 +1189,8 @@ func (e ReconcileItemResultItem) Valid() bool {
 	case ReconcileItemResultItemDomain:
 		return true
 	case ReconcileItemResultItemGroup:
+		return true
+	case ReconcileItemResultItemList:
 		return true
 	default:
 		return false
@@ -1127,19 +1280,19 @@ func (e SecretStatusKind) Valid() bool {
 
 // Defines values for SecretStatusSource.
 const (
-	Env       SecretStatusSource = "env"
-	File      SecretStatusSource = "file"
-	Generated SecretStatusSource = "generated"
+	SecretStatusSourceEnv       SecretStatusSource = "env"
+	SecretStatusSourceFile      SecretStatusSource = "file"
+	SecretStatusSourceGenerated SecretStatusSource = "generated"
 )
 
 // Valid indicates whether the value is a known member of the SecretStatusSource enum.
 func (e SecretStatusSource) Valid() bool {
 	switch e {
-	case Env:
+	case SecretStatusSourceEnv:
 		return true
-	case File:
+	case SecretStatusSourceFile:
 		return true
-	case Generated:
+	case SecretStatusSourceGenerated:
 		return true
 	default:
 		return false
@@ -1373,19 +1526,19 @@ func (e ListQueriesParamsPageSize) Valid() bool {
 
 // Defines values for ListQueriesParamsResult.
 const (
-	Allowed ListQueriesParamsResult = "allowed"
-	Blocked ListQueriesParamsResult = "blocked"
-	Cached  ListQueriesParamsResult = "cached"
+	ListQueriesParamsResultAllowed ListQueriesParamsResult = "allowed"
+	ListQueriesParamsResultBlocked ListQueriesParamsResult = "blocked"
+	ListQueriesParamsResultCached  ListQueriesParamsResult = "cached"
 )
 
 // Valid indicates whether the value is a known member of the ListQueriesParamsResult enum.
 func (e ListQueriesParamsResult) Valid() bool {
 	switch e {
-	case Allowed:
+	case ListQueriesParamsResultAllowed:
 		return true
-	case Blocked:
+	case ListQueriesParamsResultBlocked:
 		return true
-	case Cached:
+	case ListQueriesParamsResultCached:
 		return true
 	default:
 		return false
@@ -1995,6 +2148,7 @@ type DriftCounts struct {
 	Clients int `json:"clients"`
 	Domains int `json:"domains"`
 	Groups  int `json:"groups"`
+	Lists   int `json:"lists"`
 }
 
 // DriftDifference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
@@ -2027,13 +2181,16 @@ type DriftReport struct {
 	// Domains Absent without domains.view on the group.
 	Domains *[]DomainDrift `json:"domains,omitempty"`
 
-	// Drifted Whether any member was found to differ from the primary, in any of the three lists.
+	// Drifted Whether any member was found to differ from the primary, in any of the four kinds of item.
 	Drifted bool `json:"drifted"`
 
 	// Group The group's name.
 	Group   string              `json:"group"`
 	GroupId int64               `json:"group_id"`
 	Groups  *[]PiholeGroupDrift `json:"groups,omitempty"`
+
+	// Lists Absent without lists.view on the group. Since v2.3.0.
+	Lists *[]PiholeListDrift `json:"lists,omitempty"`
 
 	// Members The enabled members as of the check, the primary first. Empty when not_checked.
 	Members []MemberRead `json:"members"`
@@ -2064,6 +2221,9 @@ type ErrorBody struct {
 
 // GeneralSettings defines model for GeneralSettings.
 type GeneralSettings struct {
+	// AllowFileLists Whether file: lists can be added; false until saved.
+	AllowFileLists bool `json:"allow_file_lists"`
+
 	// AuditRetentionDays How many days audit entries, and client reset runs, are kept; 365 until saved.
 	AuditRetentionDays int `json:"audit_retention_days"`
 
@@ -2079,6 +2239,9 @@ type GeneralSettings struct {
 
 // GeneralSettingsInput defines model for GeneralSettingsInput.
 type GeneralSettingsInput struct {
+	// AllowFileLists Whether file: lists can be added (since v2.3.0). They make a Pi-hole read a file on its own host. Turning it off leaves existing ones alone. Absent leaves it as it is.
+	AllowFileLists *bool `json:"allow_file_lists,omitempty"`
+
 	// AuditRetentionDays How many days audit entries are kept, 30 to 3650. Absent leaves it as it is.
 	AuditRetentionDays *int `json:"audit_retention_days,omitempty"`
 
@@ -2111,6 +2274,71 @@ type GrantScope string
 type GrantsInput struct {
 	Grants []Grant `json:"grants"`
 }
+
+// GravityInstanceResult defines model for GravityInstanceResult.
+type GravityInstanceResult struct {
+	// Domains The domain count gravity ended with.
+	Domains    *int   `json:"domains,omitempty"`
+	DurationMs *int64 `json:"duration_ms,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error      *WriteError `json:"error,omitempty"`
+	Instance   string      `json:"instance"`
+	InstanceId int64       `json:"instance_id"`
+
+	// LastUpdate When Pi-hole says gravity finished.
+	LastUpdate *time.Time `json:"last_update,omitempty"`
+
+	// ListsFailed Enabled lists whose download failed (cached copy used, or none). These don't stop a run.
+	ListsFailed *int `json:"lists_failed,omitempty"`
+	Primary     bool `json:"primary"`
+
+	// Reason For skipped: stopped, an earlier member failed; down, the instance couldn't be reached (in a run through a group).
+	Reason *GravityInstanceResultReason `json:"reason,omitempty"`
+	Status GravityInstanceResultStatus  `json:"status"`
+}
+
+// GravityInstanceResultReason For skipped: stopped, an earlier member failed; down, the instance couldn't be reached (in a run through a group).
+type GravityInstanceResultReason string
+
+// GravityInstanceResultStatus defines model for GravityInstanceResult.Status.
+type GravityInstanceResultStatus string
+
+// GravityLine defines model for GravityLine.
+type GravityLine struct {
+	InstanceId int64  `json:"instance_id"`
+	Seq        int    `json:"seq"`
+	Text       string `json:"text"`
+}
+
+// GravityRun defines model for GravityRun.
+type GravityRun struct {
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Id         string     `json:"id"`
+
+	// Output Output lines after `after`, oldest first: the newest 200 of them. Each instance keeps its newest 2000. Lines are plain text, cleaned of terminal codes; show them as text.
+	Output []GravityLine `json:"output"`
+
+	// OutputLastSeq The `seq` of the newest line so far, to send as `after` next time; 0 when there is none.
+	OutputLastSeq int `json:"output_last_seq"`
+
+	// OutputTruncated Lines after `after` were left out before the first one in `output`.
+	OutputTruncated bool `json:"output_truncated"`
+
+	// Results One per instance, in the order they run.
+	Results   []GravityInstanceResult `json:"results"`
+	StartedAt time.Time               `json:"started_at"`
+
+	// StartedBy The username of who started it.
+	StartedBy string           `json:"started_by"`
+	Status    GravityRunStatus `json:"status"`
+
+	// Target The target the run was started through.
+	Target string `json:"target"`
+}
+
+// GravityRunStatus defines model for GravityRun.Status.
+type GravityRunStatus string
 
 // GroupScopeName defines model for GroupScopeName.
 type GroupScopeName struct {
@@ -2719,6 +2947,150 @@ type PiholeGroupWriteResults struct {
 	Results    []PiholeGroupWriteResult     `json:"results"`
 }
 
+// PiholeList defines model for PiholeList.
+type PiholeList struct {
+	AddedAt *time.Time `json:"added_at,omitempty"`
+
+	// Address The address, with a user name or password in it replaced by `xxxxx`.
+	Address string `json:"address"`
+	Comment string `json:"comment"`
+
+	// Domains How many domains the list had at its last download.
+	Domains int  `json:"domains"`
+	Enabled bool `json:"enabled"`
+
+	// Groups IDs of the Pi-hole groups the list applies to. See the target's groups for their names.
+	Groups []int `json:"groups"`
+
+	// InvalidDomains Lines that weren't valid domains at the last download.
+	InvalidDomains int `json:"invalid_domains"`
+
+	// Marks Why the list wouldn't be accepted if it were added now: file (a file: list, whatever allow_file_lists says), scheme (another scheme Pi-hole accepts, such as ftp) or credentials (a user name or password in the address). Empty for an ordinary list. Such lists can still be changed and deleted.
+	Marks []PiholeListMarks `json:"marks"`
+
+	// Members For a mirrored group: the list on each enabled member, the primary first. Absent for an instance.
+	Members *[]PiholeListMemberStatus `json:"members,omitempty"`
+
+	// ModifiedAt When the address, enabled flag or comment last changed (Pi-hole doesn't track group changes).
+	ModifiedAt *time.Time `json:"modified_at,omitempty"`
+
+	// NeedsGravity The list is enabled and was added, enabled again, or had its comment changed since the last gravity run, so it may not be in use until gravity runs. Through a mirrored group, true when it is for any member.
+	NeedsGravity bool `json:"needs_gravity"`
+
+	// Status How the last download went. never: not downloaded yet. updated: downloaded, with changes. unchanged: downloaded, the same as before. cached: the download failed and the copy from an earlier run was used. failed: the download failed and there was no earlier copy.
+	Status PiholeListStatus `json:"status"`
+	Type   PiholeListType   `json:"type"`
+
+	// UpdatedAt When a download last changed the list's content. Absent if that never happened.
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+// PiholeListMarks defines model for PiholeList.Marks.
+type PiholeListMarks string
+
+// PiholeListDrift defines model for PiholeListDrift.
+type PiholeListDrift struct {
+	// Address As in the lists, with a user name or password replaced by `xxxxx`.
+	Address string `json:"address"`
+
+	// Difference missing: on the primary but not on this member. extra: on this member but not on the primary. changed: on both, with different settings.
+	Difference DriftDifference `json:"difference"`
+	Instance   string          `json:"instance"`
+	InstanceId int64           `json:"instance_id"`
+
+	// Member The entry's settings on the primary or on the member; absent where the entry is missing.
+	Member *DriftDomainState `json:"member,omitempty"`
+
+	// Primary The entry's settings on the primary or on the member; absent where the entry is missing.
+	Primary *DriftDomainState `json:"primary,omitempty"`
+	Type    PiholeListType    `json:"type"`
+}
+
+// PiholeListInput defines model for PiholeListInput.
+type PiholeListInput struct {
+	// Address Surrounding spaces are ignored. http:// or https:// with a host, and no user name or password; file: with an absolute path only while allow_file_lists is on. The address is shown to everyone who can see the lists, so a token in it isn't secret.
+	Address string         `json:"address"`
+	Comment *string        `json:"comment,omitempty"`
+	Enabled *bool          `json:"enabled,omitempty"`
+	Groups  *[]int         `json:"groups,omitempty"`
+	Type    PiholeListType `json:"type"`
+}
+
+// PiholeListKey Names a list. The same address can be both a blocklist and an allowlist.
+type PiholeListKey struct {
+	Address string         `json:"address"`
+	Type    PiholeListType `json:"type"`
+}
+
+// PiholeListList defines model for PiholeListList.
+type PiholeListList struct {
+	// Drifted For a mirrored group: whether its members' lists differed from the primary's at the last drift check. Absent for an instance, and until a check has compared them.
+	Drifted *bool `json:"drifted,omitempty"`
+
+	// GravityLastUpdate When gravity last finished on the instance, or on the mirrored group's primary. Absent if it never has.
+	GravityLastUpdate *time.Time   `json:"gravity_last_update,omitempty"`
+	Lists             []PiholeList `json:"lists"`
+
+	// Members For a mirrored group, how each enabled member answered, the primary first. Absent for an instance.
+	Members *[]MemberRead `json:"members,omitempty"`
+}
+
+// PiholeListMemberStatus The list on one member. state ok: the member has it, with its own status. missing: the member doesn't have it (drift). unreadable: the member couldn't be read; see the answer's `members` for why.
+type PiholeListMemberStatus struct {
+	Domains        *int                        `json:"domains,omitempty"`
+	Instance       string                      `json:"instance"`
+	InstanceId     int64                       `json:"instance_id"`
+	InvalidDomains *int                        `json:"invalid_domains,omitempty"`
+	NeedsGravity   *bool                       `json:"needs_gravity,omitempty"`
+	Primary        bool                        `json:"primary"`
+	State          PiholeListMemberStatusState `json:"state"`
+
+	// Status How the last download went. never: not downloaded yet. updated: downloaded, with changes. unchanged: downloaded, the same as before. cached: the download failed and the copy from an earlier run was used. failed: the download failed and there was no earlier copy.
+	Status    *PiholeListStatus `json:"status,omitempty"`
+	UpdatedAt *time.Time        `json:"updated_at,omitempty"`
+}
+
+// PiholeListMemberStatusState defines model for PiholeListMemberStatus.State.
+type PiholeListMemberStatusState string
+
+// PiholeListStatus How the last download went. never: not downloaded yet. updated: downloaded, with changes. unchanged: downloaded, the same as before. cached: the download failed and the copy from an earlier run was used. failed: the download failed and there was no earlier copy.
+type PiholeListStatus string
+
+// PiholeListType defines model for PiholeListType.
+type PiholeListType string
+
+// PiholeListUpdate Names the list and gives at least one of comment, groups and enabled.
+type PiholeListUpdate struct {
+	Address string  `json:"address"`
+	Comment *string `json:"comment,omitempty"`
+	Enabled *bool   `json:"enabled,omitempty"`
+
+	// Groups Replaces the list's groups.
+	Groups *[]int         `json:"groups,omitempty"`
+	Type   PiholeListType `json:"type"`
+}
+
+// PiholeListWriteResult defines model for PiholeListWriteResult.
+type PiholeListWriteResult struct {
+	// Entry Present when ok. The list as saved, with its status from before any gravity run; `needs_gravity` here says whether the write left it waiting for gravity (added enabled, or enabled again).
+	Entry *PiholeList `json:"entry,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Instance The instance's name.
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+}
+
+// PiholeListWriteResults The result per instance of adding or changing a list.
+type PiholeListWriteResults struct {
+	Results []PiholeListWriteResult `json:"results"`
+}
+
 // ProtectedGroupChoice defines model for ProtectedGroupChoice.
 type ProtectedGroupChoice struct {
 	Id   int64  `json:"id"`
@@ -2852,13 +3224,17 @@ type ReconcileInput struct {
 	Clients *[]ReconcileClient `json:"clients,omitempty"`
 	Domains *[]ReconcileDomain `json:"domains,omitempty"`
 	Groups  *[]ReconcileGroup  `json:"groups,omitempty"`
+	Lists   *[]ReconcileList   `json:"lists,omitempty"`
 }
 
 // ReconcileItemResult defines model for ReconcileItemResult.
 type ReconcileItemResult struct {
 	// Action none means the item already matched the primary, or (with an error) wasn't changed.
 	Action ReconcileItemResultAction `json:"action"`
-	Client *string                   `json:"client,omitempty"`
+
+	// Address For a subscribed list, with `list_type`; a user name or password in it is replaced by `xxxxx`.
+	Address *string `json:"address,omitempty"`
+	Client  *string `json:"client,omitempty"`
 
 	// Domain For a domain list entry, with `type` and `kind`.
 	Domain *string `json:"domain,omitempty"`
@@ -2867,13 +3243,17 @@ type ReconcileItemResult struct {
 	Error *WriteError `json:"error,omitempty"`
 
 	// Group For a Pi-hole group, its name.
-	Group      *string                   `json:"group,omitempty"`
-	Instance   string                    `json:"instance"`
-	InstanceId int64                     `json:"instance_id"`
-	Item       ReconcileItemResultItem   `json:"item"`
-	Kind       *ReconcileItemResultKind  `json:"kind,omitempty"`
-	Status     ReconcileItemResultStatus `json:"status"`
-	Type       *ReconcileItemResultType  `json:"type,omitempty"`
+	Group      *string                  `json:"group,omitempty"`
+	Instance   string                   `json:"instance"`
+	InstanceId int64                    `json:"instance_id"`
+	Item       ReconcileItemResultItem  `json:"item"`
+	Kind       *ReconcileItemResultKind `json:"kind,omitempty"`
+	ListType   *PiholeListType          `json:"list_type,omitempty"`
+
+	// NeedsGravity For a list added or enabled on the member, which waits for gravity there.
+	NeedsGravity *bool                     `json:"needs_gravity,omitempty"`
+	Status       ReconcileItemResultStatus `json:"status"`
+	Type         *ReconcileItemResultType  `json:"type,omitempty"`
 }
 
 // ReconcileItemResultAction none means the item already matched the primary, or (with an error) wasn't changed.
@@ -2890,6 +3270,14 @@ type ReconcileItemResultStatus string
 
 // ReconcileItemResultType defines model for ReconcileItemResult.Type.
 type ReconcileItemResultType string
+
+// ReconcileList defines model for ReconcileList.
+type ReconcileList struct {
+	// Address As the drift report shows it.
+	Address    string         `json:"address"`
+	InstanceId int64          `json:"instance_id"`
+	Type       PiholeListType `json:"type"`
+}
 
 // ReconcileResult defines model for ReconcileResult.
 type ReconcileResult struct {
@@ -3322,6 +3710,9 @@ type ChannelID = int64
 // Confirm defines model for Confirm.
 type Confirm = bool
 
+// GravityAfter defines model for GravityAfter.
+type GravityAfter = int
+
 // GroupID defines model for GroupID.
 type GroupID = int64
 
@@ -3544,6 +3935,18 @@ type AddDomainParams struct {
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 }
 
+// GetLatestGravityParams defines parameters for GetLatestGravity.
+type GetLatestGravityParams struct {
+	// After Only output lines with a higher `seq`; the newest 200 of them. 0 or absent for the newest 200 of all.
+	After *GravityAfter `form:"after,omitempty" json:"after,omitempty"`
+}
+
+// GetGravityRunParams defines parameters for GetGravityRun.
+type GetGravityRunParams struct {
+	// After Only output lines with a higher `seq`; the newest 200 of them. 0 or absent for the newest 200 of all.
+	After *GravityAfter `form:"after,omitempty" json:"after,omitempty"`
+}
+
 // DeletePiholeGroupParams defines parameters for DeletePiholeGroup.
 type DeletePiholeGroupParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
@@ -3572,6 +3975,24 @@ type AddPiholeGroupParams struct {
 type GetPiholeGroupUsageParams struct {
 	// Name The group's name, exactly.
 	Name string `form:"name" json:"name"`
+}
+
+// DeleteListParams defines parameters for DeleteList.
+type DeleteListParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// UpdateListParams defines parameters for UpdateList.
+type UpdateListParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// AddListParams defines parameters for AddList.
+type AddListParams struct {
+	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
+	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 }
 
 // ListQueriesParams defines parameters for ListQueries.
@@ -3729,6 +4150,15 @@ type UpdatePiholeGroupJSONRequestBody = PiholeGroupUpdate
 
 // AddPiholeGroupJSONRequestBody defines body for AddPiholeGroup for application/json ContentType.
 type AddPiholeGroupJSONRequestBody = PiholeGroupInput
+
+// DeleteListJSONRequestBody defines body for DeleteList for application/json ContentType.
+type DeleteListJSONRequestBody = PiholeListKey
+
+// UpdateListJSONRequestBody defines body for UpdateList for application/json ContentType.
+type UpdateListJSONRequestBody = PiholeListUpdate
+
+// AddListJSONRequestBody defines body for AddList for application/json ContentType.
+type AddListJSONRequestBody = PiholeListInput
 
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = UserCreate
@@ -3981,6 +4411,15 @@ type ServerInterface interface {
 	// AddDomain Add a domain to a list
 	// (POST /api/v1/targets/{target}/domains)
 	AddDomain(w http.ResponseWriter, r *http.Request, target TargetID, params AddDomainParams)
+	// GetLatestGravity The target's latest gravity run
+	// (GET /api/v1/targets/{target}/gravity)
+	GetLatestGravity(w http.ResponseWriter, r *http.Request, target TargetID, params GetLatestGravityParams)
+	// StartGravity Start a gravity update
+	// (POST /api/v1/targets/{target}/gravity)
+	StartGravity(w http.ResponseWriter, r *http.Request, target TargetID)
+	// GetGravityRun A gravity run
+	// (GET /api/v1/targets/{target}/gravity/{run})
+	GetGravityRun(w http.ResponseWriter, r *http.Request, target TargetID, run string, params GetGravityRunParams)
 	// DeletePiholeGroup Delete a Pi-hole group
 	// (DELETE /api/v1/targets/{target}/groups)
 	DeletePiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params DeletePiholeGroupParams)
@@ -3996,6 +4435,18 @@ type ServerInterface interface {
 	// GetPiholeGroupUsage What uses a Pi-hole group
 	// (GET /api/v1/targets/{target}/groups/usage)
 	GetPiholeGroupUsage(w http.ResponseWriter, r *http.Request, target TargetID, params GetPiholeGroupUsageParams)
+	// DeleteList Unsubscribe from a list
+	// (DELETE /api/v1/targets/{target}/lists)
+	DeleteList(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteListParams)
+	// ListLists The subscribed lists (adlists)
+	// (GET /api/v1/targets/{target}/lists)
+	ListLists(w http.ResponseWriter, r *http.Request, target TargetID)
+	// UpdateList Change a list's comment, groups or enabled flag
+	// (PATCH /api/v1/targets/{target}/lists)
+	UpdateList(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateListParams)
+	// AddList Subscribe to a list
+	// (POST /api/v1/targets/{target}/lists)
+	AddList(w http.ResponseWriter, r *http.Request, target TargetID, params AddListParams)
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(w http.ResponseWriter, r *http.Request, target TargetID, params ListQueriesParams)
@@ -6079,6 +6530,125 @@ func (siw *ServerInterfaceWrapper) AddDomain(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetLatestGravity operation middleware
+func (siw *ServerInterfaceWrapper) GetLatestGravity(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetLatestGravityParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLatestGravity(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartGravity operation middleware
+func (siw *ServerInterfaceWrapper) StartGravity(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartGravity(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGravityRun operation middleware
+func (siw *ServerInterfaceWrapper) GetGravityRun(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "run" -------------
+	var run string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "run", r.PathValue("run"), &run, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "run", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetGravityRunParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGravityRun(w, r, target, run, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeletePiholeGroup operation middleware
 func (siw *ServerInterfaceWrapper) DeletePiholeGroup(w http.ResponseWriter, r *http.Request) {
 
@@ -6290,6 +6860,158 @@ func (siw *ServerInterfaceWrapper) GetPiholeGroupUsage(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetPiholeGroupUsage(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteList operation middleware
+func (siw *ServerInterfaceWrapper) DeleteList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteListParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteList(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListLists operation middleware
+func (siw *ServerInterfaceWrapper) ListLists(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLists(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateList operation middleware
+func (siw *ServerInterfaceWrapper) UpdateList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateListParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateList(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddList operation middleware
+func (siw *ServerInterfaceWrapper) AddList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddListParams
+
+	// ------------- Optional query parameter "members" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "members", r.URL.Query(), &params.Members, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "members"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "members", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddList(w, r, target, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6952,6 +7674,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.UpdatePiholeGroup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.AddPiholeGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/groups/usage", wrapper.GetPiholeGroupUsage)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/lists", wrapper.DeleteList)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/lists", wrapper.ListLists)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/lists", wrapper.UpdateList)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/lists", wrapper.AddList)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/gravity", wrapper.GetLatestGravity)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/gravity", wrapper.StartGravity)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/gravity/{run}", wrapper.GetGravityRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/queries", wrapper.ListQueries)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.GetClientResetRules)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.SetClientResetRules)
@@ -14348,6 +15077,285 @@ func (response AddDomain503JSONResponse) VisitAddDomainResponse(w http.ResponseW
 	return err
 }
 
+type GetLatestGravityRequestObject struct {
+	Target TargetID `json:"target"`
+	Params GetLatestGravityParams
+}
+
+type GetLatestGravityResponseObject interface {
+	VisitGetLatestGravityResponse(w http.ResponseWriter) error
+}
+
+type GetLatestGravity200JSONResponse GravityRun
+
+func (response GetLatestGravity200JSONResponse) VisitGetLatestGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLatestGravity400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetLatestGravity400JSONResponse) VisitGetLatestGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLatestGravity401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetLatestGravity401JSONResponse) VisitGetLatestGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLatestGravity403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetLatestGravity403JSONResponse) VisitGetLatestGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLatestGravity404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetLatestGravity404JSONResponse) VisitGetLatestGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLatestGravity503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetLatestGravity503JSONResponse) VisitGetLatestGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGravityRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type StartGravityResponseObject interface {
+	VisitStartGravityResponse(w http.ResponseWriter) error
+}
+
+type StartGravity202JSONResponse GravityRun
+
+func (response StartGravity202JSONResponse) VisitStartGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGravity401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response StartGravity401JSONResponse) VisitStartGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGravity403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response StartGravity403JSONResponse) VisitStartGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGravity404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response StartGravity404JSONResponse) VisitStartGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGravity409JSONResponse struct{ ConflictJSONResponse }
+
+func (response StartGravity409JSONResponse) VisitStartGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGravity503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response StartGravity503JSONResponse) VisitStartGravityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGravityRunRequestObject struct {
+	Target TargetID `json:"target"`
+	Run    string   `json:"run"`
+	Params GetGravityRunParams
+}
+
+type GetGravityRunResponseObject interface {
+	VisitGetGravityRunResponse(w http.ResponseWriter) error
+}
+
+type GetGravityRun200JSONResponse GravityRun
+
+func (response GetGravityRun200JSONResponse) VisitGetGravityRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGravityRun400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetGravityRun400JSONResponse) VisitGetGravityRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGravityRun401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetGravityRun401JSONResponse) VisitGetGravityRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGravityRun403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetGravityRun403JSONResponse) VisitGetGravityRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGravityRun404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetGravityRun404JSONResponse) VisitGetGravityRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGravityRun503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetGravityRun503JSONResponse) VisitGetGravityRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeletePiholeGroupRequestObject struct {
 	Target TargetID `json:"target"`
 	Params DeletePiholeGroupParams
@@ -15038,6 +16046,582 @@ func (response GetPiholeGroupUsage502JSONResponse) VisitGetPiholeGroupUsageRespo
 type GetPiholeGroupUsage503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response GetPiholeGroupUsage503JSONResponse) VisitGetPiholeGroupUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteListRequestObject struct {
+	Target TargetID `json:"target"`
+	Params DeleteListParams
+	Body   *DeleteListJSONRequestBody
+}
+
+type DeleteListResponseObject interface {
+	VisitDeleteListResponse(w http.ResponseWriter) error
+}
+
+type DeleteList200JSONResponse DeleteResults
+
+func (response DeleteList200JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList207JSONResponse DeleteResults
+
+func (response DeleteList207JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response DeleteList400JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteList401JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteList403JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteList404JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response DeleteList409JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DeleteList415JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response DeleteList502JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteList503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteList503JSONResponse) VisitDeleteListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListListsRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListListsResponseObject interface {
+	VisitListListsResponse(w http.ResponseWriter) error
+}
+
+type ListLists200JSONResponse PiholeListList
+
+func (response ListLists200JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLists400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListLists400JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLists401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListLists401JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLists403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListLists403JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLists404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListLists404JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLists409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListLists409JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLists502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListLists502JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLists503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListLists503JSONResponse) VisitListListsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateListRequestObject struct {
+	Target TargetID `json:"target"`
+	Params UpdateListParams
+	Body   *UpdateListJSONRequestBody
+}
+
+type UpdateListResponseObject interface {
+	VisitUpdateListResponse(w http.ResponseWriter) error
+}
+
+type UpdateList200JSONResponse PiholeListWriteResults
+
+func (response UpdateList200JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList207JSONResponse PiholeListWriteResults
+
+func (response UpdateList207JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateList400JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateList401JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateList403JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateList404JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response UpdateList409JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateList415JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateList502JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateList503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateList503JSONResponse) VisitUpdateListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddListRequestObject struct {
+	Target TargetID `json:"target"`
+	Params AddListParams
+	Body   *AddListJSONRequestBody
+}
+
+type AddListResponseObject interface {
+	VisitAddListResponse(w http.ResponseWriter) error
+}
+
+type AddList200JSONResponse PiholeListWriteResults
+
+func (response AddList200JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList207JSONResponse PiholeListWriteResults
+
+func (response AddList207JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response AddList400JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddList401JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddList403JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddList404JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response AddList409JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response AddList415JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response AddList502JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddList503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response AddList503JSONResponse) VisitAddListResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -16284,6 +17868,15 @@ type StrictServerInterface interface {
 	// AddDomain Add a domain to a list
 	// (POST /api/v1/targets/{target}/domains)
 	AddDomain(ctx context.Context, request AddDomainRequestObject) (AddDomainResponseObject, error)
+	// GetLatestGravity The target's latest gravity run
+	// (GET /api/v1/targets/{target}/gravity)
+	GetLatestGravity(ctx context.Context, request GetLatestGravityRequestObject) (GetLatestGravityResponseObject, error)
+	// StartGravity Start a gravity update
+	// (POST /api/v1/targets/{target}/gravity)
+	StartGravity(ctx context.Context, request StartGravityRequestObject) (StartGravityResponseObject, error)
+	// GetGravityRun A gravity run
+	// (GET /api/v1/targets/{target}/gravity/{run})
+	GetGravityRun(ctx context.Context, request GetGravityRunRequestObject) (GetGravityRunResponseObject, error)
 	// DeletePiholeGroup Delete a Pi-hole group
 	// (DELETE /api/v1/targets/{target}/groups)
 	DeletePiholeGroup(ctx context.Context, request DeletePiholeGroupRequestObject) (DeletePiholeGroupResponseObject, error)
@@ -16299,6 +17892,18 @@ type StrictServerInterface interface {
 	// GetPiholeGroupUsage What uses a Pi-hole group
 	// (GET /api/v1/targets/{target}/groups/usage)
 	GetPiholeGroupUsage(ctx context.Context, request GetPiholeGroupUsageRequestObject) (GetPiholeGroupUsageResponseObject, error)
+	// DeleteList Unsubscribe from a list
+	// (DELETE /api/v1/targets/{target}/lists)
+	DeleteList(ctx context.Context, request DeleteListRequestObject) (DeleteListResponseObject, error)
+	// ListLists The subscribed lists (adlists)
+	// (GET /api/v1/targets/{target}/lists)
+	ListLists(ctx context.Context, request ListListsRequestObject) (ListListsResponseObject, error)
+	// UpdateList Change a list's comment, groups or enabled flag
+	// (PATCH /api/v1/targets/{target}/lists)
+	UpdateList(ctx context.Context, request UpdateListRequestObject) (UpdateListResponseObject, error)
+	// AddList Subscribe to a list
+	// (POST /api/v1/targets/{target}/lists)
+	AddList(ctx context.Context, request AddListRequestObject) (AddListResponseObject, error)
 	// ListQueries One page of the query log
 	// (GET /api/v1/targets/{target}/queries)
 	ListQueries(ctx context.Context, request ListQueriesRequestObject) (ListQueriesResponseObject, error)
@@ -18590,6 +20195,87 @@ func (sh *strictHandler) AddDomain(w http.ResponseWriter, r *http.Request, targe
 	}
 }
 
+// GetLatestGravity operation middleware
+func (sh *strictHandler) GetLatestGravity(w http.ResponseWriter, r *http.Request, target TargetID, params GetLatestGravityParams) {
+	var request GetLatestGravityRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLatestGravity(ctx, request.(GetLatestGravityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLatestGravity")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLatestGravityResponseObject); ok {
+		if err := validResponse.VisitGetLatestGravityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartGravity operation middleware
+func (sh *strictHandler) StartGravity(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request StartGravityRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartGravity(ctx, request.(StartGravityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartGravity")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartGravityResponseObject); ok {
+		if err := validResponse.VisitStartGravityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGravityRun operation middleware
+func (sh *strictHandler) GetGravityRun(w http.ResponseWriter, r *http.Request, target TargetID, run string, params GetGravityRunParams) {
+	var request GetGravityRunRequestObject
+
+	request.Target = target
+	request.Run = run
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGravityRun(ctx, request.(GetGravityRunRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGravityRun")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGravityRunResponseObject); ok {
+		if err := validResponse.VisitGetGravityRunResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DeletePiholeGroup operation middleware
 func (sh *strictHandler) DeletePiholeGroup(w http.ResponseWriter, r *http.Request, target TargetID, params DeletePiholeGroupParams) {
 	var request DeletePiholeGroupRequestObject
@@ -18738,6 +20424,134 @@ func (sh *strictHandler) GetPiholeGroupUsage(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetPiholeGroupUsageResponseObject); ok {
 		if err := validResponse.VisitGetPiholeGroupUsageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteList operation middleware
+func (sh *strictHandler) DeleteList(w http.ResponseWriter, r *http.Request, target TargetID, params DeleteListParams) {
+	var request DeleteListRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body DeleteListJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteList(ctx, request.(DeleteListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteListResponseObject); ok {
+		if err := validResponse.VisitDeleteListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListLists operation middleware
+func (sh *strictHandler) ListLists(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListListsRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLists(ctx, request.(ListListsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLists")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListListsResponseObject); ok {
+		if err := validResponse.VisitListListsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateList operation middleware
+func (sh *strictHandler) UpdateList(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateListParams) {
+	var request UpdateListRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body UpdateListJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateList(ctx, request.(UpdateListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateListResponseObject); ok {
+		if err := validResponse.VisitUpdateListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddList operation middleware
+func (sh *strictHandler) AddList(w http.ResponseWriter, r *http.Request, target TargetID, params AddListParams) {
+	var request AddListRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body AddListJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddList(ctx, request.(AddListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddListResponseObject); ok {
+		if err := validResponse.VisitAddListResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

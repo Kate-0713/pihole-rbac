@@ -10,7 +10,7 @@ const base: DriftReport = {
 	state: 'checked',
 	drifted: false,
 	members: [],
-	counts: { domains: 0, clients: 0, groups: 0 }
+	counts: { domains: 0, clients: 0, groups: 0, lists: 0 }
 };
 
 describe('summary', () => {
@@ -18,11 +18,11 @@ describe('summary', () => {
 		expect(summary({ ...base, state: 'not_checked' })).toMatch(/^Not checked yet/);
 		expect(summary({ ...base, state: 'primary_unavailable' })).toMatch(/primary couldn't be read/);
 		expect(summary(base)).toBe('Every member that answered matches the primary.');
-		expect(summary({ ...base, drifted: true, counts: { domains: 2, clients: 1, groups: 0 } })).toBe(
+		expect(summary({ ...base, drifted: true, counts: { domains: 2, clients: 1, groups: 0, lists: 0 } })).toBe(
 			'Members differ from the primary in 2 domain list entries and 1 client.'
 		);
-		expect(summary({ ...base, drifted: true, counts: { domains: 1, clients: 3, groups: 1 } })).toBe(
-			'Members differ from the primary in 1 domain list entry, 3 clients and 1 Pi-hole group.'
+		expect(summary({ ...base, drifted: true, counts: { domains: 1, clients: 3, groups: 1, lists: 2 } })).toBe(
+			'Members differ from the primary in 1 domain list entry, 3 clients, 1 Pi-hole group and 2 subscribed lists.'
 		);
 	});
 });
@@ -76,7 +76,7 @@ describe('plan', () => {
 		const r: DriftReport = {
 			...base,
 			drifted: true,
-			counts: { domains: 3, clients: 2, groups: 2 },
+			counts: { domains: 3, clients: 2, groups: 2, lists: 4 },
 			domains: [
 				{ instance: 'beta', instance_id: 2, domain: 'a', type: 'deny', kind: 'exact', difference: 'missing' },
 				{ instance: 'beta', instance_id: 2, domain: 'b', type: 'deny', kind: 'exact', difference: 'missing' },
@@ -85,12 +85,18 @@ describe('plan', () => {
 			groups: [
 				{ instance: 'beta', instance_id: 2, name: 'kids', difference: 'missing' },
 				{ instance: 'gamma', instance_id: 3, name: 'own', difference: 'extra' }
+			],
+			lists: [
+				{ instance: 'beta', instance_id: 2, address: 'https://l.example/a', type: 'block', difference: 'changed' },
+				{ instance: 'gamma', instance_id: 3, address: 'https://l.example/b', type: 'allow', difference: 'extra' },
+				{ instance: 'gamma', instance_id: 3, address: 'https://l.example/c', type: 'block', difference: 'missing' },
+				{ instance: 'gamma', instance_id: 3, address: 'https://l.example/d', type: 'block', difference: 'missing' }
 			]
 		};
 		expect(plan(r)).toEqual({
 			members: [
-				{ member: 'beta', lines: ['Add 2 domain list entries', 'Create 1 Pi-hole group'] },
-				{ member: 'gamma', lines: ['Delete 1 domain list entry'] }
+				{ member: 'beta', lines: ['Add 2 domain list entries', 'Change 1 subscribed list', 'Create 1 Pi-hole group'] },
+				{ member: 'gamma', lines: ['Delete 1 domain list entry', 'Delete 1 subscribed list', 'Add 2 subscribed lists'] }
 			],
 			hidden: ['2 clients'],
 			keptGroups: 1
@@ -113,5 +119,12 @@ describe('reconcileSummary', () => {
 				report
 			})
 		).toBe('Reconciled 2 items on beta, gamma.');
+	});
+});
+
+describe('plan without lists.view', () => {
+	it("counts the lists it can't show", () => {
+		const r: DriftReport = { ...base, drifted: true, counts: { domains: 0, clients: 0, groups: 0, lists: 3 } };
+		expect(plan(r).hidden).toEqual(['3 subscribed lists']);
 	});
 });

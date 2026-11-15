@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/Kate-0713/pihole-rbac/internal/lists"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
@@ -20,7 +21,7 @@ import (
 // Pi-hole groups are created and changed by name, but never deleted, since entries and clients outside the group's
 // view may still use them. The members are read again first, so a reconcile acts on what is there now rather than
 // on the last drift report. Each member is changed on its own (members at once), Pi-hole groups first, so the
-// entries and clients after them can use them; a Pi-hole group an entry or client needs that the member doesn't have
+// lists, entries and clients after them can use them; a Pi-hole group an entry or client needs that the member doesn't have
 // is created as part of that item. One item failing doesn't stop the others.
 
 // DomainKey names a list entry on a member.
@@ -43,12 +44,25 @@ type GroupKey struct {
 	Name   string
 }
 
+// ListKey names a subscribed list on a member. Address is as Pi-hole has it, or as the API shows it (redacted, for
+// one with a password in it), which matches too.
+type ListKey struct {
+	Member  int64
+	Address string
+	Type    string
+}
+
 // Selection is what to reconcile: everything, or the items named.
 type Selection struct {
 	All     bool
 	Domains []DomainKey
 	Clients []ClientKey
 	Groups  []GroupKey
+	Lists   []ListKey
+	// CheckList, if set, says whether a list missing on a member may be added to it: the app's rules for new lists'
+	// addresses (see lists.CheckAddress), so reconcile doesn't copy an address the app wouldn't accept. It is called
+	// for several members at once.
+	CheckList func(address string) error
 }
 
 // Action is what reconciling did to an item.
@@ -68,6 +82,7 @@ const (
 	ItemDomain ItemKind = "domain"
 	ItemClient ItemKind = "client"
 	ItemGroup  ItemKind = "group"
+	ItemList   ItemKind = "list"
 )
 
 // ReconcileItem is what happened to one item on one member. Err is nil when it worked.
@@ -78,8 +93,11 @@ type ReconcileItem struct {
 	Domain     DomainKey // for a domain
 	Client     string    // for a client
 	Group      string    // for a Pi-hole group
-	Action     Action
-	Err        error
+	List       ListKey   // for a subscribed list, with the address as Pi-hole has it
+	// NeedsGravity is set for a list added, or enabled, on the member: it waits for gravity there.
+	NeedsGravity bool
+	Action       Action
+	Err          error
 }
 
 // ReconcileResult is what a reconcile did: each item, and the members that couldn't be read (Code set), who were
@@ -138,6 +156,9 @@ func (d *Drift) Reconcile(ctx context.Context, groupID int64, sel Selection) (Re
 		named[k.Member] = true
 	}
 	for _, k := range sel.Groups {
+		named[k.Member] = true
+	}
+	for _, k := range sel.Lists {
 		named[k.Member] = true
 	}
 	var members []MemberCheck
@@ -254,6 +275,10 @@ func reconcileMember(ctx context.Context, c *piholeapi.Client, primary snapshot,
 		return ids, nil
 	}
 
+	// Called on its own line: idsFor appends the Pi-hole groups it creates to out, which append(out, ...) would lose.
+	listItems := reconcileLists(ctx, c, rep.Lists, m, sel, idsFor)
+	out = append(out, listItems...)
+
 	wantDomain := func(k DomainKey) bool { return sel.All || slices.Contains(sel.Domains, k) }
 	seenDomains := map[DomainKey]bool{}
 	for _, dd := range rep.Domains {
@@ -326,4 +351,70 @@ func reconcileMember(ctx context.Context, c *piholeapi.Client, primary snapshot,
 		}
 	}
 	return out, nil
+}
+
+// reconcileLists makes member m's subscribed lists match the primary's, for the differences in drift that sel asks
+// for, and reports each selected list that already matched as unchanged. idsFor maps the primary's group names to the
+// member's IDs.
+func reconcileLists(ctx context.Context, c *piholeapi.Client, drift []ListDrift, m MemberCheck, sel Selection, idsFor func([]string) ([]int, error)) []ReconcileItem {
+	// selected returns the selection's key for a difference: the key as the request gave it, so one that matched
+	// nothing can be reported as unchanged.
+	selected := func(ld ListDrift) (ListKey, bool) {
+		if sel.All {
+			return ListKey{Member: m.ID, Address: ld.Address, Type: ld.Type}, true
+		}
+		for _, k := range sel.Lists {
+			if k.Member == m.ID && k.Type == ld.Type && (k.Address == ld.Address || k.Address == lists.Redacted(ld.Address)) {
+				return k, true
+			}
+		}
+		return ListKey{}, false
+	}
+	var out []ReconcileItem
+	seen := map[ListKey]bool{}
+	for _, ld := range drift {
+		k, ok := selected(ld)
+		if !ok {
+			continue
+		}
+		seen[k] = true
+		key := ListKey{Member: m.ID, Address: ld.Address, Type: ld.Type}
+		it := ReconcileItem{Member: m.ID, MemberName: m.Name, Kind: ItemList, List: key}
+		entry := piholeapi.ListEntry{Address: ld.Address, Type: ld.Type}
+		switch ld.Difference {
+		case Missing, Changed:
+			it.Action = ActionAdd
+			if ld.Difference == Changed {
+				it.Action = ActionUpdate
+			}
+			entry.Comment, entry.Enabled = ld.Primary.Comment, ld.Primary.Enabled
+			it.NeedsGravity = entry.Enabled && (ld.Difference == Missing || !ld.Other.Enabled)
+			if ld.Difference == Missing && sel.CheckList != nil {
+				if it.Err = sel.CheckList(ld.Address); it.Err != nil {
+					it.NeedsGravity = false
+					break
+				}
+			}
+			if entry.Groups, it.Err = idsFor(ld.Primary.Groups); it.Err == nil {
+				if ld.Difference == Missing {
+					_, it.Err = c.AddList(ctx, entry)
+				} else {
+					_, it.Err = c.UpdateList(ctx, entry)
+				}
+			}
+			if it.Err != nil {
+				it.NeedsGravity = false
+			}
+		case Extra:
+			it.Action = ActionDelete
+			it.Err = c.DeleteList(ctx, ld.Address, ld.Type)
+		}
+		out = append(out, it)
+	}
+	for _, k := range sel.Lists {
+		if k.Member == m.ID && !seen[k] {
+			out = append(out, ReconcileItem{Member: m.ID, MemberName: m.Name, Kind: ItemList, List: k, Action: ActionNone})
+		}
+	}
+	return out
 }

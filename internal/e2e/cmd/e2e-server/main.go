@@ -231,6 +231,22 @@ func fillPihole(ph *piholetest.Server) {
 	ph.AddClient(piholetest.Client{Client: "10.0.0.0/24", Comment: "lab subnet", Groups: []int{0}})
 	ph.AddClient(piholetest.Client{Client: "10.0.1.5", Name: "printer.lan", Groups: []int{kids}})
 
+	// Lists, all in Default: one downloaded, one whose download failed, one with a scheme the app no longer accepts,
+	// all from before the last gravity run, and one added since, which waits for gravity. A gravity run there keeps
+	// the count at 123,456, which the dashboard test expects, and finishes at once.
+	const earlier, lastRun = 1_789_000_000, 1_789_500_000
+	ph.AddList(piholetest.List{Address: "https://lists.example/ads.txt", Type: "block", Comment: "ads", Enabled: true,
+		Status: 1, Number: 5000, DateAdded: earlier, DateUpdated: lastRun - 60})
+	ph.AddList(piholetest.List{Address: "https://lists.example/broken.txt", Type: "block", Enabled: true, Status: 4,
+		DateAdded: earlier})
+	ph.AddList(piholetest.List{Address: "ftp://lists.example/old.txt", Type: "allow", Enabled: false, DateAdded: earlier})
+	ph.AddList(piholetest.List{Address: "https://lists.example/new.txt", Type: "block", Enabled: true})
+	ph.SetGravityState(123456, lastRun)
+	ph.SetGravity(piholetest.GravityRun{
+		Domains: 123456,
+		Lines:   []string{"  [i] Neutrino emissions detected...", "  [✓] Building tree", "  [✓] Done."},
+	})
+
 	// Five queries, newest first, a minute apart and ending a minute ago: two blocked, three answered, one of them
 	// cached and for AAAA.
 	now := time.Now()

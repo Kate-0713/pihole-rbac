@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package piholetest is a fake Pi-hole v6 API for tests. It implements login, logout and session checks, and keeps
-// blocking, domains, clients, groups, lists and the query log in memory, with the Pi-hole behaviours the app has to cope
+// blocking, domains, clients, groups, lists, gravity and the query log in memory, with the Pi-hole behaviours the app has to cope
 // with: PUT creates an entry that doesn't exist, PUT without "enabled" enables the entry, a duplicate add is a 2xx
 // with the item under processed.errors, and malformed input is a 400 with an error body. Tests add or override
 // anything else with Handle.
@@ -53,14 +53,39 @@ type Group struct {
 	Enabled bool   `json:"enabled"`
 }
 
-// List is a subscribed list (an adlist).
+// List is a subscribed list (an adlist), as Pi-hole returns it. The fields from DateUpdated on are written by
+// gravity.
 type List struct {
-	ID      int    `json:"id"`
-	Address string `json:"address"`
-	Type    string `json:"type"`
-	Comment string `json:"comment"`
-	Groups  []int  `json:"groups"`
-	Enabled bool   `json:"enabled"`
+	ID             int    `json:"id"`
+	Address        string `json:"address"`
+	Type           string `json:"type"`
+	Comment        string `json:"comment"`
+	Groups         []int  `json:"groups"`
+	Enabled        bool   `json:"enabled"`
+	DateAdded      int64  `json:"date_added"`
+	DateModified   int64  `json:"date_modified"`
+	DateUpdated    int64  `json:"date_updated"`
+	Number         int    `json:"number"`
+	InvalidDomains int    `json:"invalid_domains"`
+	ABPEntries     int    `json:"abp_entries"`
+	Status         int    `json:"status"`
+}
+
+// GravityRun says how the next gravity runs answer. The zero value is a run that succeeds with a few lines of output.
+type GravityRun struct {
+	// Lines replaces the default output.
+	Lines []string
+	// Fail ends the output with FTL's "Gravity failed" line, and leaves the lists and the count as they were.
+	Fail bool
+	// CutShort closes the connection after the output, without the end of the chunked stream, as when FTL gives up
+	// sending. Gravity still finishes, as it does in FTL.
+	CutShort bool
+	// Domains is the count gravity ends with. Negative means 0; zero means 1000 per enabled block list.
+	Domains int
+	// Hold, if set, keeps the run going after its output until it is closed, so a test can see a run in progress.
+	Hold <-chan struct{}
+	// Statuses sets the download status of enabled lists by address (default ListStatusUpdated, 1).
+	Statuses map[string]int
 }
 
 // Query is a query log entry.
@@ -99,6 +124,11 @@ type Server struct {
 	clients  []Client
 	groups   []Group
 	lists    []List
+	gravity  GravityRun
+	running  bool    // a gravity run is going
+	gravRuns int     // gravity runs started
+	domains0 int     // gravity's domain count
+	lastGrav int64   // when gravity last finished, Unix seconds
 	queries  []Query // the in-memory log, newest first
 	disk     []Query // the long-term database, newest first
 	nextID   int
@@ -133,7 +163,7 @@ func newServer(password string) *Server {
 	return &Server{
 		password: password, validity: 1800, sessions: map[string]bool{}, blocking: true,
 		groups: []Group{{ID: 0, Name: "Default", Comment: "The default group", Enabled: true}},
-		nextID: 1, now: 1_790_000_000,
+		nextID: 1, now: 1_790_000_000, domains0: 123456,
 	}
 }
 
@@ -243,13 +273,20 @@ func (s *Server) Clients() []Client {
 	return slices.Clone(s.clients)
 }
 
-// AddList adds a subscribed list directly and returns its ID. A nil Groups becomes the default group.
+// AddList adds a subscribed list directly and returns its ID. A nil Groups becomes the default group, and zero dates
+// become the fake's clock.
 func (s *Server) AddList(l List) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	l.ID = s.id()
 	if l.Groups == nil {
 		l.Groups = []int{0}
+	}
+	if l.DateAdded == 0 {
+		l.DateAdded = s.now
+	}
+	if l.DateModified == 0 {
+		l.DateModified = l.DateAdded
 	}
 	s.lists = append(s.lists, l)
 	return l.ID
@@ -260,6 +297,34 @@ func (s *Server) Lists() []List {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.lists)
+}
+
+// Advance moves the fake's clock on by seconds. Writes and gravity runs use it for their timestamps.
+func (s *Server) Advance(seconds int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now += seconds
+}
+
+// SetGravity sets how later gravity runs answer.
+func (s *Server) SetGravity(g GravityRun) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gravity = g
+}
+
+// SetGravityState sets gravity's domain count and when it last finished (Unix seconds), as the summary reports them.
+func (s *Server) SetGravityState(domains int, lastUpdate int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.domains0, s.lastGrav = domains, lastUpdate
+}
+
+// GravityRuns returns how many gravity runs were started (not counting ones refused because one was going).
+func (s *Server) GravityRuns() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gravRuns
 }
 
 // SetQueries replaces the in-memory query log, newest first.
@@ -308,6 +373,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if handle != nil && handle(w, r) {
 		return
 	}
+	if r.Method == http.MethodPost && r.URL.Path == "/api/action/gravity" {
+		s.runGravity(w) // streams, so it takes the lock itself
+		return
+	}
 
 	// Path segments after /api, unescaped one by one so an escaped slash in a domain or client stays in its segment.
 	var seg []string
@@ -349,7 +418,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"forwarded": 500, "cached": 250, "status": map[string]int{"GRAVITY": 250}, "replies": map[string]int{"IP": 700},
 			},
 			"clients": map[string]int{"active": 5, "total": 8},
-			"gravity": map[string]int{"domains_being_blocked": 123456},
+			"gravity": map[string]int64{"domains_being_blocked": int64(s.domains0), "last_update": s.lastGrav},
 		})
 	case route == "GET stats/database":
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -393,6 +462,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.deleteGroup(w, seg[1])
 	case route == "GET lists" && len(seg) == 1:
 		writeJSON(w, http.StatusOK, map[string]any{"lists": s.lists})
+	case r.Method != http.MethodGet && seg[0] == "lists":
+		s.writeList(w, r, seg)
 	case route == "GET queries" && len(seg) == 1:
 		s.listQueries(w, r)
 	default:
@@ -699,4 +770,179 @@ func (s *Server) Groups() []Group {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.groups)
+}
+
+type listBody struct {
+	Address string  `json:"address"`
+	Comment *string `json:"comment"`
+	Groups  []int   `json:"groups"`
+	Enabled *bool   `json:"enabled"`
+}
+
+// writeList is called with s.mu held. It answers as FTL's list writes do. Every write needs ?type=block or allow.
+// POST adds and refuses an address already on that type (a 400 database_error, as recent FTL answers when every item
+// failed). PUT is an upsert: it creates a list that doesn't exist, enables it unless the body says otherwise, clears a
+// comment that's left out, and keeps the groups when they're left out. Only the address, enabled flag and comment move
+// date_modified, as Pi-hole's tr_adlist_update trigger does. DELETE answers 204, or 404 with an empty body. Spaces,
+// tabs and newlines in an address are refused.
+func (s *Server) writeList(w http.ResponseWriter, r *http.Request, seg []string) {
+	listType := r.URL.Query().Get("type")
+	if listType != "block" && listType != "allow" {
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request: Specify type parameter (should be either \"allow\" or \"block\")"))
+		return
+	}
+	address := ""
+	if len(seg) == 2 {
+		address = seg[1]
+	}
+	find := func(a string) int {
+		return slices.IndexFunc(s.lists, func(l List) bool { return l.Address == a && l.Type == listType })
+	}
+	if r.Method == http.MethodDelete && len(seg) == 2 {
+		i := find(address)
+		if i < 0 {
+			writeJSON(w, http.StatusNotFound, map[string]any{})
+			return
+		}
+		s.lists = slices.Delete(s.lists, i, i+1)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	var in listBody
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request"))
+		return
+	}
+	post := r.Method == http.MethodPost && len(seg) == 1
+	if post {
+		address = in.Address
+	} else if r.Method != http.MethodPut || len(seg) != 2 {
+		writeJSON(w, http.StatusNotFound, errBody("not_found", "Not found"))
+		return
+	}
+	switch {
+	case address == "":
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request: No valid \"address\" in payload (must be either string or array)"))
+		return
+	case strings.ContainsAny(address, " \t"):
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Spaces and tabs are not allowed in domains and URLs"))
+		return
+	case strings.ContainsAny(address, "\r\n"):
+		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Newlines and carriage returns are not allowed in any input"))
+		return
+	}
+	comment := ""
+	if in.Comment != nil {
+		comment = *in.Comment
+	}
+	enabled := in.Enabled == nil || *in.Enabled
+	i := find(address)
+	status := http.StatusOK
+	switch {
+	case post && i >= 0:
+		writeJSON(w, http.StatusBadRequest, errBody("database_error", "Could not add to gravity database"))
+		return
+	case i < 0:
+		s.lists = append(s.lists, List{ID: s.id(), Address: address, Type: listType, Groups: []int{0}, DateAdded: s.now, DateModified: s.now})
+		i = len(s.lists) - 1
+		if post {
+			status = http.StatusCreated
+		}
+	default:
+		if l := s.lists[i]; l.Comment != comment || l.Enabled != enabled {
+			s.lists[i].DateModified = s.now
+		}
+	}
+	s.lists[i].Comment, s.lists[i].Enabled = comment, enabled
+	if in.Groups != nil {
+		s.lists[i].Groups = slices.Clone(in.Groups)
+	}
+	writeJSON(w, status, map[string]any{
+		"lists":     []List{s.lists[i]},
+		"processed": map[string]any{"success": []any{map[string]string{"item": address}}, "errors": []any{}},
+	})
+}
+
+// runGravity answers as FTL's POST /api/action/gravity does: 409 gravity_running while a run is going, otherwise 200
+// with chunked text/plain output sent before the outcome is known, and a failure only as a last "Gravity failed"
+// line. A successful run marks the enabled lists downloaded, sets the domain count and when gravity last finished.
+// A failed one changes nothing.
+func (s *Server) runGravity(w http.ResponseWriter) {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, errBody("gravity_running", "Gravity is already running"))
+		return
+	}
+	s.running = true
+	s.gravRuns++
+	g := s.gravity
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
+	}()
+
+	lines := g.Lines
+	if lines == nil {
+		lines = []string{
+			"  [i] Neutrino emissions detected...",
+			"  [i] Pulling blocklist source list into range...\r\x1b[K  [✓] Pulling blocklist source list into range",
+			"  [✓] Done.",
+		}
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	for _, l := range lines {
+		_, _ = w.Write([]byte(l + "\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	if g.Hold != nil {
+		<-g.Hold
+	}
+	if g.Fail {
+		_, _ = w.Write([]byte("Gravity failed\n"))
+	} else {
+		s.mu.Lock()
+		s.now++
+		domains := 0
+		for i, l := range s.lists {
+			if !l.Enabled {
+				continue
+			}
+			st, ok := g.Statuses[l.Address]
+			if !ok {
+				st = 1
+			}
+			s.lists[i].Status = st
+			if st == 1 {
+				s.lists[i].DateUpdated, s.lists[i].Number = s.now, 1000
+			}
+			if st <= 3 && l.Type == "block" {
+				domains += 1000
+			}
+		}
+		switch {
+		case g.Domains < 0:
+			domains = 0
+		case g.Domains > 0:
+			domains = g.Domains
+		}
+		s.domains0, s.lastGrav = domains, s.now
+		s.mu.Unlock()
+	}
+	if g.CutShort {
+		if flusher != nil {
+			flusher.Flush()
+		}
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
+	}
 }

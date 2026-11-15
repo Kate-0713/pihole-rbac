@@ -59,6 +59,8 @@ type Options struct {
 	Timeout  time.Duration
 	// QueryTimeout bounds query log reads; DefaultQueryTimeout if zero.
 	QueryTimeout time.Duration
+	// GravityTimeout bounds a gravity run, from the request to the end of its output; DefaultGravityTimeout if zero.
+	GravityTimeout time.Duration
 }
 
 // Client talks to one Pi-hole. It is safe for concurrent use.
@@ -67,6 +69,7 @@ type Client struct {
 	password  secrets.Value
 	http      *http.Client
 	slow      *http.Client // for query log reads: the same transport with a longer timeout
+	gravity   *http.Client // for gravity runs: the same transport with a much longer timeout
 	transport *http.Transport
 	now       func() time.Time
 
@@ -116,11 +119,18 @@ func New(opts Options) (*Client, error) {
 	}
 	slow := *hc
 	slow.Timeout = queryTimeout
+	gravityTimeout := opts.GravityTimeout
+	if gravityTimeout <= 0 {
+		gravityTimeout = DefaultGravityTimeout
+	}
+	grav := *hc
+	grav.Timeout = gravityTimeout
 	return &Client{
 		baseURL:   base,
 		password:  opts.Password,
 		http:      hc,
 		slow:      &slow,
+		gravity:   &grav,
 		transport: transport,
 		now:       time.Now,
 	}, nil
@@ -404,6 +414,7 @@ func statusError(resp *http.Response, method, path string) error {
 type writeResponse struct {
 	Domains   []DomainEntry `json:"domains"`
 	Clients   []ClientEntry `json:"clients"`
+	Lists     []ListEntry   `json:"lists"`
 	Processed *struct {
 		Errors []struct {
 			Item  any    `json:"item"` // usually a string; a number for some endpoints
@@ -658,6 +669,8 @@ type LiveSummary struct {
 	} `json:"clients"`
 	Gravity struct {
 		DomainsBeingBlocked int `json:"domains_being_blocked"`
+		// LastUpdate is when gravity last finished, in Unix seconds (0 if it never ran).
+		LastUpdate int64 `json:"last_update"`
 	} `json:"gravity"`
 }
 
@@ -810,13 +823,42 @@ func (c *Client) DeleteGroup(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/api/groups/"+url.PathEscape(name), nil, nil)
 }
 
-// ListEntry is a subscribed list (an adlist), as far as the app reads it so far.
+// List download statuses, as gravity records them in a list's Status.
+const (
+	ListStatusNever     = 0 // not downloaded yet
+	ListStatusUpdated   = 1 // downloaded, and the content changed
+	ListStatusUnchanged = 2 // downloaded, and the content was the same
+	ListStatusCached    = 3 // the download failed and the copy from an earlier run was used
+	ListStatusFailed    = 4 // the download failed and there was no earlier copy
+)
+
+// ListEntry is a subscribed list (an adlist). Address and Type identify it: the same address can be both a blocklist
+// and an allowlist. ID is Pi-hole's row ID, which differs between Pi-holes. The fields from DateUpdated on are
+// written by gravity, never by the API.
 type ListEntry struct {
-	Address string `json:"address"`
-	Type    string `json:"type"` // "block" or "allow"
-	Comment string `json:"comment"`
-	Groups  []int  `json:"groups"`
-	Enabled bool   `json:"enabled"`
+	ID           int    `json:"id"`
+	Address      string `json:"address"`
+	Type         string `json:"type"` // "block" or "allow"
+	Comment      string `json:"comment"`
+	Groups       []int  `json:"groups"`
+	Enabled      bool   `json:"enabled"`
+	DateAdded    int64  `json:"date_added"`    // Unix seconds
+	DateModified int64  `json:"date_modified"` // Unix seconds: the address, enabled flag or comment changed (not the groups)
+	// DateUpdated is when a download last changed the list's content. A download with the same content (status 2)
+	// or a failed one leaves it alone.
+	DateUpdated    int64 `json:"date_updated"`
+	Number         int   `json:"number"` // domains on the list at the last download
+	InvalidDomains int   `json:"invalid_domains"`
+	ABPEntries     int   `json:"abp_entries"`
+	Status         int   `json:"status"` // one of the ListStatus values
+}
+
+// ValidListType reports whether t is a list type Pi-hole accepts.
+func ValidListType(t string) bool { return t == "block" || t == "allow" }
+
+// listPath is a list's path. Pi-hole needs the type on every write, since an address can be on both.
+func listPath(address, listType string) string {
+	return "/api/lists/" + url.PathEscape(address) + "?type=" + listType
 }
 
 // ListLists returns the subscribed lists.
@@ -828,4 +870,63 @@ func (c *Client) ListLists(ctx context.Context) ([]ListEntry, error) {
 		return nil, err
 	}
 	return out.Lists, nil
+}
+
+// AddList subscribes to the list at l.Address as l.Type, with its comment, groups and enabled flag, and returns it as
+// Pi-hole saved it (or as sent, if Pi-hole's answer doesn't include it). An address already on that type is a
+// RejectedError. Pi-hole doesn't download it until gravity runs.
+func (c *Client) AddList(ctx context.Context, l ListEntry) (ListEntry, error) {
+	if !ValidListType(l.Type) {
+		return ListEntry{}, fmt.Errorf("%w: list type %q", ErrInvalidArgument, l.Type)
+	}
+	l.Groups = nonNil(l.Groups)
+	body := struct {
+		Address string `json:"address"`
+		Comment string `json:"comment"`
+		Groups  []int  `json:"groups"`
+		Enabled bool   `json:"enabled"`
+	}{l.Address, l.Comment, l.Groups, l.Enabled}
+	var out writeResponse
+	if err := c.write(ctx, http.MethodPost, "/api/lists?type="+l.Type, body, &out); err != nil {
+		return ListEntry{}, err
+	}
+	return savedList(out, l), nil
+}
+
+// UpdateList replaces a list's comment, groups and enabled flag, and returns it as saved. Address and Type must match
+// an existing list exactly: Pi-hole's PUT creates the list if it doesn't exist, so callers check that it does first.
+// Every field is sent, so nothing falls back to Pi-hole's defaults (enabled, and no comment).
+func (c *Client) UpdateList(ctx context.Context, l ListEntry) (ListEntry, error) {
+	if !ValidListType(l.Type) {
+		return ListEntry{}, fmt.Errorf("%w: list type %q", ErrInvalidArgument, l.Type)
+	}
+	l.Groups = nonNil(l.Groups)
+	body := struct {
+		Comment string `json:"comment"`
+		Groups  []int  `json:"groups"`
+		Enabled bool   `json:"enabled"`
+	}{l.Comment, l.Groups, l.Enabled}
+	var out writeResponse
+	if err := c.write(ctx, http.MethodPut, listPath(l.Address, l.Type), body, &out); err != nil {
+		return ListEntry{}, err
+	}
+	return savedList(out, l), nil
+}
+
+// savedList picks the list Pi-hole returned for sent, falling back to sent itself.
+func savedList(out writeResponse, sent ListEntry) ListEntry {
+	for _, l := range out.Lists {
+		if l.Address == sent.Address && l.Type == sent.Type {
+			return l
+		}
+	}
+	return sent
+}
+
+// DeleteList unsubscribes from the list at address of listType. A list Pi-hole doesn't have is a 404 StatusError.
+func (c *Client) DeleteList(ctx context.Context, address, listType string) error {
+	if !ValidListType(listType) {
+		return fmt.Errorf("%w: list type %q", ErrInvalidArgument, listType)
+	}
+	return c.do(ctx, http.MethodDelete, listPath(address, listType), nil, nil)
 }

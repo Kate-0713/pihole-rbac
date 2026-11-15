@@ -14,6 +14,7 @@ type ActionInfo struct {
 const (
 	GroupSignIn        = "Sign-in and sessions"
 	GroupPihole        = "Pi-hole changes"
+	GroupLists         = "Lists and gravity"
 	GroupInstances     = "Instances and groups"
 	GroupAccess        = "Users, roles and LDAP"
 	GroupSettings      = "Settings and system"
@@ -47,6 +48,12 @@ var actions = []ActionInfo{
 	{ActionPiholeGroupDelete, GroupPihole, "A Pi-hole group deleted, which takes it off every domain, client and list"},
 	{ActionClientReset, GroupPihole, "Clients put back in their groups by a client reset, or a reset that failed"},
 	{ActionGroupReconcile, GroupPihole, "A mirrored group's member made to match the primary"},
+
+	{ActionListAdd, GroupLists, "A blocklist or allowlist subscribed to"},
+	{ActionListUpdate, GroupLists, "A list's comment or groups changed, or the list enabled or disabled"},
+	{ActionListDelete, GroupLists, "A list unsubscribed from"},
+	{ActionGravityStart, GroupLists, "A gravity update started"},
+	{ActionGravityRun, GroupLists, "A gravity update finished on an instance, or failed"},
 
 	{ActionInstanceCreate, GroupInstances, "An instance added"},
 	{ActionInstanceUpdate, GroupInstances, "An instance's settings changed"},

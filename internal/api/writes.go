@@ -149,6 +149,11 @@ func describeCode(pf *piholeFailure) failure {
 		}
 	case piholeapi.CodeUnreachable:
 		f.message = fmt.Sprintf("Pi-hole %q didn't respond.", pf.Instance)
+	case piholeapi.CodeGravityRunning:
+		f.status = http.StatusConflict
+		f.message = fmt.Sprintf("Pi-hole %q is already running gravity, started outside this app. Try again when it has finished.", pf.Instance)
+	case piholeapi.CodeGravityFailed:
+		f.message = fmt.Sprintf("Gravity failed on Pi-hole %q. Its output says why.", pf.Instance)
 	case piholeapi.CodeAuthRejected:
 		f.message = fmt.Sprintf("Pi-hole %q refused the app's password. An administrator needs to check it.", pf.Instance)
 	case piholeapi.CodeStatusError:

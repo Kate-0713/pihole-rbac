@@ -99,6 +99,15 @@ const (
 	ActionPiholeGroupDisable = "piholegroup_disable"
 	ActionPiholeGroupDelete  = "piholegroup_delete"
 
+	// Subscribed lists (adlists), since v2.3.0.
+	ActionListAdd    = "list_add"
+	ActionListUpdate = "list_update"
+	ActionListDelete = "list_delete"
+
+	// Gravity runs, since v2.3.0: when a run starts, and per instance when its part ends.
+	ActionGravityStart = "gravity_start"
+	ActionGravityRun   = "gravity_run"
+
 	// Client reset: one row per instance a run changed or failed on (a run that found nothing to change writes none),
 	// listing the clients reset and those that failed, with Pi-hole groups by name. A scheduled run is SystemUser's.
 	ActionClientReset = "client_reset"

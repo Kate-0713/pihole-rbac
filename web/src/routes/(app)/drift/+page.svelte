@@ -19,6 +19,7 @@
 		differenceLabel,
 		domainChanges,
 		groupChanges,
+		listChanges,
 		reconcileKey,
 		reconcileSummary,
 		summary,
@@ -69,6 +70,7 @@
 		domains?: { instance_id: number; domain: string; type: 'allow' | 'deny'; kind: 'exact' | 'regex' }[];
 		clients?: { instance_id: number; client: string }[];
 		groups?: { instance_id: number; name: string }[];
+		lists?: { instance_id: number; address: string; type: 'block' | 'allow' }[];
 	};
 
 	// reconcile sends the request, reports what happened (a toast for what worked, an error per item that didn't), and
@@ -85,6 +87,11 @@
 			}
 			for (const r of out.results) {
 				if (r.error) notices.error(r.error.message, `Couldn't reconcile ${reconcileKey(r)} on ${r.instance}`);
+			}
+			// A list added or enabled on a member does nothing there until gravity runs on it.
+			const waiting = [...new Set(out.results.filter((r) => r.needs_gravity).map((r) => r.instance))];
+			if (waiting.length > 0) {
+				notices.info(`Run gravity on ${waiting.join(', ')} for the lists added or enabled there to take effect.`);
 			}
 			if (out.results.some((r) => r.status === 'ok' && r.action !== 'none') || out.results.every((r) => r.status === 'ok')) {
 				notices.success(reconcileSummary(out));
@@ -287,6 +294,52 @@
 					</div>
 				{:else}
 					{@render hidden('client', 'clients.view', report.counts.clients)}
+				{/if}
+			</section>
+		{/if}
+
+		{#if report.counts.lists > 0}
+			<section class="grid gap-2" aria-labelledby="drift-lists">
+				<h2 id="drift-lists" class="font-semibold">Subscribed lists</h2>
+				{#if report.lists}
+					<div class="overflow-x-auto rounded-lg border">
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>Member</Table.Head>
+									<Table.Head>List</Table.Head>
+									<Table.Head>Difference</Table.Head>
+									{#if canReconcile}<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>{/if}
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each report.lists as l (l.instance_id + l.type + l.address)}
+									<Table.Row>
+										<Table.Cell><CellText>{l.instance}</CellText></Table.Cell>
+										<Table.Cell>
+											<CellText width="lg">
+												<span class="font-mono text-sm break-all">{l.address}</span>
+												<span class="text-muted-foreground block text-xs">{l.type === 'block' ? 'Blocklist' : 'Allowlist'}</span>
+											</CellText>
+										</Table.Cell>
+										<Table.Cell class="whitespace-normal">
+											{@render difference(l.difference)}
+											{@render changes(listChanges(l))}
+										</Table.Cell>
+										{#if canReconcile}
+											<Table.Cell>
+												{@render fix(`list:${l.instance_id}:${l.type}:${l.address}`, `${l.address} on ${l.instance}`, {
+													lists: [{ instance_id: l.instance_id, address: l.address, type: l.type }]
+												})}
+											</Table.Cell>
+										{/if}
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				{:else}
+					{@render hidden('subscribed list', 'lists.view', report.counts.lists)}
 				{/if}
 			</section>
 		{/if}

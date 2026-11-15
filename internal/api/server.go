@@ -22,6 +22,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
+	"github.com/Kate-0713/pihole-rbac/internal/gravity"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
@@ -62,6 +63,7 @@ type Options struct {
 	LoginSettings *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
 	Notifications *notifications.Service // notification channels; nil in tests that don't need them
 	ClientReset   *clientreset.Service   // client reset rules and runs; nil in tests that don't need them
+	Gravity       *gravity.Service       // gravity runs; New makes one from Instances' pool when nil
 	Updates       *updates.Service       // the update check and update requests; nil in tests that don't need them
 	// Restart asks the process to shut down cleanly, as SIGTERM does, so its service manager starts it again. nil in
 	// tests that don't need it.
@@ -93,6 +95,9 @@ var _ gen.StrictServerInterface = (*Server)(nil)
 func New(o Options) *Server {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
+	}
+	if o.Gravity == nil && o.Instances != nil {
+		o.Gravity = &gravity.Service{Call: o.Instances.Pool.Do}
 	}
 	s := &Server{Options: o, mux: http.NewServeMux(), csp: ContentSecurityPolicy}
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{

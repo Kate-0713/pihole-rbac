@@ -170,6 +170,7 @@ func (s *Server) SetGeneralSettings(ctx context.Context, req gen.SetGeneralSetti
 	if r := req.Body.ClientResetSchedule; r != nil { // absent leaves it as it is
 		g.ClientReset = &loginsettings.ResetSchedule{Enabled: r.Enabled, Time: r.Time, TimeZone: r.TimeZone}
 	}
+	g.AllowFileLists = req.Body.AllowFileLists // likewise
 	if err := s.LoginSettings.SaveGeneral(ctx, actor(ctx), g); err != nil {
 		return nil, err
 	}
@@ -180,6 +181,7 @@ func generalJSON(v loginsettings.GeneralView) gen.GeneralSettings {
 	out := gen.GeneralSettings{
 		SessionLifetimeMinutes: v.SessionLifetimeMinutes, IdleTimeoutMinutes: v.IdleTimeoutMinutes,
 		AuditRetentionDays: v.AuditRetentionDays,
+		AllowFileLists:     v.AllowFileLists != nil && *v.AllowFileLists,
 	}
 	if r := v.ClientReset; r != nil {
 		out.ClientResetSchedule = gen.ClientResetSchedule{Enabled: r.Enabled, Time: r.Time, TimeZone: r.TimeZone}

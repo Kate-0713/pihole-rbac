@@ -2789,6 +2789,278 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/targets/{target}/lists:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: The subscribed lists (adlists)
+      description: >-
+        Every blocklist and allowlist the Pi-hole subscribes to, unpaged, with its download status from the last
+        gravity run. For a mirrored group the settings (comment, groups, enabled) are the primary's, and each list
+        also carries every member's status in `members`, since download status isn't mirrored. An address with a user
+        name or password in it is shown with that part replaced by `xxxxx`. Reading isn't audited. Since v2.3.0.
+      operationId: listLists
+      x-permission: target:lists.view
+      responses:
+        "200":
+          description: The lists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeListList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Subscribe to a list
+      description: >-
+        Adds a list, enabled unless `enabled` is false. Only http and https addresses with a host are accepted, with no
+        user name or password in them; file: addresses only while the general setting `allow_file_lists` is on.
+        Without `groups` the list goes in the Default group (ID 0); an empty list puts it in no group. An address
+        already subscribed as that type is a pihole_rejected failure. The list isn't downloaded until gravity runs.
+        Answers with a result per instance (see WriteResults under the schemas). Audited as list_add.
+      operationId: addList
+      x-permission: target:lists.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiholeListInput"
+      responses:
+        "200":
+          description: Every instance succeeded; each result has the list as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeListWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeListWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    patch:
+      summary: Change a list's comment, groups or enabled flag
+      description: >-
+        The body names the list by address and type, which must match it exactly (or the address as this API shows
+        it, for one with a user name or password), and gives the fields to change; fields left out keep their value.
+        The address and type can't be changed. A list that doesn't exist is a 404: it is never created. Disabling a
+        list and changing its groups take effect at once; enabling a list that was disabled at the last gravity run
+        waits for gravity. Answers with a result per instance. Audited as list_update.
+      operationId: updateList
+      x-permission: target:lists.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiholeListUpdate"
+      responses:
+        "200":
+          description: Every instance succeeded; each result has the list as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeListWriteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiholeListWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Unsubscribe from a list
+      description: >-
+        The body names the list by address and type, as for a change. A list that doesn't exist is a 404. Answers with
+        a result per instance. Audited as list_delete, with the list's comment, groups and enabled flag.
+      operationId: deleteList
+      x-permission: target:lists.edit
+      parameters:
+        - $ref: "#/components/parameters/Members"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiholeListKey"
+      responses:
+        "200":
+          description: Deleted on every instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResults"
+        "207":
+          description: >-
+            The instances' results differ: some succeeded and some didn't. Only a mirrored group, which has several
+            members, can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/gravity:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    post:
+      summary: Start a gravity update
+      description: >-
+        Starts gravity on the instance, or on a mirrored group's members one at a time (the primary first, then the
+        others by name), and answers at once with the run; poll it for progress. Through a group the run stops at the
+        first member that fails or ends with no domains when it had some, and the rest are skipped; a member that
+        can't be reached is skipped and the run goes on. Pi-hole keeps blocking with its old lists while gravity
+        builds. Refused with 409 conflict while any instance the run would cover is already in a run started by this
+        app (`details.instances` names them). Runs are kept in memory, so they are lost on a restart (the Pi-hole
+        finishes a run anyway). Audited as gravity_start when it starts and gravity_run per instance as its part ends.
+        Since v2.3.0.
+      operationId: startGravity
+      x-permission: target:gravity.run
+      responses:
+        "202":
+          description: The run has started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GravityRun"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    get:
+      summary: The target's latest gravity run
+      description: >-
+        The latest run started through this target since the app started, running or finished, with the newest output
+        lines after `after`. 404 if there hasn't been one. Since v2.3.0.
+      operationId: getLatestGravity
+      x-permission: target:lists.view
+      parameters:
+        - $ref: "#/components/parameters/GravityAfter"
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GravityRun"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+  /api/v1/targets/{target}/gravity/{run}:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+      - name: run
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[0-9a-f]{24}$"
+    get:
+      summary: A gravity run
+      description: >-
+        One run started through this target, with the newest output lines after `after`. 404 once it has been dropped
+        (an hour after it ends, unless it is the target's latest) or after a restart. Since v2.3.0.
+      operationId: getGravityRun
+      x-permission: target:lists.view
+      parameters:
+        - $ref: "#/components/parameters/GravityAfter"
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GravityRun"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
   /api/v1/targets/{target}/queries:
     parameters:
       - $ref: "#/components/parameters/TargetID"
@@ -3067,6 +3339,13 @@ paths:
 
 components:
   parameters:
+    GravityAfter:
+      name: after
+      in: query
+      description: Only output lines with a higher `seq`; the newest 200 of them. 0 or absent for the newest 200 of all.
+      schema:
+        type: integer
+        minimum: 0
     RunLimit:
       name: limit
       in: query
@@ -4115,7 +4394,7 @@ components:
           description: When the check ran. Absent when not_checked.
         drifted:
           type: boolean
-          description: Whether any member was found to differ from the primary, in any of the three lists.
+          description: Whether any member was found to differ from the primary, in any of the four kinds of item.
         members:
           type: array
           description: The enabled members as of the check, the primary first. Empty when not_checked.
@@ -4137,17 +4416,24 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PiholeGroupDrift"
+        lists:
+          type: array
+          description: Absent without lists.view on the group. Since v2.3.0.
+          items:
+            $ref: "#/components/schemas/PiholeListDrift"
 
     DriftCounts:
       type: object
       additionalProperties: false
-      required: [domains, clients, groups]
+      required: [domains, clients, groups, lists]
       properties:
         domains:
           type: integer
         clients:
           type: integer
         groups:
+          type: integer
+        lists:
           type: integer
 
     DriftDifference:
@@ -4248,6 +4534,28 @@ components:
         member:
           $ref: "#/components/schemas/DriftGroupState"
 
+    PiholeListDrift:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, address, type, difference]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        address:
+          type: string
+          description: As in the lists, with a user name or password replaced by `xxxxx`.
+        type:
+          $ref: "#/components/schemas/PiholeListType"
+        difference:
+          $ref: "#/components/schemas/DriftDifference"
+        primary:
+          $ref: "#/components/schemas/DriftDomainState"
+        member:
+          $ref: "#/components/schemas/DriftDomainState"
+
     DriftGroupState:
       type: object
       additionalProperties: false
@@ -4280,6 +4588,27 @@ components:
           maxItems: 1000
           items:
             $ref: "#/components/schemas/ReconcileGroup"
+        lists:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ReconcileList"
+
+    ReconcileList:
+      type: object
+      additionalProperties: false
+      required: [instance_id, address, type]
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+        address:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: As the drift report shows it.
+        type:
+          $ref: "#/components/schemas/PiholeListType"
 
     ReconcileDomain:
       type: object
@@ -4349,10 +4678,18 @@ components:
           format: int64
         item:
           type: string
-          enum: [domain, client, group]
+          enum: [domain, client, group, list]
         domain:
           type: string
           description: For a domain list entry, with `type` and `kind`.
+        address:
+          type: string
+          description: For a subscribed list, with `list_type`; a user name or password in it is replaced by `xxxxx`.
+        list_type:
+          $ref: "#/components/schemas/PiholeListType"
+        needs_gravity:
+          type: boolean
+          description: For a list added or enabled on the member, which waits for gravity there.
         type:
           type: string
           enum: [allow, deny]
@@ -5294,6 +5631,11 @@ components:
           description: How many days audit entries are kept, 30 to 3650. Absent leaves it as it is.
         client_reset_schedule:
           $ref: "#/components/schemas/ClientResetSchedule"
+        allow_file_lists:
+          type: boolean
+          description: >-
+            Whether file: lists can be added (since v2.3.0). They make a Pi-hole read a file on its own host. Turning
+            it off leaves existing ones alone. Absent leaves it as it is.
 
     ClientResetSchedule:
       type: object
@@ -5317,8 +5659,11 @@ components:
     GeneralSettings:
       type: object
       additionalProperties: false
-      required: [session_lifetime_minutes, idle_timeout_minutes, audit_retention_days, client_reset_schedule]
+      required: [session_lifetime_minutes, idle_timeout_minutes, audit_retention_days, client_reset_schedule, allow_file_lists]
       properties:
+        allow_file_lists:
+          type: boolean
+          description: "Whether file: lists can be added; false until saved."
         session_lifetime_minutes:
           type: integer
         idle_timeout_minutes:
@@ -5810,6 +6155,320 @@ components:
           items:
             type: integer
             minimum: 0
+
+    PiholeListList:
+      type: object
+      additionalProperties: false
+      required: [lists]
+      properties:
+        drifted:
+          type: boolean
+          description: >-
+            For a mirrored group: whether its members' lists differed from the primary's at the last drift check.
+            Absent for an instance, and until a check has compared them.
+        gravity_last_update:
+          type: string
+          format: date-time
+          description: When gravity last finished on the instance, or on the mirrored group's primary. Absent if it never has.
+        members:
+          type: array
+          description: For a mirrored group, how each enabled member answered, the primary first. Absent for an instance.
+          items:
+            $ref: "#/components/schemas/MemberRead"
+        lists:
+          type: array
+          items:
+            $ref: "#/components/schemas/PiholeList"
+
+    PiholeListType:
+      type: string
+      enum: [block, allow]
+
+    PiholeListStatus:
+      type: string
+      enum: [never, updated, unchanged, cached, failed]
+      description: >-
+        How the last download went. never: not downloaded yet. updated: downloaded, with changes. unchanged:
+        downloaded, the same as before. cached: the download failed and the copy from an earlier run was used. failed:
+        the download failed and there was no earlier copy.
+
+    PiholeList:
+      type: object
+      additionalProperties: false
+      required: [address, type, comment, groups, enabled, status, domains, invalid_domains, needs_gravity, marks]
+      properties:
+        address:
+          type: string
+          description: The address, with a user name or password in it replaced by `xxxxx`.
+        type:
+          $ref: "#/components/schemas/PiholeListType"
+        comment:
+          type: string
+        groups:
+          type: array
+          description: IDs of the Pi-hole groups the list applies to. See the target's groups for their names.
+          items:
+            type: integer
+        enabled:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/PiholeListStatus"
+        domains:
+          type: integer
+          description: How many domains the list had at its last download.
+        invalid_domains:
+          type: integer
+          description: Lines that weren't valid domains at the last download.
+        added_at:
+          type: string
+          format: date-time
+        modified_at:
+          type: string
+          format: date-time
+          description: When the address, enabled flag or comment last changed (Pi-hole doesn't track group changes).
+        updated_at:
+          type: string
+          format: date-time
+          description: When a download last changed the list's content. Absent if that never happened.
+        needs_gravity:
+          type: boolean
+          description: >-
+            The list is enabled and was added, enabled again, or had its comment changed since the last gravity run, so
+            it may not be in use until gravity runs. Through a mirrored group, true when it is for any member.
+        marks:
+          type: array
+          description: >-
+            Why the list wouldn't be accepted if it were added now: file (a file: list, whatever allow_file_lists says),
+            scheme (another scheme Pi-hole accepts, such as ftp) or credentials (a user name or password in the
+            address). Empty for an ordinary list. Such lists can still be changed and deleted.
+          items:
+            type: string
+            enum: [file, scheme, credentials]
+        members:
+          type: array
+          description: >-
+            For a mirrored group: the list on each enabled member, the primary first. Absent for an instance.
+          items:
+            $ref: "#/components/schemas/PiholeListMemberStatus"
+
+    PiholeListMemberStatus:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, primary, state]
+      description: >-
+        The list on one member. state ok: the member has it, with its own status. missing: the member doesn't have it
+        (drift). unreadable: the member couldn't be read; see the answer's `members` for why.
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        primary:
+          type: boolean
+        state:
+          type: string
+          enum: [ok, missing, unreadable]
+        status:
+          $ref: "#/components/schemas/PiholeListStatus"
+        domains:
+          type: integer
+        invalid_domains:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+        needs_gravity:
+          type: boolean
+
+    PiholeListKey:
+      type: object
+      additionalProperties: false
+      required: [address, type]
+      description: Names a list. The same address can be both a blocklist and an allowlist.
+      properties:
+        address:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        type:
+          $ref: "#/components/schemas/PiholeListType"
+
+    PiholeListInput:
+      type: object
+      additionalProperties: false
+      required: [address, type]
+      properties:
+        address:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: >-
+            Surrounding spaces are ignored. http:// or https:// with a host, and no user name or password; file:
+            with an absolute path only while allow_file_lists is on. The address is shown to everyone who can see the
+            lists, so a token in it isn't secret.
+        type:
+          $ref: "#/components/schemas/PiholeListType"
+        comment:
+          type: string
+          maxLength: 500
+        groups:
+          type: array
+          maxItems: 1000
+          items:
+            type: integer
+            minimum: 0
+        enabled:
+          type: boolean
+          default: true
+
+    PiholeListUpdate:
+      type: object
+      additionalProperties: false
+      required: [address, type]
+      description: Names the list and gives at least one of comment, groups and enabled.
+      properties:
+        address:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        type:
+          $ref: "#/components/schemas/PiholeListType"
+        comment:
+          type: string
+          maxLength: 500
+        groups:
+          type: array
+          maxItems: 1000
+          description: Replaces the list's groups.
+          items:
+            type: integer
+            minimum: 0
+        enabled:
+          type: boolean
+
+    PiholeListWriteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      description: The result per instance of adding or changing a list.
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PiholeListWriteResult"
+
+    PiholeListWriteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+          description: The instance's name.
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
+        entry:
+          $ref: "#/components/schemas/PiholeList"
+          description: >-
+            Present when ok. The list as saved, with its status from before any gravity run; `needs_gravity` here says
+            whether the write left it waiting for gravity (added enabled, or enabled again).
+
+    GravityRun:
+      type: object
+      additionalProperties: false
+      required: [id, target, status, started_at, started_by, results, output, output_last_seq, output_truncated]
+      properties:
+        id:
+          type: string
+        target:
+          type: string
+          description: The target the run was started through.
+        status:
+          type: string
+          enum: [running, done]
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        started_by:
+          type: string
+          description: The username of who started it.
+        results:
+          type: array
+          description: One per instance, in the order they run.
+          items:
+            $ref: "#/components/schemas/GravityInstanceResult"
+        output:
+          type: array
+          description: >-
+            Output lines after `after`, oldest first: the newest 200 of them. Each instance keeps its newest 2000.
+            Lines are plain text, cleaned of terminal codes; show them as text.
+          items:
+            $ref: "#/components/schemas/GravityLine"
+        output_last_seq:
+          type: integer
+          description: The `seq` of the newest line so far, to send as `after` next time; 0 when there is none.
+        output_truncated:
+          type: boolean
+          description: Lines after `after` were left out before the first one in `output`.
+
+    GravityLine:
+      type: object
+      additionalProperties: false
+      required: [seq, instance_id, text]
+      properties:
+        seq:
+          type: integer
+        instance_id:
+          type: integer
+          format: int64
+        text:
+          type: string
+
+    GravityInstanceResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, primary, status]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        primary:
+          type: boolean
+        status:
+          type: string
+          enum: [pending, running, ok, failed, skipped]
+        reason:
+          type: string
+          enum: [stopped, down]
+          description: >-
+            For skipped: stopped, an earlier member failed; down, the instance couldn't be reached (in a run through a
+            group).
+        error:
+          $ref: "#/components/schemas/WriteError"
+        domains:
+          type: integer
+          description: The domain count gravity ended with.
+        last_update:
+          type: string
+          format: date-time
+          description: When Pi-hole says gravity finished.
+        duration_ms:
+          type: integer
+          format: int64
+        lists_failed:
+          type: integer
+          description: Enabled lists whose download failed (cached copy used, or none). These don't stop a run.
 
     PiholeGroupList:
       type: object

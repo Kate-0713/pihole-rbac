@@ -5,6 +5,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import AuditRetentionCard from '#lib/components/app/audit-retention-card.svelte';
+	import FileListsCard from '#lib/components/app/file-lists-card.svelte';
 	import GeneralSettingsCard from '#lib/components/app/general-settings-card.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { _settingsKey as settingsKey } from './+page.js';
@@ -27,6 +28,7 @@
 	<div class="grid gap-6 lg:max-w-2xl">
 		<GeneralSettingsCard settings={data.general} onsaved={() => invalidate(settingsKey)} />
 		<AuditRetentionCard settings={data.general} onsaved={() => invalidate(settingsKey)} />
+		<FileListsCard settings={data.general} onsaved={() => invalidate(settingsKey)} />
 		<p class="text-muted-foreground text-sm">
 			Login methods and the LDAP server are on the <a class="underline" href="/admin/ldap">LDAP</a> page.
 		</p>

@@ -67,6 +67,7 @@ type Service struct {
 	generalBy string
 	retention int           // audit retention in days; 0 means the default
 	schedule  ResetSchedule // the client reset schedule; zero means the default
+	allowFile bool          // whether file: lists can be added
 }
 
 // StoredPassword is the bind password as kept in the database.

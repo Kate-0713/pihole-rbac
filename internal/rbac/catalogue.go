@@ -27,6 +27,9 @@ const (
 	DNSRestart         Permission = "dns.restart"
 	ClientResetRun     Permission = "clientreset.run"
 	PiholeGroupsEdit   Permission = "piholegroups.edit"
+	ListsView          Permission = "lists.view"
+	ListsEdit          Permission = "lists.edit"
+	GravityRun         Permission = "gravity.run"
 	DriftView          Permission = "drift.view"
 	DriftReconcile     Permission = "drift.reconcile"
 	InstancesManage    Permission = "instances.manage"
@@ -84,6 +87,9 @@ var catalogue = []Info{
 	{DNSRestart, ClassInstance, "Restart DNS"},
 	{ClientResetRun, ClassInstance, "Run client reset manually"},
 	{PiholeGroupsEdit, ClassInstance, "Create, rename, comment, enable, disable and delete Pi-hole groups"},
+	{ListsView, ClassInstance, "List subscribed lists and their status, and see gravity runs"},
+	{ListsEdit, ClassInstance, "Add, change and delete subscribed lists"},
+	{GravityRun, ClassInstance, "Run a gravity update"},
 	{DriftView, ClassGroup, "View the drift report for a mirrored group"},
 	{DriftReconcile, ClassGroup, "Reconcile a mirrored group"},
 	{InstancesManage, ClassGlobal, "Add, edit and group instances"},
