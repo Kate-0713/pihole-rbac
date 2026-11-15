@@ -21,6 +21,7 @@ var releasedMigrations = map[string]string{
 	"00001_initial.sql":                      "591c78db4325b3908552fa32d64d5acb39f2347c9c3d08a9f5390d8d2caa25cf", // v2.0.0
 	"00002_blocking_indefinite.sql":          "535cbc74e10592a8d1fb651e1e791fc8e5bc2e126887ca446bb57197f56a90a9", // v2.1.0
 	"00003_client_reset_scheduled_event.sql": "17763399adcd6fdda0a87ca77fd98c17ef70102912471595596d8bf840f4b094", // v2.1.0
+	"00004_piholegroups_edit.sql":            "47b6db8acabd7369e41a283d7137099eb1531119c75a783fe649c72306f5def0", // v2.2.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
@@ -95,9 +96,9 @@ func TestUpgradeFromV2_0_0(t *testing.T) {
 	}
 }
 
-// TestUpgradeFromV2_2_0: a database as v2.2.0 left it (version 3, unchanged since v2.1.0) gets piholegroups.edit on
+// TestUpgradeFromV2_1_3: a database as v2.1.3 left it (version 3, unchanged since v2.1.0) gets piholegroups.edit on
 // the builtin admin role only. A role that can edit domains and clients doesn't get it.
-func TestUpgradeFromV2_2_0(t *testing.T) {
+func TestUpgradeFromV2_1_3(t *testing.T) {
 	dir := t.TempDir()
 	s, err := openAt(t, dir, migrationsUpTo(t, 3))
 	if err != nil {
