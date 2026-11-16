@@ -115,9 +115,29 @@ export interface paths {
         put?: never;
         /**
          * Log in
-         * @description Unauthenticated, but needs the anonymous CSRF token from GET /auth/csrf. Tries the enabled login methods in order. On success, sets the session cookie (replacing any previous session) and returns the new session, including its CSRF token. Failed attempts are limited per client address and per username; while a limit applies, attempts are refused with 429 without checking the credentials.
+         * @description Unauthenticated, but needs the anonymous CSRF token from GET /auth/csrf. Tries the enabled login methods in order. On success, sets the session cookie (replacing any previous session) and returns the new session, including its CSRF token. Failed attempts are limited per client address and per username; while a limit applies, attempts are refused with 429 without checking the credentials. For a user with two-factor login on, a correct password answers 202 instead: no session yet, and the login is finished with a code at POST /auth/login/totp, from the same browser, within 5 minutes.
          */
         post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish logging in with a two-factor code
+         * @description The second step for a user with two-factor login on, after POST /auth/login answered 202. Unauthenticated, and tied to the browser that sent the password by its anonymous cookie, so it needs the same anonymous CSRF token. Takes a six-digit code from the authenticator app, or a recovery code. On success, sets the session cookie and returns the new session, as a login does. A wrong code is 401 totp_invalid and counts against the same per-address and per-username limits as a wrong password; while a limit applies, attempts are refused with 429 without checking the code. After 5 wrong codes, or 5 minutes, the login has to start again from the password (401 login_expired).
+         */
+        post: operations["loginTOTP"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2166,6 +2186,13 @@ export interface components {
             /** @description Case-insensitive; surrounding spaces are ignored. */
             username: string;
             password: string;
+        };
+        LoginPending: {
+            /**
+             * @description Always true. The login needs a code at POST /auth/login/totp.
+             * @enum {boolean}
+             */
+            totp_required: true;
         };
         SessionUser: {
             /** Format: int64 */
@@ -4818,6 +4845,15 @@ export interface operations {
                     "application/json": components["schemas"]["CurrentSession"];
                 };
             };
+            /** @description The password is right, and the user has two-factor login on. No session yet. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginPending"];
+                };
+            };
             400: components["responses"]["ValidationFailed"];
             /** @description Wrong username or password (code invalid_credentials). Doesn't say which. */
             401: {
@@ -4837,6 +4873,53 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    loginTOTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TOTPCode"];
+            };
+        };
+        responses: {
+            /** @description Logged in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentSession"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            /** @description The code is wrong, was used before or has expired (code totp_invalid); there is no login waiting for a code in this browser, or it has run out of time or attempts (code login_expired); or the account can no longer log in (code invalid_credentials). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The user no longer has a role in this app (code no_access), or the CSRF or Origin check failed (code csrf_failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            409: components["responses"]["Conflict"];
             415: components["responses"]["UnsupportedMediaType"];
             429: components["responses"]["RateLimited"];
             503: components["responses"]["SetupRequired"];

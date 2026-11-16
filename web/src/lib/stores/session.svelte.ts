@@ -74,9 +74,22 @@ class SessionStore {
 		setCSRFToken(csrf_token);
 	}
 
-	async login(username: string, password: string): Promise<void> {
+	// Resolves to 'authenticated', or to 'totp_required' for someone with two-factor login on: the password was right,
+	// there is no session yet, and loginTOTP finishes the login with a code. The server ties the two steps together by
+	// the browser's anonymous cookie, so nothing has to be kept here in between.
+	async login(username: string, password: string): Promise<'authenticated' | 'totp_required'> {
 		await this.#anonymousCSRF();
-		this.#set(await unwrap(api.POST('/api/v1/auth/login', { body: { username, password } })));
+		const res = await unwrap(api.POST('/api/v1/auth/login', { body: { username, password } }));
+		// TypeScript: the 200 and 202 answers have different shapes, and `in` narrows the union to one of them.
+		if ('totp_required' in res) return 'totp_required';
+		this.#set(res);
+		return 'authenticated';
+	}
+
+	// The second step of a login: a six-digit code from an authenticator app, or a recovery code. It reuses the
+	// anonymous CSRF token that login fetched, which stays valid until there is a session.
+	async loginTOTP(code: string): Promise<void> {
+		this.#set(await unwrap(api.POST('/api/v1/auth/login/totp', { body: { code } })));
 	}
 
 	async completeSetup(token: string, username: string, password: string): Promise<void> {

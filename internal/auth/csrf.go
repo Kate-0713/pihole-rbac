@@ -31,12 +31,23 @@ func (s *Sessions) CSRFToken(sess *Session) string {
 // AnonCSRFToken returns the token for a visitor without a session, bound to their anonymous cookie. A visitor
 // without one is given it on w, so call this before anything is written to the response.
 func (s *Sessions) AnonCSRFToken(w http.ResponseWriter, r *http.Request) (string, error) {
+	id, err := s.EnsureAnonID(w, r)
+	if err != nil {
+		return "", err
+	}
+	return s.sign("csrf|anon", id), nil
+}
+
+// EnsureAnonID returns the request's anonymous cookie ID. A visitor without one is given it on w, so call this
+// before anything is written to the response. Besides binding the anonymous CSRF token, the ID ties the second step
+// of a two-factor login to the browser that sent the password.
+func (s *Sessions) EnsureAnonID(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	if id, ok := anonID(r); ok {
-		return s.sign("csrf|anon", id), nil
+		return id, nil
 	}
 	id := make([]byte, anonIDSize)
 	if _, err := rand.Read(id); err != nil {
-		return "", err
+		return nil, err
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     AnonCookie,
@@ -46,7 +57,12 @@ func (s *Sessions) AnonCSRFToken(w http.ResponseWriter, r *http.Request) (string
 		Secure:   s.Secure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-	return s.sign("csrf|anon", id), nil
+	return id, nil
+}
+
+// AnonID returns the request's anonymous cookie ID, if it carries a well-formed one.
+func AnonID(r *http.Request) ([]byte, bool) {
+	return anonID(r)
 }
 
 func anonID(r *http.Request) ([]byte, bool) {

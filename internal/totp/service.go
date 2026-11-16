@@ -301,6 +301,13 @@ func Check(ctx context.Context, q *db.Queries, c *secrets.Cipher, userID int64, 
 	return false, nil
 }
 
+// CheckLogin verifies and spends a code for the second step of a login, inside the caller's transaction. When a
+// recovery code was used it writes the recovery_code_used row and returns it, for the caller to pass to the audit
+// logger once the transaction has committed. Errors are Check's.
+func (s *Service) CheckLogin(ctx context.Context, q *db.Queries, a Actor, code string) (*audit.Entry, error) {
+	return s.checkAudited(ctx, q, a, code, s.now())
+}
+
 // checkAudited is Check, with the recovery_code_used row written when a recovery code was used. The row is returned
 // for its log line once the transaction has committed.
 func (s *Service) checkAudited(ctx context.Context, q *db.Queries, a Actor, code string, now time.Time) (*audit.Entry, error) {

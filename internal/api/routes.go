@@ -29,12 +29,13 @@ const (
 // parsed the target) or "target:any" (checked by the handler with authorizeAny). Public operations still need the CSRF
 // and Origin checks when they change state.
 var routePermission = map[string]string{
-	"GET /healthz":             accessPublic,
-	"GET /api/v1/about":        accessPublic,
-	"GET /api/v1/auth/csrf":    accessPublic,
-	"POST /api/v1/auth/login":  accessPublic,
-	"GET /api/v1/setup/status": accessPublic,
-	"POST /api/v1/setup":       accessPublic,
+	"GET /healthz":                 accessPublic,
+	"GET /api/v1/about":            accessPublic,
+	"GET /api/v1/auth/csrf":        accessPublic,
+	"POST /api/v1/auth/login":      accessPublic,
+	"POST /api/v1/auth/login/totp": accessPublic,
+	"GET /api/v1/setup/status":     accessPublic,
+	"POST /api/v1/setup":           accessPublic,
 
 	"POST /api/v1/auth/logout":   accessSession,
 	"GET /api/v1/auth/session":   accessSession,

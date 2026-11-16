@@ -135,7 +135,9 @@ paths:
         Unauthenticated, but needs the anonymous CSRF token from GET /auth/csrf. Tries the enabled login methods in
         order. On success, sets the session cookie (replacing any previous session) and returns the new session,
         including its CSRF token. Failed attempts are limited per client address and per username; while a limit
-        applies, attempts are refused with 429 without checking the credentials.
+        applies, attempts are refused with 429 without checking the credentials. For a user with two-factor login
+        on, a correct password answers 202 instead: no session yet, and the login is finished with a code at
+        POST /auth/login/totp, from the same browser, within 5 minutes.
       operationId: login
       security: []
       requestBody:
@@ -151,6 +153,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentSession"
+        "202":
+          description: The password is right, and the user has two-factor login on. No session yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginPending"
         "400":
           $ref: "#/components/responses/ValidationFailed"
         "401":
@@ -167,6 +175,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/auth/login/totp:
+    post:
+      summary: Finish logging in with a two-factor code
+      description: >-
+        The second step for a user with two-factor login on, after POST /auth/login answered 202. Unauthenticated, and
+        tied to the browser that sent the password by its anonymous cookie, so it needs the same anonymous CSRF token.
+        Takes a six-digit code from the authenticator app, or a recovery code. On success, sets the session cookie and
+        returns the new session, as a login does. A wrong code is 401 totp_invalid and counts against the same
+        per-address and per-username limits as a wrong password; while a limit applies, attempts are refused with 429
+        without checking the code. After 5 wrong codes, or 5 minutes, the login has to start again from the password
+        (401 login_expired).
+      operationId: loginTOTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPCode"
+      responses:
+        "200":
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          description: >-
+            The code is wrong, was used before or has expired (code totp_invalid); there is no login waiting for a
+            code in this browser, or it has run out of time or attempts (code login_expired); or the account can no
+            longer log in (code invalid_credentials).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >-
+            The user no longer has a role in this app (code no_access), or the CSRF or Origin check failed (code
+            csrf_failed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "429":
@@ -4999,6 +5061,16 @@ components:
           type: string
           minLength: 1
           maxLength: 1024
+
+    LoginPending:
+      type: object
+      additionalProperties: false
+      required: [totp_required]
+      properties:
+        totp_required:
+          type: boolean
+          enum: [true]
+          description: Always true. The login needs a code at POST /auth/login/totp.
 
     SessionUser:
       type: object

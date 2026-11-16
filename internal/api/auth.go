@@ -15,6 +15,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
+	"github.com/Kate-0713/pihole-rbac/internal/totp"
 )
 
 // Login messages. The invalid-credentials one never says whether the username exists.
@@ -22,6 +23,7 @@ const (
 	msgInvalidCredentials = "Invalid username or password."
 	msgNoAccess           = "Your account is valid, but you don't have access to this app. Ask an administrator to give you a role."
 	msgRateLimited        = "Too many failed login attempts. Try again later."
+	msgLoginExpired       = "That took too long, or there were too many wrong codes. Enter your password again."
 
 	msgWrongCurrentPassword = "Your current password is wrong."
 	msgPasswordRateLimited  = "Too many wrong passwords. Try again later."
@@ -72,6 +74,10 @@ func (s *Server) currentSession(ctx context.Context, sess *auth.Session) (gen.Cu
 // Login checks the credentials and starts a session. Failed attempts count against the client address and the
 // username; while either is over its limit, attempts are refused without reaching the authenticator. A user with
 // valid credentials but no role is refused (fail closed) and doesn't count as a failure.
+//
+// A user with two-factor login on gets no session here: the login is kept as pending for the browser, and LoginTOTP
+// finishes it. Nothing is audited and the username's failure count isn't cleared until then, so a correct password
+// gives someone guessing codes no fresh attempts.
 func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.LoginResponseObject, error) {
 	ri := info(ctx)
 	username := auth.NormalizeUsername(req.Body.Username)
@@ -108,6 +114,7 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 
 	var cookie string
 	var sess *auth.Session
+	var pendingUser int64 // set when the user has two-factor login on, so no session was started
 	if err == nil {
 		entry.Detail = map[string]any{"method": string(id.Source)}
 		err = s.Store.WithTx(ctx, func(q *db.Queries) error {
@@ -118,26 +125,17 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 			if len(roles) == 0 {
 				return auth.ErrNoAccess // fail closed: no default role
 			}
-			if ri.sess != nil {
-				// A new login replaces the previous session rather than leaving it usable.
-				if err := s.Sessions.Delete(ctx, q, ri.sess); err != nil {
-					return err
-				}
-			}
-			cookie, sess, err = s.Sessions.Create(ctx, q, auth.NewSession{
-				UserID: userID, RoleIDs: roles, IP: ri.ip, UserAgent: ri.r.UserAgent(),
-			})
+			on, err := totp.Enabled(ctx, q, userID)
 			if err != nil {
 				return err
 			}
-			if err := q.SetUserLastLogin(ctx, db.SetUserLastLoginParams{
-				LastLoginAt: sql.NullInt64{Int64: store.Millis(sess.CreatedAt), Valid: true}, ID: userID,
-			}); err != nil {
-				return err
+			if on {
+				// What rolesFor wrote (an LDAP user's row on their first login) is kept. The roles are worked
+				// out again when the code arrives.
+				pendingUser = userID
+				return nil
 			}
-			entry.UserID = userID
-			entry.Detail["session"] = sess.PublicID
-			_, err = audit.Insert(ctx, q, entry)
+			cookie, sess, err = s.openSession(ctx, q, ri, userID, roles, &entry)
 			return err
 		})
 	}
@@ -166,6 +164,14 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
+	if pendingUser != 0 {
+		anon, err := s.Sessions.EnsureAnonID(ri.w, ri.r)
+		if err != nil {
+			return nil, err
+		}
+		s.pending.put(anon, id, pendingUser)
+		return gen.Login202JSONResponse{TotpRequired: true}, nil
+	}
 
 	s.Audit.Log(entry)
 	s.LoginByUser.Reset(username)
@@ -177,6 +183,168 @@ func (s *Server) Login(ctx context.Context, req gen.LoginRequestObject) (gen.Log
 		return nil, err
 	}
 	return gen.Login200JSONResponse(cur), nil
+}
+
+// openSession starts a session for a login whose every step has passed, inside the login's transaction: it replaces
+// the session the browser had, if any, records the login time and writes the audit row.
+func (s *Server) openSession(ctx context.Context, q *db.Queries, ri *reqInfo, userID int64, roles []int64, entry *audit.Entry) (string, *auth.Session, error) {
+	if ri.sess != nil {
+		// A new login replaces the previous session rather than leaving it usable.
+		if err := s.Sessions.Delete(ctx, q, ri.sess); err != nil {
+			return "", nil, err
+		}
+	}
+	cookie, sess, err := s.Sessions.Create(ctx, q, auth.NewSession{
+		UserID: userID, RoleIDs: roles, IP: ri.ip, UserAgent: ri.r.UserAgent(),
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	if err := q.SetUserLastLogin(ctx, db.SetUserLastLoginParams{
+		LastLoginAt: sql.NullInt64{Int64: store.Millis(sess.CreatedAt), Valid: true}, ID: userID,
+	}); err != nil {
+		return "", nil, err
+	}
+	entry.UserID = userID
+	entry.Detail["session"] = sess.PublicID
+	if _, err := audit.Insert(ctx, q, *entry); err != nil {
+		return "", nil, err
+	}
+	return cookie, sess, nil
+}
+
+// LoginTOTP finishes a login that Login left pending, given a six-digit or recovery code. The pending login belongs
+// to the browser that sent the password, by its anonymous cookie, and lasts 5 minutes or 5 wrong codes. Wrong codes
+// count against the same limits as wrong passwords. The account and its roles are checked again here, since both
+// can have changed since the password was accepted.
+func (s *Server) LoginTOTP(ctx context.Context, req gen.LoginTOTPRequestObject) (gen.LoginTOTPResponseObject, error) {
+	ri := info(ctx)
+	code := req.Body.Code
+	if code == "" || len(code) > 64 {
+		return gen.LoginTOTP400JSONResponse{ValidationFailedJSONResponse: gen.ValidationFailedJSONResponse(
+			errorBody("validation_failed", "Enter a code."))}, nil
+	}
+	expired := gen.LoginTOTP401JSONResponse(errorBody("login_expired", msgLoginExpired))
+	anon, ok := auth.AnonID(ri.r)
+	if !ok {
+		return expired, nil
+	}
+	pl, ok := s.pending.get(anon)
+	if !ok {
+		return expired, nil
+	}
+	username := auth.NormalizeUsername(pl.id.Username)
+
+	limited := func(wait time.Duration) gen.LoginTOTPResponseObject {
+		return gen.LoginTOTP429JSONResponse{RateLimitedJSONResponse: rateLimited(wait, msgRateLimited)}
+	}
+	if ok, wait := s.LoginByIP.Allow(ri.ip); !ok {
+		return limited(wait), nil
+	}
+	if ok, wait := s.LoginByUser.Allow(username); !ok {
+		return limited(wait), nil
+	}
+
+	entry := audit.Entry{
+		UserID: pl.userID, Username: username, Action: audit.ActionLogin, IP: ri.ip,
+		Detail: map[string]any{"method": string(pl.id.Source)},
+	}
+	var cookie string
+	var sess *auth.Session
+	var used *audit.Entry
+	err := s.Store.WithTx(ctx, func(q *db.Queries) error {
+		u, err := q.GetUser(ctx, pl.userID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: account deleted", auth.ErrInvalidCredentials)
+		}
+		if err != nil {
+			return err
+		}
+		if u.Disabled {
+			return fmt.Errorf("%w: account disabled", auth.ErrInvalidCredentials)
+		}
+		used, err = s.TOTP.CheckLogin(ctx, q, totp.Actor{UserID: u.ID, Username: u.Username, IP: ri.ip}, code)
+		if err != nil {
+			return err
+		}
+		userID, roles, err := s.rolesFor(ctx, q, pl.id)
+		if err != nil {
+			return err
+		}
+		if len(roles) == 0 {
+			return auth.ErrNoAccess
+		}
+		entry.Detail["second_factor"] = "code"
+		if used != nil {
+			entry.Detail["second_factor"] = "recovery_code"
+		}
+		cookie, sess, err = s.openSession(ctx, q, ri, userID, roles, &entry)
+		return err
+	})
+
+	// A refusal: nothing was written, so nothing of the transaction's is logged.
+	fail := func(cause error, countIt bool) error {
+		entry.Err = cause
+		delete(entry.Detail, "session")
+		delete(entry.Detail, "second_factor")
+		if countIt {
+			trippedIP := s.LoginByIP.Fail(ri.ip)
+			trippedUser := s.LoginByUser.Fail(username)
+			if trippedIP || trippedUser {
+				entry.Detail["locked_out"] = lockedOut(trippedIP, trippedUser)
+			}
+		}
+		return s.Audit.Record(ctx, s.Store, entry)
+	}
+	switch {
+	case err == nil:
+	case errors.Is(err, totp.ErrInvalidCode):
+		if s.pending.fail(anon) {
+			entry.Detail["attempts_used"] = pendingLoginAttempts
+		}
+		if err := fail(errors.New("totp_invalid: wrong two-factor code"), true); err != nil {
+			return nil, err
+		}
+		return gen.LoginTOTP401JSONResponse(errorBody("totp_invalid", msgTOTPInvalid)), nil
+	case errors.Is(err, totp.ErrNotEnabled):
+		// Their two-factor login was removed since the password was accepted. The password alone logs them in now,
+		// and it has to be entered again: this pending login was for a code.
+		s.pending.remove(anon)
+		return expired, nil
+	case errors.Is(err, auth.ErrInvalidCredentials):
+		s.pending.remove(anon)
+		if err := fail(err, false); err != nil {
+			return nil, err
+		}
+		return gen.LoginTOTP401JSONResponse(errorBody("invalid_credentials", msgInvalidCredentials)), nil
+	case errors.Is(err, auth.ErrNoAccess):
+		s.pending.remove(anon)
+		if pl.id.Source == auth.MethodLDAP {
+			entry.Detail["dn"] = pl.id.DN
+			entry.Detail["groups"] = pl.id.Groups
+		}
+		if err := fail(err, false); err != nil {
+			return nil, err
+		}
+		return gen.LoginTOTP403JSONResponse(errorBody("no_access", msgNoAccess)), nil
+	default:
+		return nil, totpRefusal(err)
+	}
+
+	s.pending.remove(anon)
+	if used != nil {
+		s.Audit.Log(*used)
+	}
+	s.Audit.Log(entry)
+	s.LoginByUser.Reset(username)
+	s.Sessions.SetCookie(ri.w, ri.r, cookie, sess.ExpiresAt)
+	sess.Username = username
+	sess.Source = pl.id.Source
+	cur, err := s.currentSession(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+	return gen.LoginTOTP200JSONResponse(cur), nil
 }
 
 // rolesFor returns the user row and role IDs for a verified identity, inside the login transaction.

@@ -63,7 +63,7 @@ type Options struct {
 	Instances       *instances.Service       // instance changes, and the client pool for health and secret reloads
 	Drift           *instances.Drift         // mirrored groups' drift reports; nil in tests that don't need them
 	Roles           *rbac.Manager            // changes to roles, grants, user roles, LDAP mappings and users
-	TOTP            *totp.Service            // a user's own two-factor login; nil in tests that don't need it
+	TOTP            *totp.Service            // two-factor login; New makes one from Store, Audit and Secrets when nil
 	LoginSettings   *loginsettings.Service   // login methods, LDAP settings and bind password; nil in tests that don't need them
 	Notifications   *notifications.Service   // notification channels; nil in tests that don't need them
 	ClientReset     *clientreset.Service     // client reset rules and runs; nil in tests that don't need them
@@ -91,8 +91,9 @@ func DefaultLoginLimits() (byIP, byUser *ratelimit.Limiter) {
 type Server struct {
 	Options
 	mux       *http.ServeMux
-	csp       string      // Content-Security-Policy for every response
-	setupDone atomic.Bool // once true, never false again; until then, the database is asked on each request
+	pending   *pendingLogins // logins waiting for a two-factor code
+	csp       string         // Content-Security-Policy for every response
+	setupDone atomic.Bool    // once true, never false again; until then, the database is asked on each request
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -105,7 +106,16 @@ func New(o Options) *Server {
 	if o.Gravity == nil && o.Instances != nil {
 		o.Gravity = &gravity.Service{Call: o.Instances.Pool.Do}
 	}
-	s := &Server{Options: o, mux: http.NewServeMux(), csp: ContentSecurityPolicy}
+	if o.TOTP == nil && o.Store != nil {
+		// Never nil with a store: a login must be able to check a code for a user who has two-factor login on.
+		o.TOTP = &totp.Service{Store: o.Store, Audit: o.Audit, Cipher: func() *secrets.Cipher {
+			if o.Secrets == nil {
+				return nil
+			}
+			return o.Secrets.Cipher()
+		}}
+	}
+	s := &Server{Options: o, mux: http.NewServeMux(), pending: newPendingLogins(), csp: ContentSecurityPolicy}
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  s.requestError,
 		ResponseErrorHandlerFunc: s.responseError,

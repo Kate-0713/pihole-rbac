@@ -909,6 +909,21 @@ func (e LoginMethodsMethods) Valid() bool {
 	}
 }
 
+// Defines values for LoginPendingTotpRequired.
+const (
+	True LoginPendingTotpRequired = true
+)
+
+// Valid indicates whether the value is a known member of the LoginPendingTotpRequired enum.
+func (e LoginPendingTotpRequired) Valid() bool {
+	switch e {
+	case True:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PermissionInfoClass.
 const (
 	PermissionInfoClassGlobal   PermissionInfoClass = "global"
@@ -3495,6 +3510,15 @@ type LoginMethods struct {
 // LoginMethodsMethods defines model for LoginMethods.Methods.
 type LoginMethodsMethods string
 
+// LoginPending defines model for LoginPending.
+type LoginPending struct {
+	// TotpRequired Always true. The login needs a code at POST /auth/login/totp.
+	TotpRequired LoginPendingTotpRequired `json:"totp_required"`
+}
+
+// LoginPendingTotpRequired Always true. The login needs a code at POST /auth/login/totp.
+type LoginPendingTotpRequired bool
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Password string `json:"password"`
@@ -5291,6 +5315,9 @@ type SetUserRolesParams struct {
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
+// LoginTOTPJSONRequestBody defines body for LoginTOTP for application/json ContentType.
+type LoginTOTPJSONRequestBody = TOTPCode
+
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = PasswordChange
 
@@ -5473,6 +5500,9 @@ type ServerInterface interface {
 	// Login Log in
 	// (POST /api/v1/auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
+	// LoginTOTP Finish logging in with a two-factor code
+	// (POST /api/v1/auth/login/totp)
+	LoginTOTP(w http.ResponseWriter, r *http.Request)
 	// Logout Log out
 	// (POST /api/v1/auth/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
@@ -6155,6 +6185,20 @@ func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LoginTOTP operation middleware
+func (siw *ServerInterfaceWrapper) LoginTOTP(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LoginTOTP(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9964,6 +10008,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/setup/status", wrapper.GetSetupStatus)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/setup", wrapper.CompleteSetup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/login/totp", wrapper.LoginTOTP)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/password", wrapper.ChangePassword)
@@ -10382,6 +10427,20 @@ func (response Login200JSONResponse) VisitLoginResponse(w http.ResponseWriter) e
 	return err
 }
 
+type Login202JSONResponse LoginPending
+
+func (response Login202JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type Login400JSONResponse struct{ ValidationFailedJSONResponse }
 
 func (response Login400JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
@@ -10460,6 +10519,131 @@ func (response Login429JSONResponse) VisitLoginResponse(w http.ResponseWriter) e
 type Login503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response Login503JSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTPRequestObject struct {
+	Body *LoginTOTPJSONRequestBody
+}
+
+type LoginTOTPResponseObject interface {
+	VisitLoginTOTPResponse(w http.ResponseWriter) error
+}
+
+type LoginTOTP200JSONResponse CurrentSession
+
+func (response LoginTOTP200JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTP400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response LoginTOTP400JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTP401JSONResponse Error
+
+func (response LoginTOTP401JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTP403JSONResponse Error
+
+func (response LoginTOTP403JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTP409JSONResponse struct{ ConflictJSONResponse }
+
+func (response LoginTOTP409JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTP415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response LoginTOTP415JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTP429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response LoginTOTP429JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LoginTOTP503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response LoginTOTP503JSONResponse) VisitLoginTOTPResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -23904,6 +24088,9 @@ type StrictServerInterface interface {
 	// Login Log in
 	// (POST /api/v1/auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
+	// LoginTOTP Finish logging in with a two-factor code
+	// (POST /api/v1/auth/login/totp)
+	LoginTOTP(ctx context.Context, request LoginTOTPRequestObject) (LoginTOTPResponseObject, error)
 	// Logout Log out
 	// (POST /api/v1/auth/logout)
 	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
@@ -24459,6 +24646,37 @@ func (sh *strictHandler) Login(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(LoginResponseObject); ok {
 		if err := validResponse.VisitLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LoginTOTP operation middleware
+func (sh *strictHandler) LoginTOTP(w http.ResponseWriter, r *http.Request) {
+	var request LoginTOTPRequestObject
+
+	var body LoginTOTPJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LoginTOTP(ctx, request.(LoginTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LoginTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LoginTOTPResponseObject); ok {
+		if err := validResponse.VisitLoginTOTPResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

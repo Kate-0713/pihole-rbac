@@ -78,6 +78,27 @@ func enableTOTP(t *testing.T, c *client, clock *totpClock) (authenticator, []str
 	return app, decode[gen.RecoveryCodes](t, res).RecoveryCodes
 }
 
+// loginTOTP sends the second step of a login and, on success, keeps the session's token.
+func (c *client) loginTOTP(code string) response {
+	c.e.t.Helper()
+	res := c.do(http.MethodPost, "/api/v1/auth/login/totp", gen.TOTPCode{Code: code})
+	if res.Code == http.StatusOK {
+		c.csrf = decode[gen.CurrentSession](c.e.t, res).CsrfToken
+	}
+	return res
+}
+
+// loggedInTOTP logs a user with two-factor login in from a new browser: the password, then a code from app. The
+// clock moves on a step afterwards, so the next code is one that hasn't been used.
+func loggedInTOTP(t *testing.T, e *testEnv, name, password string, app authenticator) *client {
+	t.Helper()
+	c := e.client("10.0.0.1:1")
+	mustStatus(t, c.login(name, password), http.StatusAccepted)
+	mustStatus(t, c.loginTOTP(app.code()), http.StatusOK)
+	app.clock.nextStep()
+	return c
+}
+
 func totpStatus(t *testing.T, c *client) gen.TOTPStatus {
 	t.Helper()
 	res := c.do(http.MethodGet, totpBase, nil)
@@ -256,7 +277,7 @@ func TestTOTPDisable(t *testing.T) {
 	}
 
 	app, codes := enableTOTP(t, here, clock)
-	there := e.loggedIn("alice", "alice-password-1")
+	there := loggedInTOTP(t, e, "alice", "alice-password-1", app)
 	bob := e.loggedIn("bob", "bob-password-123")
 	_, bobCodes := enableTOTP(t, bob, clock)
 
@@ -373,7 +394,7 @@ func TestRegenerateRecoveryCodes(t *testing.T) {
 		t.Errorf("while off: %d %s", res.Code, res.Body)
 	}
 	app, first := enableTOTP(t, c, clock)
-	other := e.loggedIn("alice", "alice-password-1")
+	other := loggedInTOTP(t, e, "alice", "alice-password-1", app)
 
 	if res := regenerate(wrongCode(app.code())); res.Code != http.StatusUnauthorized || res.errorCode() != "totp_invalid" {
 		t.Errorf("a wrong code: %d %s", res.Code, res.Body)
