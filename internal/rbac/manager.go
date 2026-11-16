@@ -39,6 +39,9 @@ type Manager struct {
 	// RecheckInterval is the LDAP recheck interval, used to make sessions due for recheck when a mapping is removed.
 	// Zero means auth.DefaultRecheckInterval.
 	RecheckInterval time.Duration
+	// TOTPAvailable reports whether two-factor login can be set up (the app has a master key to store secrets
+	// under). Requiring it of anyone is refused while it can't. nil means it can.
+	TOTPAvailable func() bool
 	// Now returns the current time; nil means time.Now.
 	Now func() time.Time
 }
@@ -55,6 +58,7 @@ var errNoChange = errors.New("no change")
 
 // txn is one change in progress.
 type txn struct {
+	m     *Manager
 	ctx   context.Context
 	q     *db.Queries
 	actor Actor
@@ -73,7 +77,7 @@ func (m *Manager) do(ctx context.Context, a Actor, action string, fn func(t *txn
 		if err != nil {
 			return err
 		}
-		t := &txn{ctx: ctx, q: q, actor: a, set: set, topo: set.Topology(), now: now, entry: &entry}
+		t := &txn{m: m, ctx: ctx, q: q, actor: a, set: set, topo: set.Topology(), now: now, entry: &entry}
 		if err := fn(t); err != nil {
 			return err
 		}

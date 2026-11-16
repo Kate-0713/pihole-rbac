@@ -1611,6 +1611,27 @@ func (e SessionUserSource) Valid() bool {
 	}
 }
 
+// Defines values for TOTPPolicy.
+const (
+	Exempt   TOTPPolicy = "exempt"
+	Required TOTPPolicy = "required"
+	Roles    TOTPPolicy = "roles"
+)
+
+// Valid indicates whether the value is a known member of the TOTPPolicy enum.
+func (e TOTPPolicy) Valid() bool {
+	switch e {
+	case Exempt:
+		return true
+	case Required:
+		return true
+	case Roles:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TargetKind.
 const (
 	TargetKindGroup    TargetKind = "group"
@@ -2386,8 +2407,11 @@ type CurrentSession struct {
 	Permissions Permissions `json:"permissions"`
 
 	// PublicId Identifies this session in the sessions list and the audit log. Can't be used to authenticate.
-	PublicId string      `json:"public_id"`
-	User     SessionUser `json:"user"`
+	PublicId string `json:"public_id"`
+
+	// TotpSetupRequired True when the user must use two-factor login and hasn't turned it on. Until they do, every request but reading the session, logging out and the two-factor setup operations is refused with 403 totp_setup_required.
+	TotpSetupRequired bool        `json:"totp_setup_required"`
+	User              SessionUser `json:"user"`
 }
 
 // DHCPInstance defines model for DHCPInstance.
@@ -4194,6 +4218,9 @@ type Role struct {
 	Manageable bool   `json:"manageable"`
 	Name       string `json:"name"`
 
+	// TotpRequired Whether the role's holders must use two-factor login.
+	TotpRequired bool `json:"totp_required"`
+
 	// Users The local users who hold the role, by username.
 	Users []string `json:"users"`
 }
@@ -4236,6 +4263,11 @@ type RoleList struct {
 type RoleRef struct {
 	Id   int64  `json:"id"`
 	Name string `json:"name"`
+}
+
+// RoleTOTPRequired defines model for RoleTOTPRequired.
+type RoleTOTPRequired struct {
+	Required bool `json:"required"`
 }
 
 // Schedule defines model for Schedule.
@@ -4514,6 +4546,9 @@ type TOTPEnrolment struct {
 	// Uri The otpauth:// URI the QR code holds.
 	Uri string `json:"uri"`
 }
+
+// TOTPPolicy A user's own two-factor setting: `roles` (their roles decide), `required` or `exempt`.
+type TOTPPolicy string
 
 // TOTPStatus defines model for TOTPStatus.
 type TOTPStatus struct {
@@ -4804,8 +4839,14 @@ type User struct {
 	Source UserSource `json:"source"`
 
 	// TotpEnabled Whether the user has two-factor login on.
-	TotpEnabled bool   `json:"totp_enabled"`
-	Username    string `json:"username"`
+	TotpEnabled bool `json:"totp_enabled"`
+
+	// TotpPolicy A user's own two-factor setting: `roles` (their roles decide), `required` or `exempt`.
+	TotpPolicy TOTPPolicy `json:"totp_policy"`
+
+	// TotpRequired Whether the user must use two-factor login, by their own setting or, failing that, one of the roles listed here. An LDAP user's roles are only known while they are logged in, so for one who isn't this is their own setting alone.
+	TotpRequired bool   `json:"totp_required"`
+	Username     string `json:"username"`
 }
 
 // UserSource defines model for User.Source.
@@ -4838,6 +4879,12 @@ type UserPassword struct {
 type UserRoles struct {
 	// RoleIds Every role the user should have; an empty list takes them all away and ends the user's sessions.
 	RoleIds []int64 `json:"role_ids"`
+}
+
+// UserTOTPPolicy defines model for UserTOTPPolicy.
+type UserTOTPPolicy struct {
+	// Policy A user's own two-factor setting: `roles` (their roles decide), `required` or `exempt`.
+	Policy TOTPPolicy `json:"policy"`
 }
 
 // VersionInfo defines model for VersionInfo.
@@ -5381,6 +5428,9 @@ type SetRoleGrantsJSONRequestBody = GrantsInput
 // AddLDAPMappingJSONRequestBody defines body for AddLDAPMapping for application/json ContentType.
 type AddLDAPMappingJSONRequestBody = LDAPGroupInput
 
+// SetRoleTOTPRequiredJSONRequestBody defines body for SetRoleTOTPRequired for application/json ContentType.
+type SetRoleTOTPRequiredJSONRequestBody = RoleTOTPRequired
+
 // SetLoginMethodsJSONRequestBody defines body for SetLoginMethods for application/json ContentType.
 type SetLoginMethodsJSONRequestBody = LoginMethods
 
@@ -5482,6 +5532,9 @@ type SetUserPasswordJSONRequestBody = UserPassword
 
 // SetUserRolesJSONRequestBody defines body for SetUserRoles for application/json ContentType.
 type SetUserRolesJSONRequestBody = UserRoles
+
+// SetUserTOTPPolicyJSONRequestBody defines body for SetUserTOTPPolicy for application/json ContentType.
+type SetUserTOTPPolicyJSONRequestBody = UserTOTPPolicy
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -5653,6 +5706,9 @@ type ServerInterface interface {
 	// RemoveLDAPMapping Remove an LDAP group mapping
 	// (DELETE /api/v1/roles/{id}/ldap-groups/{mapping_id})
 	RemoveLDAPMapping(w http.ResponseWriter, r *http.Request, id RoleID, mappingId MappingID, params RemoveLDAPMappingParams)
+	// SetRoleTOTPRequired Say whether a role's holders must use two-factor login
+	// (PUT /api/v1/roles/{id}/totp-required)
+	SetRoleTOTPRequired(w http.ResponseWriter, r *http.Request, id RoleID)
 	// ListSessions List active sessions
 	// (GET /api/v1/sessions)
 	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
@@ -5890,6 +5946,9 @@ type ServerInterface interface {
 	// RemoveUserTOTP Remove a user's two-factor login
 	// (DELETE /api/v1/users/{id}/totp)
 	RemoveUserTOTP(w http.ResponseWriter, r *http.Request, id UserID)
+	// SetUserTOTPPolicy Say whether a user must use two-factor login
+	// (PUT /api/v1/users/{id}/totp-policy)
+	SetUserTOTPPolicy(w http.ResponseWriter, r *http.Request, id UserID)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(w http.ResponseWriter, r *http.Request)
@@ -7272,6 +7331,32 @@ func (siw *ServerInterfaceWrapper) RemoveLDAPMapping(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RemoveLDAPMapping(w, r, id, mappingId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetRoleTOTPRequired operation middleware
+func (siw *ServerInterfaceWrapper) SetRoleTOTPRequired(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id RoleID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetRoleTOTPRequired(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9868,6 +9953,32 @@ func (siw *ServerInterfaceWrapper) RemoveUserTOTP(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// SetUserTOTPPolicy operation middleware
+func (siw *ServerInterfaceWrapper) SetUserTOTPPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetUserTOTPPolicy(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Healthz operation middleware
 func (siw *ServerInterfaceWrapper) Healthz(w http.ResponseWriter, r *http.Request) {
 
@@ -10049,6 +10160,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles/{id}", wrapper.GetRole)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/roles/{id}", wrapper.UpdateRole)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/roles/{id}/grants", wrapper.SetRoleGrants)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/roles/{id}/totp-required", wrapper.SetRoleTOTPRequired)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles/{id}/ldap-groups", wrapper.ListLDAPMappings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/roles/{id}/ldap-groups", wrapper.AddLDAPMapping)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/roles/{id}/ldap-groups/{mapping_id}", wrapper.RemoveLDAPMapping)
@@ -10060,6 +10172,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{id}/disable", wrapper.DisableUser)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{id}/password", wrapper.SetUserPassword)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{id}/totp", wrapper.RemoveUserTOTP)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/users/{id}/totp-policy", wrapper.SetUserTOTPPolicy)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/users/{id}/roles", wrapper.SetUserRoles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.GetLoginMethods)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.SetLoginMethods)
@@ -15293,6 +15406,129 @@ func (response RemoveLDAPMapping409JSONResponse) VisitRemoveLDAPMappingResponse(
 type RemoveLDAPMapping503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response RemoveLDAPMapping503JSONResponse) VisitRemoveLDAPMappingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequiredRequestObject struct {
+	Id   RoleID `json:"id"`
+	Body *SetRoleTOTPRequiredJSONRequestBody
+}
+
+type SetRoleTOTPRequiredResponseObject interface {
+	VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error
+}
+
+type SetRoleTOTPRequired200JSONResponse Role
+
+func (response SetRoleTOTPRequired200JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequired400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetRoleTOTPRequired400JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequired401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetRoleTOTPRequired401JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequired403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetRoleTOTPRequired403JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequired404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SetRoleTOTPRequired404JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequired409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SetRoleTOTPRequired409JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequired415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetRoleTOTPRequired415JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoleTOTPRequired503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetRoleTOTPRequired503JSONResponse) VisitSetRoleTOTPRequiredResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -24053,6 +24289,129 @@ func (response RemoveUserTOTP503JSONResponse) VisitRemoveUserTOTPResponse(w http
 	return err
 }
 
+type SetUserTOTPPolicyRequestObject struct {
+	Id   UserID `json:"id"`
+	Body *SetUserTOTPPolicyJSONRequestBody
+}
+
+type SetUserTOTPPolicyResponseObject interface {
+	VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error
+}
+
+type SetUserTOTPPolicy200JSONResponse User
+
+func (response SetUserTOTPPolicy200JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserTOTPPolicy400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response SetUserTOTPPolicy400JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserTOTPPolicy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetUserTOTPPolicy401JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserTOTPPolicy403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetUserTOTPPolicy403JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserTOTPPolicy404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SetUserTOTPPolicy404JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserTOTPPolicy409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SetUserTOTPPolicy409JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserTOTPPolicy415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response SetUserTOTPPolicy415JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetUserTOTPPolicy503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetUserTOTPPolicy503JSONResponse) VisitSetUserTOTPPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type HealthzRequestObject struct {
 }
 
@@ -24241,6 +24600,9 @@ type StrictServerInterface interface {
 	// RemoveLDAPMapping Remove an LDAP group mapping
 	// (DELETE /api/v1/roles/{id}/ldap-groups/{mapping_id})
 	RemoveLDAPMapping(ctx context.Context, request RemoveLDAPMappingRequestObject) (RemoveLDAPMappingResponseObject, error)
+	// SetRoleTOTPRequired Say whether a role's holders must use two-factor login
+	// (PUT /api/v1/roles/{id}/totp-required)
+	SetRoleTOTPRequired(ctx context.Context, request SetRoleTOTPRequiredRequestObject) (SetRoleTOTPRequiredResponseObject, error)
 	// ListSessions List active sessions
 	// (GET /api/v1/sessions)
 	ListSessions(ctx context.Context, request ListSessionsRequestObject) (ListSessionsResponseObject, error)
@@ -24478,6 +24840,9 @@ type StrictServerInterface interface {
 	// RemoveUserTOTP Remove a user's two-factor login
 	// (DELETE /api/v1/users/{id}/totp)
 	RemoveUserTOTP(ctx context.Context, request RemoveUserTOTPRequestObject) (RemoveUserTOTPResponseObject, error)
+	// SetUserTOTPPolicy Say whether a user must use two-factor login
+	// (PUT /api/v1/users/{id}/totp-policy)
+	SetUserTOTPPolicy(ctx context.Context, request SetUserTOTPPolicyRequestObject) (SetUserTOTPPolicyResponseObject, error)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(ctx context.Context, request HealthzRequestObject) (HealthzResponseObject, error)
@@ -26079,6 +26444,39 @@ func (sh *strictHandler) RemoveLDAPMapping(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RemoveLDAPMappingResponseObject); ok {
 		if err := validResponse.VisitRemoveLDAPMappingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetRoleTOTPRequired operation middleware
+func (sh *strictHandler) SetRoleTOTPRequired(w http.ResponseWriter, r *http.Request, id RoleID) {
+	var request SetRoleTOTPRequiredRequestObject
+
+	request.Id = id
+
+	var body SetRoleTOTPRequiredJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetRoleTOTPRequired(ctx, request.(SetRoleTOTPRequiredRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetRoleTOTPRequired")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetRoleTOTPRequiredResponseObject); ok {
+		if err := validResponse.VisitSetRoleTOTPRequiredResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -28369,6 +28767,39 @@ func (sh *strictHandler) RemoveUserTOTP(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RemoveUserTOTPResponseObject); ok {
 		if err := validResponse.VisitRemoveUserTOTPResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetUserTOTPPolicy operation middleware
+func (sh *strictHandler) SetUserTOTPPolicy(w http.ResponseWriter, r *http.Request, id UserID) {
+	var request SetUserTOTPPolicyRequestObject
+
+	request.Id = id
+
+	var body SetUserTOTPPolicyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetUserTOTPPolicy(ctx, request.(SetUserTOTPPolicyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetUserTOTPPolicy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetUserTOTPPolicyResponseObject); ok {
+		if err := validResponse.VisitSetUserTOTPPolicyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -58,7 +58,12 @@ func (s *Server) currentSession(ctx context.Context, sess *auth.Session) (gen.Cu
 	if err != nil {
 		return gen.CurrentSession{}, err
 	}
+	hold, err := s.totpSetupRequired(ctx, sess)
+	if err != nil {
+		return gen.CurrentSession{}, err
+	}
 	return gen.CurrentSession{
+		TotpSetupRequired: hold,
 		User: gen.SessionUser{
 			Id:       sess.UserID,
 			Username: sess.Username,

@@ -162,7 +162,11 @@ func userJSON(d rbac.UserDetails, caller *rbac.Set) gen.User {
 	out := gen.User{
 		Id: u.ID, Username: u.Username, Source: gen.UserSource(u.Source), Disabled: u.Disabled,
 		CreatedAt: store.FromMillis(u.CreatedAt), Roles: make([]gen.RoleRef, len(d.Roles)),
-		Manageable: len(caller.Missing(d.Grants)) == 0, TotpEnabled: d.TOTPEnabled,
+		Manageable: len(caller.Missing(d.Grants)) == 0, TotpEnabled: d.TOTPEnabled, TotpRequired: d.TOTPRequired,
+		TotpPolicy: gen.TOTPPolicy("roles"),
+	}
+	if d.TOTPPolicy != "" {
+		out.TotpPolicy = gen.TOTPPolicy(d.TOTPPolicy)
 	}
 	if u.LdapDn.Valid {
 		dn := u.LdapDn.String

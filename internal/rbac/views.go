@@ -20,6 +20,8 @@ type RoleDetails struct {
 	Grants     []Grant  // sorted
 	Users      []string // local users holding the role, by username
 	LDAPGroups []string // group DNs mapped to the role, as entered
+	// TOTPRequired says whether the role's holders must use two-factor login.
+	TOTPRequired bool
 }
 
 // ListRoles returns every role with its details, sorted by name.
@@ -62,8 +64,13 @@ func ListRoles(ctx context.Context, q *db.Queries) ([]RoleDetails, error) {
 			d.LDAPGroups = append(d.LDAPGroups, m.GroupDn)
 		}
 	}
+	required, err := q.ListTOTPRequiredRoleIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list roles requiring TOTP: %w", err)
+	}
 	for i := range out {
 		SortGrants(out[i].Grants)
+		out[i].TOTPRequired = slices.Contains(required, out[i].Role.ID)
 	}
 	return out, nil
 }
@@ -90,7 +97,14 @@ func GetRoleDetails(ctx context.Context, q *db.Queries, id int64) (RoleDetails, 
 	if err != nil {
 		return RoleDetails{}, err
 	}
-	d := RoleDetails{Role: r, Grants: grants, Users: users, LDAPGroups: make([]string, len(mappings))}
+	required, err := q.ListTOTPRequiredRoleIDs(ctx)
+	if err != nil {
+		return RoleDetails{}, err
+	}
+	d := RoleDetails{
+		Role: r, Grants: grants, Users: users, LDAPGroups: make([]string, len(mappings)),
+		TOTPRequired: slices.Contains(required, id),
+	}
 	if d.Grants == nil {
 		d.Grants = []Grant{}
 	}
@@ -111,6 +125,11 @@ type UserDetails struct {
 	Grants []Grant   // every grant of every role, for working out whether the caller holds them all
 	// TOTPEnabled says whether the user has two-factor login on. A secret waiting for its first code doesn't count.
 	TOTPEnabled bool
+	// TOTPPolicy is the user's own setting: "required", "exempt", or "" when their roles decide.
+	TOTPPolicy string
+	// TOTPRequired says whether the user must use two-factor login: by their own setting, or failing that by one of
+	// Roles. An LDAP user's roles are only known while they are logged in.
+	TOTPRequired bool
 }
 
 // RoleRef names a role.
@@ -147,6 +166,18 @@ func ListUsers(ctx context.Context, q *db.Queries) ([]UserDetails, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rbac: list users with TOTP: %w", err)
 	}
+	policies, err := q.ListUserTOTPPolicies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list users' TOTP settings: %w", err)
+	}
+	policy := make(map[int64]string, len(policies))
+	for _, p := range policies {
+		policy[p.UserID] = p.Policy
+	}
+	requiring, err := q.ListTOTPRequiredRoleIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list roles requiring TOTP: %w", err)
+	}
 
 	// ListRoles is sorted by name, so each user's roles come out in that order.
 	order := make(map[int64]int, len(roles))
@@ -173,6 +204,14 @@ func ListUsers(ctx context.Context, q *db.Queries) ([]UserDetails, error) {
 		for _, id := range ids {
 			d.Roles = append(d.Roles, RoleRef{ID: id, Name: roles[order[id]].Name})
 			d.Grants = append(d.Grants, byRole[id]...)
+			d.TOTPRequired = d.TOTPRequired || slices.Contains(requiring, id)
+		}
+		// The user's own setting wins over their roles', as totp.Required has it.
+		switch d.TOTPPolicy = policy[u.ID]; d.TOTPPolicy {
+		case "required":
+			d.TOTPRequired = true
+		case "exempt":
+			d.TOTPRequired = false
 		}
 		out[i] = d
 	}

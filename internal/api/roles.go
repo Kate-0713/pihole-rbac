@@ -149,7 +149,7 @@ func (s *Server) roleJSON(ctx context.Context, id int64) (gen.Role, error) {
 
 func roleJSON(d rbac.RoleDetails, caller *rbac.Set) gen.Role {
 	out := gen.Role{
-		Id: d.Role.ID, Name: d.Role.Name, Description: d.Role.Description, Builtin: d.Role.Builtin,
+		Id: d.Role.ID, Name: d.Role.Name, Description: d.Role.Description, Builtin: d.Role.Builtin, TotpRequired: d.TOTPRequired,
 		CreatedAt: store.FromMillis(d.Role.CreatedAt), Grants: make([]gen.Grant, len(d.Grants)),
 		Users: d.Users, LdapGroups: d.LDAPGroups, Manageable: len(caller.Missing(d.Grants)) == 0,
 	}

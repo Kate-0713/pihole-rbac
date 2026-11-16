@@ -47,6 +47,7 @@ const (
 	// Roles, grants and LDAP mappings.
 	ActionRoleCreate        = "role_create"
 	ActionRoleUpdate        = "role_update"
+	ActionRoleTOTPUpdate    = "role_totp_update" // a role started or stopped requiring two-factor login
 	ActionRoleGrants        = "role_grants"
 	ActionRoleDelete        = "role_delete"
 	ActionLDAPMappingAdd    = "ldap_mapping_add"
@@ -56,6 +57,7 @@ const (
 	// Users.
 	ActionUserCreate     = "user_create"
 	ActionUserRoles      = "user_roles"
+	ActionUserTOTPPolicy = "user_totp_policy" // a user's own two-factor setting changed: roles, required or exempt
 	ActionUserDisable    = "user_disable"
 	ActionUserEnable     = "user_enable"
 	ActionUserDelete     = "user_delete"

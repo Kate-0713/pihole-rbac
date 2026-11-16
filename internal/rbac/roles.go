@@ -130,6 +130,54 @@ func (m *Manager) UpdateRole(ctx context.Context, a Actor, roleID int64, in Role
 	})
 }
 
+// SetRoleTOTPRequired says whether a role's holders must use two-factor login. It needs roles.manage and every grant
+// the role has, as changing the role does: taking the requirement away weakens the login of everyone who holds it.
+// The builtin admin role can be set like any other. This isn't a change to the role as invariant 1 means it, which
+// is its name and grants. Requiring it is refused while two-factor login can't be set up, which would hold every
+// holder to a setup that can't finish.
+func (m *Manager) SetRoleTOTPRequired(ctx context.Context, a Actor, roleID int64, required bool) error {
+	return m.do(ctx, a, audit.ActionRoleTOTPUpdate, func(t *txn) error {
+		if err := t.require(RolesManage); err != nil {
+			return err
+		}
+		r, grants, err := t.role(roleID)
+		if err != nil {
+			return err
+		}
+		t.entry.Target = roleTarget(r.Name)
+		if err := t.requireHolds(grants, "change whether a role requires two-factor login"); err != nil {
+			return err
+		}
+		current, err := t.q.ListTOTPRequiredRoleIDs(t.ctx)
+		if err != nil {
+			return err
+		}
+		if slices.Contains(current, roleID) == required {
+			return errNoChange
+		}
+		if required {
+			if err := t.totpAvailable(); err != nil {
+				return err
+			}
+			err = t.q.SetRoleTOTPRequired(t.ctx, db.SetRoleTOTPRequiredParams{RoleID: roleID, SetAt: store.Millis(t.now), SetBy: t.actor.Username})
+		} else {
+			_, err = t.q.ClearRoleTOTPRequired(t.ctx, roleID)
+		}
+		t.entry.Detail["role_id"] = roleID
+		t.entry.Detail["required"] = required
+		return err
+	})
+}
+
+// totpAvailable refuses a change that would require two-factor login of someone while it can't be set up.
+func (t *txn) totpAvailable() error {
+	if t.m.TOTPAvailable != nil && !t.m.TOTPAvailable() {
+		return newError(CodeConflict, map[string]any{"reason": "no_master_key"},
+			"Two-factor login can't be required while the app has no master key: nobody could set it up. Set PIHOLE_RBAC_MASTER_KEY first.")
+	}
+	return nil
+}
+
 // editableRole loads a role that may be changed: any role but the builtin admin (invariant 1). It also sets the
 // audit target.
 func (t *txn) editableRole(roleID int64) (db.Role, []Grant, error) {

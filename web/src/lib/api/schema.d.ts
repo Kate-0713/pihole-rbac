@@ -808,6 +808,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roles/{id}/totp-required": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Say whether a role's holders must use two-factor login
+         * @description When a role requires it, everyone whose session holds the role must have two-factor login on, unless their own setting says otherwise (PUT /users/{id}/totp-policy). It applies at once: a holder without it is held to setting it up on their next request. The builtin admin role can require it too. The caller must hold every grant the role has, as for changing it. Requiring it is refused with 409 conflict (`details.reason` `no_master_key`) while the app has no master key, since nobody could then set it up. Setting what is already set changes nothing.
+         */
+        put: operations["setRoleTOTPRequired"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles/{id}/ldap-groups": {
         parameters: {
             query?: never;
@@ -992,6 +1015,29 @@ export interface paths {
          * @description For someone who has lost their authenticator and their recovery codes: removes the user's secret and recovery codes and ends their sessions, so their next login asks for the password alone. Needs every grant of every role the user has, so nobody can weaken the login of an account more privileged than their own. Your own is refused (code validation_failed): turn it off from your account, which asks for your password and a code. A user without two-factor login is returned unchanged.
          */
         delete: operations["removeUserTOTP"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/totp-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Say whether a user must use two-factor login
+         * @description A user's own setting, which wins over their roles': `required` makes them use two-factor login whatever their roles say, `exempt` lets them go without it whatever their roles say (they can still turn it on), and `roles` leaves it to their roles. It applies at once, as a role's setting does. Needs every grant of every role the user has. `required` is refused with 409 conflict (`details.reason` `no_master_key`) while the app has no master key. Setting what is already set changes nothing.
+         */
+        put: operations["setUserTOTPPolicy"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2213,6 +2259,8 @@ export interface components {
             /** @description Send as the X-CSRF-Token header on every state-changing request. */
             csrf_token: string;
             permissions: components["schemas"]["Permissions"];
+            /** @description True when the user must use two-factor login and hasn't turned it on. Until they do, every request but reading the session, logging out and the two-factor setup operations is refused with 403 totp_setup_required. */
+            totp_setup_required: boolean;
         };
         /** @description What the user may do, worked out by the server from their roles and the current groups. The server checks every request again; this is for the UI. */
         Permissions: {
@@ -2731,6 +2779,8 @@ export interface components {
             description: string;
             /** @description The builtin admin role, which can't be changed or deleted. */
             builtin: boolean;
+            /** @description Whether the role's holders must use two-factor login. */
+            totp_required: boolean;
             /** Format: date-time */
             created_at: string;
             /** @description Sorted by permission, then scope. */
@@ -2816,6 +2866,17 @@ export interface components {
             /** @description Ten single-use codes, each of which stands in for a six-digit code once. */
             recovery_codes: string[];
         };
+        RoleTOTPRequired: {
+            required: boolean;
+        };
+        /**
+         * @description A user's own two-factor setting: `roles` (their roles decide), `required` or `exempt`.
+         * @enum {string}
+         */
+        TOTPPolicy: "roles" | "required" | "exempt";
+        UserTOTPPolicy: {
+            policy: components["schemas"]["TOTPPolicy"];
+        };
         UserCreate: {
             /** @description 1 to 64 lowercase letters, digits, '.', '_' or '-', starting with a letter or digit. Uppercase is folded and surrounding spaces are ignored. Unique across local and LDAP users. */
             username: string;
@@ -2848,6 +2909,9 @@ export interface components {
             disabled: boolean;
             /** @description Whether the user has two-factor login on. */
             totp_enabled: boolean;
+            totp_policy: components["schemas"]["TOTPPolicy"];
+            /** @description Whether the user must use two-factor login, by their own setting or, failing that, one of the roles listed here. An LDAP user's roles are only known while they are logged in, so for one who isn't this is their own setting alone. */
+            totp_required: boolean;
             /** Format: date-time */
             created_at: string;
             /**
@@ -4457,7 +4521,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Not allowed (code forbidden, with `details.permission` naming the missing permission), or the CSRF or Origin check failed on a state-changing request (code csrf_failed). */
+        /** @description Not allowed (code forbidden, with `details.permission` naming the missing permission), or the CSRF or Origin check failed on a state-changing request (code csrf_failed). Any operation that needs a session also answers 403 with code totp_setup_required while the user must use two-factor login and hasn't turned it on, except reading the session and the CSRF token, logging out, and GET /auth/totp, POST /auth/totp/setup and POST /auth/totp/confirm. */
         Forbidden: {
             headers: {
                 [name: string]: unknown;
@@ -6043,6 +6107,40 @@ export interface operations {
             503: components["responses"]["SetupRequired"];
         };
     };
+    setRoleTOTPRequired: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The role's ID. */
+                id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleTOTPRequired"];
+            };
+        };
+        responses: {
+            /** @description The role. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
     listLDAPMappings: {
         parameters: {
             query?: never;
@@ -6358,6 +6456,40 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setUserTOTPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserTOTPPolicy"];
+            };
+        };
+        responses: {
+            /** @description The user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
             503: components["responses"]["SetupRequired"];
         };
     };

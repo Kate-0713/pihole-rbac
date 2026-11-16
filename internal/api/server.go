@@ -179,8 +179,9 @@ func isSafeMethod(m string) bool {
 
 // gate runs before every generated route (r.Pattern is set by then). For API routes it requires a JSON body on
 // state-changing requests, loads the session, refuses requests without a session unless the route is public, checks
-// the Origin and CSRF token on state-changing requests, and refuses sessions that lack the global permission the
-// route declares in routePermission. A route missing from that table is refused: fail closed.
+// the Origin and CSRF token on state-changing requests, holds a session whose user must set up two-factor login to
+// the routes for doing that, and refuses sessions that lack the global permission the route declares in
+// routePermission. A route missing from that table is refused: fail closed.
 func (s *Server) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -230,6 +231,21 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		if unsafe && (!sameOrigin(r, s.TrustedProxies) || !s.Sessions.CheckCSRF(r, sess)) {
 			writeError(w, http.StatusForbidden, "csrf_failed", "The request was refused because its CSRF token or origin didn't match. Reload the page and try again.")
 			return
+		}
+
+		// Held to setting up two-factor login: checked here, for every route that needs a session, so nothing can be
+		// reached around it. After the CSRF check, so a forged request learns nothing from the answer.
+		if sess != nil && access != accessPublic && !totpSetupRoutes[r.Pattern] {
+			hold, err := s.totpSetupRequired(r.Context(), sess)
+			if err != nil {
+				s.Logger.Error("checking the two-factor requirement", "err", err)
+				writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+				return
+			}
+			if hold {
+				writeError(w, http.StatusForbidden, "totp_setup_required", msgTOTPSetupRequired)
+				return
+			}
 		}
 
 		ri := &reqInfo{w: w, sess: sess, ip: ratelimit.ClientIP(r, s.TrustedProxies)}

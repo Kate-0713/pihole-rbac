@@ -265,7 +265,7 @@ func serve() error {
 		Secrets:         sec,
 		Instances:       instanceService,
 		Drift:           drift,
-		Roles:           &rbac.Manager{Store: st, Audit: auditLog},
+		Roles:           &rbac.Manager{Store: st, Audit: auditLog, TOTPAvailable: func() bool { return sec.Cipher() != nil }},
 		TOTP:            &totp.Service{Store: st, Audit: auditLog, Cipher: sec.Cipher},
 		TrustedProxies:  cfg.TrustedProxies,
 		LoginByIP:       byIP,

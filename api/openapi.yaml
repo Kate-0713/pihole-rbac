@@ -1375,6 +1375,48 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/roles/{id}/totp-required:
+    parameters:
+      - $ref: "#/components/parameters/RoleID"
+    put:
+      summary: Say whether a role's holders must use two-factor login
+      description: >-
+        When a role requires it, everyone whose session holds the role must have two-factor login on, unless their
+        own setting says otherwise (PUT /users/{id}/totp-policy). It applies at once: a holder without it is held to
+        setting it up on their next request. The builtin admin role can require it too. The caller must hold every
+        grant the role has, as for changing it. Requiring it is refused with 409 conflict (`details.reason`
+        `no_master_key`) while the app has no master key, since nobody could then set it up. Setting what is already
+        set changes nothing.
+      operationId: setRoleTOTPRequired
+      x-permission: roles.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleTOTPRequired"
+      responses:
+        "200":
+          description: The role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/roles/{id}/ldap-groups:
     parameters:
       - $ref: "#/components/parameters/RoleID"
@@ -1679,6 +1721,47 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/users/{id}/totp-policy:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    put:
+      summary: Say whether a user must use two-factor login
+      description: >-
+        A user's own setting, which wins over their roles': `required` makes them use two-factor login whatever
+        their roles say, `exempt` lets them go without it whatever their roles say (they can still turn it on), and
+        `roles` leaves it to their roles. It applies at once, as a role's setting does. Needs every grant of every
+        role the user has. `required` is refused with 409 conflict (`details.reason` `no_master_key`) while the app
+        has no master key. Setting what is already set changes nothing.
+      operationId: setUserTOTPPolicy
+      x-permission: users.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserTOTPPolicy"
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "503":
           $ref: "#/components/responses/SetupRequired"
 
@@ -4806,7 +4889,10 @@ components:
     Forbidden:
       description: >-
         Not allowed (code forbidden, with `details.permission` naming the missing permission), or the CSRF or Origin
-        check failed on a state-changing request (code csrf_failed).
+        check failed on a state-changing request (code csrf_failed). Any operation that needs a session also answers
+        403 with code totp_setup_required while the user must use two-factor login and hasn't turned it on, except
+        reading the session and the CSRF token, logging out, and GET /auth/totp, POST /auth/totp/setup and
+        POST /auth/totp/confirm.
       content:
         application/json:
           schema:
@@ -5089,7 +5175,7 @@ components:
     CurrentSession:
       type: object
       additionalProperties: false
-      required: [user, public_id, expires_at, csrf_token, permissions]
+      required: [user, public_id, expires_at, csrf_token, permissions, totp_setup_required]
       properties:
         user:
           $ref: "#/components/schemas/SessionUser"
@@ -5105,6 +5191,12 @@ components:
           description: Send as the X-CSRF-Token header on every state-changing request.
         permissions:
           $ref: "#/components/schemas/Permissions"
+        totp_setup_required:
+          type: boolean
+          description: >-
+            True when the user must use two-factor login and hasn't turned it on. Until they do, every request but
+            reading the session, logging out and the two-factor setup operations is refused with 403
+            totp_setup_required.
 
     Permissions:
       type: object
@@ -6101,7 +6193,7 @@ components:
     Role:
       type: object
       additionalProperties: false
-      required: [id, name, description, builtin, created_at, grants, users, ldap_groups, manageable]
+      required: [id, name, description, builtin, totp_required, created_at, grants, users, ldap_groups, manageable]
       properties:
         id:
           type: integer
@@ -6113,6 +6205,9 @@ components:
         builtin:
           type: boolean
           description: The builtin admin role, which can't be changed or deleted.
+        totp_required:
+          type: boolean
+          description: Whether the role's holders must use two-factor login.
         created_at:
           type: string
           format: date-time
@@ -6304,6 +6399,28 @@ components:
           items:
             type: string
 
+    RoleTOTPRequired:
+      type: object
+      additionalProperties: false
+      required: [required]
+      properties:
+        required:
+          type: boolean
+
+    TOTPPolicy:
+      type: string
+      enum: [roles, required, exempt]
+      description: >-
+        A user's own two-factor setting: `roles` (their roles decide), `required` or `exempt`.
+
+    UserTOTPPolicy:
+      type: object
+      additionalProperties: false
+      required: [policy]
+      properties:
+        policy:
+          $ref: "#/components/schemas/TOTPPolicy"
+
     UserCreate:
       type: object
       additionalProperties: false
@@ -6367,7 +6484,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, username, source, disabled, totp_enabled, created_at, roles, manageable]
+      required: [id, username, source, disabled, totp_enabled, totp_policy, totp_required, created_at, roles, manageable]
       properties:
         id:
           type: integer
@@ -6385,6 +6502,14 @@ components:
         totp_enabled:
           type: boolean
           description: Whether the user has two-factor login on.
+        totp_policy:
+          $ref: "#/components/schemas/TOTPPolicy"
+        totp_required:
+          type: boolean
+          description: >-
+            Whether the user must use two-factor login, by their own setting or, failing that, one of the roles listed
+            here. An LDAP user's roles are only known while they are logged in, so for one who isn't this is their
+            own setting alone.
         created_at:
           type: string
           format: date-time

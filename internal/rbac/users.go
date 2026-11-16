@@ -293,6 +293,52 @@ func (m *Manager) RemoveUserTOTP(ctx context.Context, a Actor, userID int64) err
 	})
 }
 
+// SetUserTOTPPolicy sets a user's own two-factor setting, which wins over their roles': "required", "exempt", or ""
+// for leaving it to their roles. It needs users.manage and every grant of the user's roles (invariant 7): exempting
+// someone weakens their login. Requiring it is refused while two-factor login can't be set up.
+func (m *Manager) SetUserTOTPPolicy(ctx context.Context, a Actor, userID int64, policy string) error {
+	if policy != "" && policy != "required" && policy != "exempt" {
+		return newError(CodeValidation, map[string]any{"field": "policy"}, "The setting is roles, required or exempt.")
+	}
+	return m.do(ctx, a, audit.ActionUserTOTPPolicy, func(t *txn) error {
+		if _, err := t.managedUser(userID); err != nil {
+			return err
+		}
+		old := ""
+		row, err := t.q.GetUserTOTPPolicy(t.ctx, userID)
+		switch {
+		case err == nil:
+			old = row.Policy
+		case !errors.Is(err, sql.ErrNoRows):
+			return err
+		}
+		if old == policy {
+			return errNoChange
+		}
+		if policy == "" {
+			_, err = t.q.ClearUserTOTPPolicy(t.ctx, userID)
+		} else {
+			if policy == "required" {
+				if err := t.totpAvailable(); err != nil {
+					return err
+				}
+			}
+			err = t.q.SetUserTOTPPolicy(t.ctx, db.SetUserTOTPPolicyParams{
+				UserID: userID, Policy: policy, SetAt: store.Millis(t.now), SetBy: t.actor.Username,
+			})
+		}
+		name := func(p string) string {
+			if p == "" {
+				return "roles"
+			}
+			return p
+		}
+		t.entry.Detail["policy"] = name(policy)
+		t.entry.Detail["was"] = name(old)
+		return err
+	})
+}
+
 // ChangeOwnPassword changes the actor's own password, given their current one. It needs no permission: every local
 // user may change their own password. A wrong current password is auth.ErrInvalidCredentials, which the API counts
 // against the login limits and audits, so this can't be used to guess passwords faster than the login page. The

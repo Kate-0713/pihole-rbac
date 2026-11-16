@@ -226,3 +226,68 @@ func (s *Server) RemoveUserTOTP(ctx context.Context, req gen.RemoveUserTOTPReque
 	}
 	return gen.RemoveUserTOTP200JSONResponse(u), nil
 }
+
+// SetRoleTOTPRequired says whether a role's holders must use two-factor login.
+func (s *Server) SetRoleTOTPRequired(ctx context.Context, req gen.SetRoleTOTPRequiredRequestObject) (gen.SetRoleTOTPRequiredResponseObject, error) {
+	if s.Roles == nil {
+		return nil, errNoRoles
+	}
+	if err := s.Roles.SetRoleTOTPRequired(ctx, actor(ctx), req.Id, req.Body.Required); err != nil {
+		return nil, err
+	}
+	role, err := s.roleJSON(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	return gen.SetRoleTOTPRequired200JSONResponse(role), nil
+}
+
+// SetUserTOTPPolicy sets a user's own two-factor setting.
+func (s *Server) SetUserTOTPPolicy(ctx context.Context, req gen.SetUserTOTPPolicyRequestObject) (gen.SetUserTOTPPolicyResponseObject, error) {
+	if s.Roles == nil {
+		return nil, errNoRoles
+	}
+	policy := string(req.Body.Policy)
+	switch req.Body.Policy {
+	case gen.TOTPPolicy("roles"):
+		policy = ""
+	case gen.TOTPPolicy("required"), gen.TOTPPolicy("exempt"):
+	default:
+		return nil, invalid("policy", "The setting is roles, required or exempt.")
+	}
+	if err := s.Roles.SetUserTOTPPolicy(ctx, actor(ctx), req.Id, policy); err != nil {
+		return nil, err
+	}
+	u, err := s.userJSON(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	return gen.SetUserTOTPPolicy200JSONResponse(u), nil
+}
+
+// totpSetupRoutes are the operations a session can still use while its user must use two-factor login and hasn't
+// turned it on: enough to see where they stand, set it up, or leave. Public operations aren't listed; they never
+// reach the check.
+var totpSetupRoutes = map[string]bool{
+	"GET /api/v1/auth/session":       true,
+	"GET /api/v1/auth/csrf":          true,
+	"POST /api/v1/auth/logout":       true,
+	"GET /api/v1/auth/totp":          true,
+	"POST /api/v1/auth/totp/setup":   true,
+	"POST /api/v1/auth/totp/confirm": true,
+}
+
+const msgTOTPSetupRequired = "You need to set up two-factor login before you can use the app."
+
+// totpSetupRequired reports whether a session's user must use two-factor login and hasn't turned it on. It is
+// worked out from the database on each request, like permissions, so a requirement set on a role or a user applies
+// to their open sessions at once, and setting it up lifts it at once.
+func (s *Server) totpSetupRequired(ctx context.Context, sess *auth.Session) (bool, error) {
+	q := s.Store.Read()
+	required, err := totp.RequiredFor(ctx, q, sess.UserID, sess.RoleIDs)
+	if err != nil || !required {
+		return false, err
+	}
+	on, err := totp.Enabled(ctx, q, sess.UserID)
+	return !on, err
+}
