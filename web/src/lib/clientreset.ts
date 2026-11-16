@@ -131,6 +131,11 @@ export const instanceStatusLabel: Record<InstanceResult['status'], string> = {
 	skipped: 'Not reached'
 };
 
+// What a skipped client's reason means (since v2.6.0).
+export function describeSkip(reason: string): string {
+	return reason === 'temporary_change_active' ? 'has a temporary group change running' : reason;
+}
+
 const codeWords: Record<string, string> = {
 	pihole_group_missing: "the rule's groups aren't all on this Pi-hole",
 	no_target_groups: "no group on this Pi-hole matches the rule's prefixes",
@@ -157,22 +162,25 @@ export function runCounts(instances: InstanceResult[]): {
 	reset: number;
 	failed: number;
 	unchanged: number;
+	skipped: number;
 	unread: number;
 	broken: number;
 } {
 	let reset = 0;
 	let failed = 0;
 	let unchanged = 0;
+	let skipped = 0;
 	let unread = 0;
 	const broken = new Set<string>(); // rules that can't run on some instance, by prefix
 	for (const i of instances) {
 		reset += i.reset.length;
 		failed += i.failed.length;
 		unchanged += i.unchanged;
+		skipped += i.skipped?.length ?? 0;
 		if (i.code) unread++;
 		for (const p of i.problems) broken.add(p.prefix);
 	}
-	return { reset, failed, unchanged, unread, broken: broken.size };
+	return { reset, failed, unchanged, skipped, unread, broken: broken.size };
 }
 
 // describeRun says in a few words what a run did: "2 clients reset, 1 failed".
@@ -183,6 +191,7 @@ export function describeRun(run: Pick<Run, 'status' | 'instances' | 'error'>): s
 	const parts: string[] = [];
 	if (c.reset > 0) parts.push(`${plural(c.reset, 'client')} reset`);
 	if (c.failed > 0) parts.push(`${c.failed} failed`);
+	if (c.skipped > 0) parts.push(`${plural(c.skipped, 'client')} left alone (temporary change)`);
 	if (c.unread > 0) parts.push(`${plural(c.unread, 'instance')} not reached`);
 	if (c.broken > 0) parts.push(`${plural(c.broken, 'rule')} can't run`);
 	if (parts.length === 0) return 'Nothing to change';
@@ -192,9 +201,14 @@ export function describeRun(run: Pick<Run, 'status' | 'instances' | 'error'>): s
 // describePreview says what running would do: "Would reset 2 clients on pihole1".
 export function describePreview(p: Preview): string {
 	const c = runCounts(p.instances);
-	if (c.reset === 0) return 'Nothing to reset: every matching client is already in its groups.';
+	// A client with a temporary group change is left alone, and said so: it is in neither of the other counts.
+	const left = c.skipped > 0 ? ` ${plural(c.skipped, 'client')} with a temporary change would be left alone.` : '';
+	if (c.reset === 0) {
+		const why = c.unchanged > 0 || c.skipped === 0 ? 'every matching client is already in its groups.' : 'no other client matches.';
+		return `Nothing to reset: ${why}${left}`;
+	}
 	const where = p.instances.filter((i) => i.reset.length > 0).map((i) => i.instance);
-	return `Would reset ${plural(c.reset, 'client')} on ${where.join(', ')}.`;
+	return `Would reset ${plural(c.reset, 'client')} on ${where.join(', ')}.${left}`;
 }
 
 // The schedule.

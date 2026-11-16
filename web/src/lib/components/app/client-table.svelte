@@ -56,19 +56,39 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import CellText from '#lib/components/app/cell-text.svelte';
+	import TempChangeStatus from '#lib/components/app/temp-change-status.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { groupNames, type PiholeGroup } from '#lib/pihole.js';
+	import { canEnd, canExtend, currentFor, retryable, type TempChange } from '#lib/temp-changes.js';
 
 	let {
 		clients,
 		groups,
 		canEdit,
-		onedit
+		onedit,
+		changes = [],
+		now = new Date(),
+		canTemp = false,
+		working = null,
+		ontemp = () => {},
+		onextend = () => {},
+		onend = () => {},
+		onretry = () => {}
 	}: {
 		clients: PiholeClient[];
 		groups: PiholeGroup[];
 		canEdit: boolean;
 		onedit: (c: PiholeClient) => void;
+		// Temporary changes (v2.6.0): the target's list, the time the page last looked, whether "Change temporarily" is
+		// offered, the ID of the change being worked on (its buttons wait), and what each action does.
+		changes?: TempChange[];
+		now?: Date;
+		canTemp?: boolean;
+		working?: number | null;
+		ontemp?: (c: PiholeClient) => void;
+		onextend?: (t: TempChange) => void;
+		onend?: (t: TempChange) => void;
+		onretry?: (t: TempChange) => void;
 	} = $props();
 
 	const table = createTable({
@@ -163,17 +183,35 @@
 		<Table.Body>
 			{#each rows as row (row.original.client)}
 				{@const c = row.original}
+				{@const t = currentFor(changes, c.client)}
 				<Table.Row>
 					<Table.Cell class="font-mono text-sm"><CellText>{c.client}</CellText></Table.Cell>
 					{#if hasNames}<Table.Cell class="text-sm"><CellText>{c.name ?? ''}</CellText></Table.Cell>{/if}
-					<Table.Cell class="text-sm"><CellText>{groupNames(c.groups, groups).join(', ') || '—'}</CellText></Table.Cell>
+					<Table.Cell class="text-sm">
+						<CellText>{groupNames(c.groups, groups).join(', ') || '—'}</CellText>
+						{#if t}<TempChangeStatus change={t} {now} />{/if}
+					</Table.Cell>
 					<Table.Cell class="text-muted-foreground text-sm"><CellText>{c.comment}</CellText></Table.Cell>
 					<Table.Cell class="text-muted-foreground text-sm whitespace-nowrap">
 						{c.added_at ? dateFormat.format(new Date(c.added_at)) : '—'}
 					</Table.Cell>
 					{#if canEdit}
 						<Table.Cell class="text-right">
-							<Button variant="ghost" size="sm" onclick={() => onedit(c)} aria-label="Change {c.client}">Change</Button>
+							<div class="flex flex-wrap justify-end gap-1">
+								{#if t && canExtend(t)}
+									<Button variant="ghost" size="sm" disabled={working === t.id} onclick={() => onextend(t)} aria-label="Extend the temporary change for {c.client}">Extend</Button>
+								{/if}
+								{#if t && canEnd(t)}
+									<Button variant="ghost" size="sm" disabled={working === t.id} onclick={() => onend(t)} aria-label="End the temporary change for {c.client} now">End now</Button>
+								{/if}
+								{#if t && retryable(t)}
+									<Button variant="ghost" size="sm" disabled={working === t.id} onclick={() => onretry(t)} aria-label="Retry putting {c.client} back">Retry</Button>
+								{/if}
+								{#if !t && canTemp}
+									<Button variant="ghost" size="sm" onclick={() => ontemp(c)} aria-label="Move {c.client} to other groups for a while">Change temporarily</Button>
+								{/if}
+								<Button variant="ghost" size="sm" onclick={() => onedit(c)} aria-label="Change {c.client}">Change</Button>
+							</div>
 						</Table.Cell>
 					{/if}
 				</Table.Row>

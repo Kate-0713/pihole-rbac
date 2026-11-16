@@ -32,7 +32,10 @@ type Service struct {
 	// Protected returns the protected Pi-hole group names that apply to an instance, so a reset that puts a client in
 	// one raises the same alert as a client update. Nil means no alerts.
 	Protected func(ctx context.Context, instanceID int64) ([]string, error)
-	Logger    *slog.Logger
+	// Overridden returns the clients that have an active temporary group change on an instance, with the change's
+	// ID. A run leaves them alone. nil means none.
+	Overridden func(ctx context.Context, instanceID int64) (map[string]int64, error)
+	Logger     *slog.Logger
 	// Now returns the current time; nil means time.Now.
 	Now func() time.Time
 

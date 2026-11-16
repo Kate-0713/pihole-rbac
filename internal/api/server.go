@@ -21,6 +21,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/api/gen"
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/clientoverrides"
 	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
 	"github.com/Kate-0713/pihole-rbac/internal/gravity"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
@@ -53,20 +54,21 @@ func contentSecurityPolicy(scriptHashes []string) string {
 
 // Options holds the server's dependencies.
 type Options struct {
-	Store         *store.Store
-	Sessions      *auth.Sessions
-	Auth          auth.Authenticator
-	Audit         *audit.Logger
-	Secrets       *secrets.Manager
-	Instances     *instances.Service     // instance changes, and the client pool for health and secret reloads
-	Drift         *instances.Drift       // mirrored groups' drift reports; nil in tests that don't need them
-	Roles         *rbac.Manager          // changes to roles, grants, user roles, LDAP mappings and users
-	LoginSettings *loginsettings.Service // login methods, LDAP settings and bind password; nil in tests that don't need them
-	Notifications *notifications.Service // notification channels; nil in tests that don't need them
-	ClientReset   *clientreset.Service   // client reset rules and runs; nil in tests that don't need them
-	Schedules     *schedules.Service     // blocking and Pi-hole group schedules; nil in tests that don't need them
-	Gravity       *gravity.Service       // gravity runs; New makes one from Instances' pool when nil
-	Updates       *updates.Service       // the update check and update requests; nil in tests that don't need them
+	Store           *store.Store
+	Sessions        *auth.Sessions
+	Auth            auth.Authenticator
+	Audit           *audit.Logger
+	Secrets         *secrets.Manager
+	Instances       *instances.Service       // instance changes, and the client pool for health and secret reloads
+	Drift           *instances.Drift         // mirrored groups' drift reports; nil in tests that don't need them
+	Roles           *rbac.Manager            // changes to roles, grants, user roles, LDAP mappings and users
+	LoginSettings   *loginsettings.Service   // login methods, LDAP settings and bind password; nil in tests that don't need them
+	Notifications   *notifications.Service   // notification channels; nil in tests that don't need them
+	ClientReset     *clientreset.Service     // client reset rules and runs; nil in tests that don't need them
+	Schedules       *schedules.Service       // blocking and Pi-hole group schedules; nil in tests that don't need them
+	ClientOverrides *clientoverrides.Service // temporary client group changes; nil in tests that don't need them
+	Gravity         *gravity.Service         // gravity runs; New makes one from Instances' pool when nil
+	Updates         *updates.Service         // the update check and update requests; nil in tests that don't need them
 	// Restart asks the process to shut down cleanly, as SIGTERM does, so its service manager starts it again. nil in
 	// tests that don't need it.
 	Restart        func()

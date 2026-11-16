@@ -2563,6 +2563,194 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/targets/{target}/clients/temporary:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: Temporary client group changes
+      description: >-
+        The target's active temporary changes, and those that finished in the last 30 days (at most 100), active first.
+        For an instance, the active changes made through a mirrored group it belongs to are listed too, read-only, with
+        `via`. Also gives the limits a start is checked against. Since v2.6.0.
+      operationId: listTemporaryClientChanges
+      x-permission: target:clients.view
+      responses:
+        "200":
+          description: The changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientChangeList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Move a client to other Pi-hole groups for a set time
+      description: >-
+        The body names the client and the Pi-hole groups by name, and how long (`duration_minutes`, or `ends_at`).
+        The app records the client's groups on each instance, changes them, and puts them back when the time is up.
+        Answers with a result per instance, as a client change does, plus the stored change. Members that failed
+        aren't covered and aren't retried; end the change and start again to cover them. A client that already has an
+        active change on any of the instances is a 409 (code conflict, with `details.override_id` and
+        `details.instance`). Audited as client_temp_set, one row per instance. Since v2.6.0.
+      operationId: startTemporaryClientChange
+      x-permission: target:clients.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemporaryClientStart"
+      responses:
+        "200":
+          description: Every instance took the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientWriteResults"
+        "207":
+          description: Some instances took the change and some didn't. Only a mirrored group can answer this.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/clients/temporary/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+      - $ref: "#/components/parameters/TemporaryChangeID"
+    patch:
+      summary: Extend or shorten a temporary change
+      description: >-
+        Moves the end: later than now, and within the maximum measured from the change's start. A change that is over
+        is a 409. Changes only the app's database. Audited as client_temp_update. Since v2.6.0.
+      operationId: updateTemporaryClientChange
+      x-permission: target:clients.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemporaryClientUpdate"
+      responses:
+        "200":
+          description: The change as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientChange"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/clients/temporary/{id}/end:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+      - $ref: "#/components/parameters/TemporaryChangeID"
+    post:
+      summary: End a temporary change now
+      description: >-
+        Puts the client back before answering, with a result per instance. A member that can't be reached is retried
+        by the app every 30 seconds, and the change stays active, shown as reverting, until it is. Audited as
+        client_temp_end, one row per instance. Since v2.6.0.
+      operationId: endTemporaryClientChange
+      x-permission: target:clients.edit
+      responses:
+        "200":
+          description: Every instance was put back.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientWriteResults"
+        "207":
+          description: Some instances were put back and some weren't yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientWriteResults"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/targets/{target}/clients/temporary/{id}/retry:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+      - $ref: "#/components/parameters/TemporaryChangeID"
+    post:
+      summary: Retry a revert the app gave up on
+      description: >-
+        Only for a change whose status is failed. Runs the revert again at once on the members that were given up
+        after a week, with a result per instance. A member that fails again is given up on again. Audited as
+        client_temp_end. Since v2.6.0.
+      operationId: retryTemporaryClientChange
+      x-permission: target:clients.edit
+      responses:
+        "200":
+          description: Every instance was put back.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientWriteResults"
+        "207":
+          description: Some instances were put back and some weren't.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporaryClientWriteResults"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/targets/{target}/groups:
     parameters:
       - $ref: "#/components/parameters/TargetID"
@@ -3966,6 +4154,16 @@ components:
       in: path
       required: true
       description: The instance group's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
+    TemporaryChangeID:
+      name: id
+      in: path
+      required: true
+      description: The temporary client change's ID. 404 for one made on another target.
       schema:
         type: integer
         format: int64
@@ -6197,6 +6395,16 @@ components:
           description: >-
             The longest a schedule's Pi-hole group window can be, 5 minutes to 365 days (since v2.5.0). Lowering it
             leaves existing schedules running. Absent leaves it as it is.
+        client_temp_max_minutes:
+          type: integer
+          minimum: 5
+          maximum: 525600
+          description: >-
+            The longest a temporary client group change can last from its start, 5 minutes to 365 days (since v2.6.0).
+            Lowering it shortens nothing already running. Absent leaves it as it is.
+        client_temp_reason_required:
+          type: boolean
+          description: Whether a temporary client group change needs a reason (since v2.6.0). Absent leaves it as it is.
         localdns_extra_domains:
           type: array
           maxItems: 20
@@ -6229,11 +6437,17 @@ components:
     GeneralSettings:
       type: object
       additionalProperties: false
-      required: [session_lifetime_minutes, idle_timeout_minutes, audit_retention_days, client_reset_schedule, allow_file_lists, localdns_reason_required, localdns_extra_domains, schedule_group_window_max_minutes]
+      required: [session_lifetime_minutes, idle_timeout_minutes, audit_retention_days, client_reset_schedule, allow_file_lists, localdns_reason_required, localdns_extra_domains, schedule_group_window_max_minutes, client_temp_max_minutes, client_temp_reason_required]
       properties:
         schedule_group_window_max_minutes:
           type: integer
           description: The longest a schedule's group window can be; 1440 (a day) until saved.
+        client_temp_max_minutes:
+          type: integer
+          description: The longest a temporary client group change can last; 10080 (7 days) until saved.
+        client_temp_reason_required:
+          type: boolean
+          description: Whether a temporary client group change needs a reason; true until saved.
         allow_file_lists:
           type: boolean
           description: "Whether file: lists can be added; false until saved."
@@ -7553,7 +7767,7 @@ components:
     PiholeGroupReferenceCounts:
       type: object
       additionalProperties: false
-      required: [client_reset_rules, protected_groups, group_windows]
+      required: [client_reset_rules, protected_groups, group_windows, client_overrides]
       properties:
         client_reset_rules:
           type: integer
@@ -7562,6 +7776,11 @@ components:
         group_windows:
           type: integer
           description: Schedules whose group window names the group.
+        client_overrides:
+          type: integer
+          description: >-
+            Active temporary client group changes that name the group, as a group the client was in or one the
+            change put it in. Counted per instance a change covers.
 
     PiholeGroupReference:
       type: object
@@ -7570,10 +7789,11 @@ components:
       properties:
         kind:
           type: string
-          enum: [client_reset_rule, protected_group, group_window]
+          enum: [client_reset_rule, protected_group, group_window, client_override]
           description: >-
-            A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a
-            schedule's group window (schedules.manage on the schedule's instance or group).
+            A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage), a
+            schedule's group window (schedules.manage on the schedule's instance or group) or an active temporary
+            client change on one instance (clients.edit on that instance).
         scope:
           type: string
           enum: [instance, group]
@@ -7589,6 +7809,25 @@ components:
           type: string
           enum: [names, prefixes]
           description: How a client reset rule matches Pi-hole groups.
+        client:
+          type: string
+          description: A temporary client change's client.
+        override_id:
+          type: integer
+          format: int64
+          description: A temporary client change's ID.
+        original_names:
+          type: array
+          items:
+            type: string
+          description: >-
+            A temporary client change's original groups, which the client returns to. For an updated reference, the
+            value after the rename. `names` holds the groups the change put the client in.
+        original_before:
+          type: array
+          items:
+            type: string
+          description: For an updated temporary client change, its original groups before the rename.
         schedule_name:
           type: string
           description: A group window's schedule.
@@ -8192,6 +8431,210 @@ components:
           items:
             type: string
 
+    TemporaryClientStart:
+      type: object
+      additionalProperties: false
+      required: [client, groups]
+      description: >-
+        Names the client and the Pi-hole groups it is moved to, by name, and either how long or when it ends. The
+        longest is the `client_temp_max_minutes` setting and the shortest 5 minutes. The reason is 1 to 200
+        characters when `client_temp_reason_required` is on.
+      properties:
+        client:
+          type: string
+          minLength: 1
+          maxLength: 255
+        groups:
+          type: array
+          maxItems: 100
+          description: Replaces the client's groups for the duration. Every instance must have a Pi-hole group of each name.
+          items:
+            type: string
+            minLength: 1
+            maxLength: 255
+        duration_minutes:
+          type: integer
+          minimum: 5
+          maximum: 525600
+        ends_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          maxLength: 200
+
+    TemporaryClientUpdate:
+      type: object
+      additionalProperties: false
+      required: [ends_at]
+      properties:
+        ends_at:
+          type: string
+          format: date-time
+
+    TemporaryClientMember:
+      type: object
+      additionalProperties: false
+      required: [instance_id, instance, original_groups, override_groups, revert_status, attempts]
+      description: One instance a change was made on, with the client's groups there by name.
+      properties:
+        instance_id:
+          type: integer
+          format: int64
+        instance:
+          type: string
+        original_groups:
+          type: array
+          items:
+            type: string
+        override_groups:
+          type: array
+          items:
+            type: string
+        revert_status:
+          type: string
+          enum: [pending, ok, failed, skipped, given_up]
+          description: >-
+            pending: not tried yet. failed or skipped: tried and failed (skipped when the instance couldn't be
+            called), to be retried. ok: put back. given_up: a week of retries failed.
+        revert_code:
+          type: string
+          description: Why the latest revert failed or was skipped, such as not_found, or a Pi-hole error code.
+        missing_groups:
+          type: array
+          description: Original groups that no longer exist on the Pi-hole, left out of the revert.
+          items:
+            type: string
+        attempts:
+          type: integer
+        reverted_at:
+          type: string
+          format: date-time
+
+    TemporaryClientChange:
+      type: object
+      additionalProperties: false
+      required: [id, target, target_name, client, starts_at, ends_at, reason, status, overdue, created_by, members]
+      properties:
+        id:
+          type: integer
+          format: int64
+        target:
+          type: string
+          description: Where it was set, i-<id> or g-<id>.
+        target_name:
+          type: string
+        via:
+          type: string
+          description: >-
+            Set when the change is listed on an instance it was made on through a mirrored group, which is the one
+            that can change or end it (g-<id>).
+        client:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [active, reverted, ended, failed]
+          description: >-
+            active until every instance was put back. reverted: it ran its time. ended: a person ended it early.
+            failed: an instance was given up on, or lost its client.
+        overdue:
+          type: boolean
+          description: Active and past its end, so the app is putting the client back.
+        created_by:
+          type: string
+        ended_by:
+          type: string
+        ended_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemporaryClientMember"
+
+    TemporaryClientChangeList:
+      type: object
+      additionalProperties: false
+      required: [changes, max_minutes, reason_required]
+      properties:
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemporaryClientChange"
+        max_minutes:
+          type: integer
+          description: The longest a change can last from its start (the client_temp_max_minutes setting).
+        reason_required:
+          type: boolean
+          description: Whether a start needs a reason (the client_temp_reason_required setting).
+
+    TemporaryClientWriteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
+        unchanged:
+          type: boolean
+          description: "Present when ok and nothing needed sending: the client already had those groups."
+        groups:
+          type: array
+          description: Present when ok. The client's groups on the instance now, by name.
+          items:
+            type: string
+        missing_groups:
+          type: array
+          description: On an end or retry, the original groups that no longer exist on the Pi-hole.
+          items:
+            type: string
+
+    TemporaryClientWriteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemporaryClientWriteResult"
+        change:
+          $ref: "#/components/schemas/TemporaryClientChange"
+
+    ClientResetSkipped:
+      type: object
+      additionalProperties: false
+      required: [client, reason, override_id]
+      description: A matching client the run left alone.
+      properties:
+        client:
+          type: string
+        reason:
+          type: string
+          enum: [temporary_change_active]
+          description: The client has an active temporary group change on this instance.
+        override_id:
+          type: integer
+          format: int64
+
     ClientResetInstanceResult:
       type: object
       additionalProperties: false
@@ -8226,6 +8669,13 @@ components:
         unchanged:
           type: integer
           description: Matching clients already in exactly their rule's groups.
+        skipped:
+          type: array
+          description: >-
+            Matching clients left alone because they have an active temporary group change on this instance (since
+            v2.6.0). Counted as neither reset nor unchanged. Absent in runs from before.
+          items:
+            $ref: "#/components/schemas/ClientResetSkipped"
         problems:
           type: array
           items:

@@ -477,3 +477,58 @@ func TestScheduleGroupWindowMax(t *testing.T) {
 		t.Errorf("after a restart: %s", got)
 	}
 }
+
+// TestClientTempSettings: the temporary client change maximum defaults to 7 days and the reason to required; the
+// maximum is refused outside 5 minutes to 365 days; both are audited when they change, kept by a save that leaves
+// them out, and survive a restart.
+func TestClientTempSettings(t *testing.T) {
+	e := newEnv(t)
+	if l := e.svc.ClientOverrideLimits(); l.Max != 7*24*time.Hour || !l.ReasonRequired {
+		t.Errorf("defaults %+v", l)
+	}
+	g := e.svc.General()
+	if g.ClientTempMaxMinutes == nil || *g.ClientTempMaxMinutes != 7*24*60 || g.ClientTempReasonRequired == nil || !*g.ClientTempReasonRequired {
+		t.Errorf("General shows %v, %v", g.ClientTempMaxMinutes, g.ClientTempReasonRequired)
+	}
+	save := func(m *int, reason *bool) error {
+		return e.svc.SaveGeneral(e.ctx, e.admin, General{SessionLifetimeMinutes: 480, IdleTimeoutMinutes: 60,
+			AuditRetentionDays: DefaultRetentionDays, ClientTempMaxMinutes: m, ClientTempReasonRequired: reason})
+	}
+	ptr := func(n int) *int { return &n }
+	no := false
+	for _, m := range []int{0, 4, 365*24*60 + 1} {
+		wantField(t, save(ptr(m), nil), "client_temp_max_minutes")
+	}
+	if err := save(ptr(120), &no); err != nil {
+		t.Fatal(err)
+	}
+	if l := e.svc.ClientOverrideLimits(); l.Max != 2*time.Hour || l.ReasonRequired {
+		t.Errorf("after saving 120 and no reason: %+v", l)
+	}
+	rows, err := e.st.Read().ListRecentAudit(e.ctx, 1)
+	if err != nil || len(rows) != 1 || rows[0].Action != audit.ActionSettingsUpdate ||
+		!strings.Contains(rows[0].Detail, `"client_temp_max_minutes"`) || !strings.Contains(rows[0].Detail, `"client_temp_reason_required"`) ||
+		!strings.Contains(rows[0].Detail, `"client_temp_max_minutes":120`) || !strings.Contains(rows[0].Detail, `"client_temp_reason_required":false`) {
+		t.Errorf("audit: %+v, %v", rows, err)
+	}
+	if err := save(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if l := e.svc.ClientOverrideLimits(); l.Max != 2*time.Hour || l.ReasonRequired {
+		t.Errorf("a save without them changed them: %+v", l)
+	}
+	again := &Service{Store: e.st, Audit: audit.NewLogger(io.Discard), Secrets: e.sec, Logger: e.svc.Logger}
+	if err := again.Load(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if l := again.ClientOverrideLimits(); l.Max != 2*time.Hour || l.ReasonRequired {
+		t.Errorf("after a restart: %+v", l)
+	}
+	yes := true
+	if err := save(nil, &yes); err != nil {
+		t.Fatal(err)
+	}
+	if l := e.svc.ClientOverrideLimits(); !l.ReasonRequired || l.Max != 2*time.Hour {
+		t.Errorf("after turning the reason back on: %+v", l)
+	}
+}

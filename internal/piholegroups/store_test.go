@@ -17,7 +17,7 @@ import (
 )
 
 // TestLoadAndApply reads the references from a real database, renames kids to children on pihole1, and reads them
-// back: the names-mode rule, the protected group and the group window on pihole1 follow, a protected group whose
+// back: the names-mode rule, the protected group, the group window and the temporary change's original groups on pihole1 follow, a protected group whose
 // scope already lists the new name is dropped, a blocking window isn't a reference, and pihole2's are renamed too.
 func TestLoadAndApply(t *testing.T) {
 	ctx := context.Background()
@@ -63,6 +63,18 @@ func TestLoadAndApply(t *testing.T) {
 				return err
 			}
 		}
+		// An active temporary change made through pihole1, which took the client out of kids and into open.
+		o, err := q.CreateClientOverride(ctx, db.CreateClientOverrideParams{
+			InstanceID: inst(p1), Client: "10.0.0.5", StartsAt: 10, EndsAt: 20, CreatedBy: "admin", CreatedAt: 10,
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := q.CreateClientOverrideMember(ctx, db.CreateClientOverrideMemberParams{
+			OverrideID: o, InstanceID: p1, Client: "10.0.0.5", OriginalGroups: `["Default","kids"]`, OverrideGroups: `["Default","open"]`,
+		}); err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -73,7 +85,7 @@ func TestLoadAndApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	s1, s2 := piholegroups.Scope{InstanceID: p1}, piholegroups.Scope{InstanceID: p2}
-	if c := piholegroups.Count(piholegroups.Matching(refs, []piholegroups.Scope{s1}, "kids")); c != (piholegroups.Counts{ResetRules: 1, Protected: 1, GroupWindows: 1}) {
+	if c := piholegroups.Count(piholegroups.Matching(refs, []piholegroups.Scope{s1}, "kids")); c != (piholegroups.Counts{ResetRules: 1, Protected: 1, GroupWindows: 1, ClientOverrides: 1}) {
 		t.Errorf("counts on pihole1: %+v", c)
 	}
 	rename := func(s piholegroups.Scope) {
@@ -117,7 +129,14 @@ func TestLoadAndApply(t *testing.T) {
 		{piholegroups.KindProtected, "pihole2", nil, "children"},
 		{piholegroups.KindWindow, "pihole1", nil, "children"},
 	}
+	want = append(want, row{piholegroups.KindOverride, "pihole1", nil, ""})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("after the rename:\n got %+v\nwant %+v", got, want)
+	}
+	// The temporary change's original groups follow the rename. Its override groups never named the group.
+	o := after[len(after)-1]
+	if o.Client != "10.0.0.5" || o.TargetName != "pihole1" || o.OverrideID == 0 ||
+		!reflect.DeepEqual(o.Original, []string{"Default", "children"}) || !reflect.DeepEqual(o.Override, []string{"Default", "open"}) {
+		t.Errorf("the temporary change after the rename: %+v", o)
 	}
 }

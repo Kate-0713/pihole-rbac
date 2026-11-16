@@ -73,6 +73,10 @@ type Service struct {
 	extraDomains   []string
 	// groupWindowMax is schedule_group_window_max_minutes, 0 until saved (the default).
 	groupWindowMax int
+	// clientTempMax is client_temp_max_minutes, 0 until saved (the default). clientTempReasonOptional is
+	// client_temp_reason_required turned off.
+	clientTempMax            int
+	clientTempReasonOptional bool
 }
 
 // StoredPassword is the bind password as kept in the database.

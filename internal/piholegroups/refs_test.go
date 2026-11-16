@@ -27,6 +27,10 @@ func window(id int64, s Scope, name string) Ref {
 	return Ref{Kind: KindWindow, ID: id, Scope: s, Name: name, Schedule: "Bedtime", ScheduleKind: "group_enabled"}
 }
 
+func override(id int64, s Scope, original, over []string) Ref {
+	return Ref{Kind: KindOverride, ID: id, Scope: s, Client: "10.0.0.5", Original: original, Override: over, OverrideID: 100 + id}
+}
+
 func ids(refs []Ref) []int64 {
 	out := []int64{}
 	for _, r := range refs {
@@ -48,6 +52,10 @@ func TestMatching(t *testing.T) {
 		window(9, pihole1, "kids"),  // group windows match exactly, as Pi-hole compares names
 		window(10, pihole1, "Kids"), // so another spelling doesn't
 		window(11, mirror, "kids"),
+		override(12, pihole1, []string{"Default", "kids"}, []string{"Default"}), // names it among the originals
+		override(13, pihole1, []string{"Default"}, []string{"Default", "kids"}), // or among the override's groups
+		override(14, pihole1, []string{"Default"}, []string{"Default", "Kids"}), // exactly, as Pi-hole compares names
+		override(15, pihole2, []string{"kids"}, nil),
 	}
 	tests := []struct {
 		name   string
@@ -55,9 +63,9 @@ func TestMatching(t *testing.T) {
 		group  string
 		want   []int64
 	}{
-		{"one instance", []Scope{pihole1}, "kids", []int64{1, 3, 5, 9}},
-		{"an instance and its mirrored group", []Scope{pihole1, mirror}, "kids", []int64{1, 3, 5, 8, 9, 11}},
-		{"another name", []Scope{pihole1, pihole2}, "Kids", []int64{2, 5, 10}},
+		{"one instance", []Scope{pihole1}, "kids", []int64{1, 3, 5, 9, 12, 13}},
+		{"an instance and its mirrored group", []Scope{pihole1, mirror}, "kids", []int64{1, 3, 5, 8, 9, 11, 12, 13}},
+		{"another name", []Scope{pihole1, pihole2}, "Kids", []int64{2, 5, 10, 14}},
 		{"nothing", []Scope{pihole2}, "guests", []int64{}},
 	}
 	for _, tt := range tests {
@@ -67,7 +75,7 @@ func TestMatching(t *testing.T) {
 			}
 		})
 	}
-	if c := Count(Matching(refs, []Scope{pihole1, mirror}, "kids")); c != (Counts{ResetRules: 2, Protected: 2, GroupWindows: 2}) {
+	if c := Count(Matching(refs, []Scope{pihole1, mirror}, "kids")); c != (Counts{ResetRules: 2, Protected: 2, GroupWindows: 2, ClientOverrides: 2}) {
 		t.Errorf("counts %+v", c)
 	}
 }
@@ -166,6 +174,24 @@ func TestPlanRename(t *testing.T) {
 			renamed: func(s Scope) bool { return s == pihole1 },
 			changes: []change{{3, []string{"children"}, false}, {6, []string{"children"}, false}},
 			checks:  []check{{1, CheckNotEvery}, {2, CheckNotEvery}, {4, CheckNotEvery}, {5, CheckNotEvery}},
+		},
+		{
+			name: "a temporary change's original and override groups both follow the new name",
+			refs: []Ref{
+				override(1, pihole1, []string{"Default", "kids"}, []string{"Default", "open"}),
+				override(2, pihole1, []string{"Default"}, []string{"kids", "open"}),
+				override(3, pihole1, []string{"Default"}, []string{"Default"}), // doesn't name it
+			},
+			from: "kids", to: "children", renamed: everywhere,
+			changes: []change{{1, []string{"Default", "open"}, false}, {2, []string{"children", "open"}, false}},
+		},
+		{
+			name: "a temporary change on a member the rename didn't reach is listed",
+			refs: []Ref{override(1, pihole1, []string{"kids"}, nil), override(2, pihole2, []string{"kids"}, nil)},
+			from: "kids", to: "children",
+			renamed: func(s Scope) bool { return s == pihole2 },
+			changes: []change{{2, []string{}, false}},
+			checks:  []check{{1, CheckNotEvery}},
 		},
 		{
 			name: "references to other groups are untouched",

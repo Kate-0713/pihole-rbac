@@ -9,7 +9,9 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import { formatDateTime } from '#lib/format.js';
 	import { commentProblem, type PiholeGroup } from '#lib/pihole.js';
+	import type { TempChange } from '#lib/temp-changes.js';
 	import { failureMessage, reportResults } from '#lib/write-report.js';
 	import GroupPicker from './group-picker.svelte';
 
@@ -23,6 +25,7 @@
 		targetName,
 		groups,
 		client,
+		override = null,
 		onsaved
 	}: {
 		open: boolean;
@@ -30,6 +33,8 @@
 		targetName: string;
 		groups: PiholeGroup[];
 		client: PiholeClient | null;
+		// The client's active temporary change, if any: this dialog warns that its change is kept.
+		override?: TempChange | null;
 		onsaved: () => Promise<void> | void;
 	} = $props();
 
@@ -95,6 +100,14 @@
 			{#if error}
 				<Alert variant="destructive">
 					<AlertDescription>{error}</AlertDescription>
+				</Alert>
+			{/if}
+			{#if override}
+				<Alert>
+					<AlertDescription>
+						This client has a temporary change until {formatDateTime(override.ends_at)}. The groups you set here are kept
+						when it ends, except those the temporary change added or removed itself, which are put back as they were.
+					</AlertDescription>
 				</Alert>
 			{/if}
 			<div class="grid gap-2">

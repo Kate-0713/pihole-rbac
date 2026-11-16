@@ -13,6 +13,7 @@ import {
 	nextRun,
 	parseGroupList,
 	rulesProblem,
+	describeSkip,
 	runCounts,
 	scheduleProblem,
 	timeZones,
@@ -111,7 +112,7 @@ describe('describing runs', () => {
 			result({ failed: [{ client: 'x', comment: '', prefix: 'TEST-', code: 'pihole_rejected' }] }),
 			result({ status: 'skipped', code: 'pihole_unreachable' })
 		];
-		expect(runCounts(instances)).toEqual({ reset: 2, failed: 1, unchanged: 3, unread: 1, broken: 0 });
+		expect(runCounts(instances)).toEqual({ reset: 2, failed: 1, unchanged: 3, skipped: 0, unread: 1, broken: 0 });
 		expect(describeRun({ status: 'partial', instances })).toBe('2 clients reset, 1 failed, 1 instance not reached');
 	});
 
@@ -123,6 +124,23 @@ describe('describing runs', () => {
 		expect(describeRun({ status: 'ok', instances: [result({ problems }), result({ problems })] })).toBe("1 rule can't run");
 		expect(describeRun({ status: 'running', instances: [] })).toBe('Running…');
 		expect(describeRun({ status: 'failed', instances: [], error: 'interrupted: the app stopped during the run' })).toMatch(/^interrupted/);
+	});
+
+	it('says when a client with a temporary change was left alone', () => {
+		const skipped = [{ client: '10.0.0.5', reason: 'temporary_change_active' as const, override_id: 3 }];
+		expect(runCounts([result({ skipped, unchanged: 19 })]).skipped).toBe(1);
+		expect(describeRun({ status: 'ok', instances: [result({ skipped, unchanged: 19 })] })).toBe('1 client left alone (temporary change)');
+		const p = { target: 'i-1', target_name: 'pihole1', rules: 1 };
+		expect(describePreview({ ...p, instances: [result({ skipped, unchanged: 19 })] })).toBe(
+			'Nothing to reset: every matching client is already in its groups. 1 client with a temporary change would be left alone.'
+		);
+		expect(describePreview({ ...p, instances: [result({ skipped })] })).toBe(
+			'Nothing to reset: no other client matches. 1 client with a temporary change would be left alone.'
+		);
+		expect(describePreview({ ...p, instances: [result({ reset: [change], skipped })] })).toBe(
+			'Would reset 1 client on pihole1. 1 client with a temporary change would be left alone.'
+		);
+		expect(describeSkip('temporary_change_active')).toBe('has a temporary group change running');
 	});
 
 	it('describes a preview', () => {

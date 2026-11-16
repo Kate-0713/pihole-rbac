@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,19 @@ type InstanceResult struct {
 	Failed    []Failure     `json:"failed"`
 	Unchanged int           `json:"unchanged"`
 	Problems  []RuleProblem `json:"problems"`
+	// Skipped are matching clients left alone because they have an active temporary group change on this instance
+	// (since v2.6.0). They count as neither reset nor unchanged.
+	Skipped []Skipped `json:"skipped,omitempty"`
+}
+
+// SkipTemporaryChange is the reason for a client left alone because a temporary group change is active.
+const SkipTemporaryChange = "temporary_change_active"
+
+// Skipped is a matching client a run left alone.
+type Skipped struct {
+	Client     string `json:"client"`
+	Reason     string `json:"reason"`
+	OverrideID int64  `json:"override_id"`
 }
 
 // Summary is a run's summary column: what happened on each instance. Error says why a run that couldn't finish
@@ -232,6 +246,13 @@ func (s *Service) on(ctx context.Context, m member, rules []Rule, apply bool) In
 		if err != nil {
 			return err
 		}
+		if s.Overridden != nil {
+			held, err := s.Overridden(ctx, m.id)
+			if err != nil {
+				return err
+			}
+			clients, res.Skipped = leaveOverridden(rules, clients, held)
+		}
 		p := makePlan(rules, clients, groups)
 		res.Unchanged, res.Problems = p.unchanged, append(res.Problems, p.problems...)
 		res.Failed = append(res.Failed, p.failures...)
@@ -274,6 +295,25 @@ func (s *Service) on(ctx context.Context, m member, rules []Rule, apply bool) In
 		res.Status = StatusOK
 	}
 	return res
+}
+
+// leaveOverridden takes out of clients the ones a rule matches that have an active temporary group change (held:
+// client to override ID), so the run neither resets them nor counts them, and lists them as skipped.
+func leaveOverridden(rules []Rule, clients []piholeapi.ClientEntry, held map[string]int64) ([]piholeapi.ClientEntry, []Skipped) {
+	if len(held) == 0 {
+		return clients, nil
+	}
+	var skipped []Skipped
+	kept := make([]piholeapi.ClientEntry, 0, len(clients))
+	for _, c := range clients {
+		if id, ok := held[c.Client]; ok && ruleFor(rules, c.Comment) >= 0 {
+			skipped = append(skipped, Skipped{Client: c.Client, Reason: SkipTemporaryChange, OverrideID: id})
+			continue
+		}
+		kept = append(kept, c)
+	}
+	slices.SortFunc(skipped, func(a, b Skipped) int { return strings.Compare(a.Client, b.Client) })
+	return kept, skipped
 }
 
 // codeOf is an error's code for a result: a Pi-hole or instance code, or internal.
@@ -394,7 +434,7 @@ func (s *Service) entryFor(ctx context.Context, a rbac.Actor, run Run, r resolve
 	}
 	detail := map[string]any{
 		"run_id": run.ID, "trigger": string(run.Trigger), "summary": describeResult(res),
-		"reset": res.Reset, "failed": res.Failed, "unchanged": res.Unchanged,
+		"reset": res.Reset, "failed": res.Failed, "unchanged": res.Unchanged, "skipped": len(res.Skipped),
 	}
 	if len(res.Problems) > 0 {
 		detail["problems"] = res.Problems

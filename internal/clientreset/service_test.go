@@ -629,3 +629,57 @@ func TestRunsListing(t *testing.T) {
 		t.Errorf("runs of a deleted group %+v", onSite)
 	}
 }
+
+// A client with an active temporary group change is left alone, in a preview and in a run, and listed as skipped: it
+// counts as neither reset nor unchanged. Once its change is over, the next run treats it as usual.
+func TestRunSkipsTemporaryChanges(t *testing.T) {
+	e := newEnv(t)
+	_, _, kids := e.gammaSetup()
+	held := map[string]int64{"10.0.0.1": 77, "10.0.0.4": 78} // 10.0.0.4 matches no rule, so it isn't listed
+	e.svc.Overridden = func(_ context.Context, id int64) (map[string]int64, error) {
+		if id != e.ids["gamma"] {
+			t.Errorf("overrides asked for instance %d", id)
+		}
+		return held, nil
+	}
+	gamma := rbac.InstanceTarget(e.ids["gamma"])
+
+	pv, err := e.svc.Preview(e.ctx, gamma)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := pv.Instances[0]
+	if len(res.Reset) != 1 || res.Reset[0].Client != "10.0.0.3" || res.Unchanged != 1 ||
+		!slices.Equal(res.Skipped, []Skipped{{Client: "10.0.0.1", Reason: SkipTemporaryChange, OverrideID: 77}}) {
+		t.Fatalf("preview %+v", res)
+	}
+
+	run, err := e.svc.Run(e.ctx, e.runner, TriggerManual, gamma)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = run.Summary.Instances[0]
+	if run.Status != StatusOK || len(res.Reset) != 1 || len(res.Skipped) != 1 || res.Skipped[0].OverrideID != 77 {
+		t.Fatalf("run %+v", res)
+	}
+	if c := client(e.ph["gamma"], "10.0.0.1"); !slices.Equal(c.Groups, []int{kids}) {
+		t.Errorf("a client with a temporary change was reset: %+v", c)
+	}
+	rows := e.auditRows(audit.ActionClientReset)
+	if len(rows) != 1 || detailOf(t, rows[0])["skipped"] != 1.0 {
+		t.Errorf("audit %+v", rows)
+	}
+	runs, err := e.svc.Runs(e.ctx, "", 0, 10)
+	if err != nil || len(runs[0].Summary.Instances[0].Skipped) != 1 {
+		t.Errorf("the skip isn't kept in the run's summary: %+v %v", runs, err)
+	}
+
+	// Its change is over: the next run resets it.
+	held = map[string]int64{}
+	if _, err := e.svc.Run(e.ctx, e.runner, TriggerManual, gamma); err != nil {
+		t.Fatal(err)
+	}
+	if c := client(e.ph["gamma"], "10.0.0.1"); slices.Equal(c.Groups, []int{kids}) {
+		t.Errorf("the client was left alone after its change ended: %+v", c)
+	}
+}

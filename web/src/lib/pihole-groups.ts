@@ -55,7 +55,7 @@ function isReferences(x: unknown): x is GroupReferences {
 }
 
 export function referenceCount(refs: GroupReferences | null | undefined): number {
-	return refs ? refs.counts.client_reset_rules + refs.counts.protected_groups + (refs.counts.group_windows ?? 0) : 0;
+	return refs ? refs.counts.client_reset_rules + refs.counts.protected_groups + (refs.counts.group_windows ?? 0) + (refs.counts.client_overrides ?? 0) : 0;
 }
 
 // countText says how many references there are: "2 client reset rules, 1 protected group and 1 schedule".
@@ -65,6 +65,7 @@ export function countText(refs: GroupReferences): string {
 	if (refs.counts.client_reset_rules > 0) parts.push(n(refs.counts.client_reset_rules, 'client reset rule', 'client reset rules'));
 	if (refs.counts.protected_groups > 0) parts.push(n(refs.counts.protected_groups, 'protected group', 'protected groups'));
 	if ((refs.counts.group_windows ?? 0) > 0) parts.push(n(refs.counts.group_windows, 'schedule', 'schedules'));
+	if ((refs.counts.client_overrides ?? 0) > 0) parts.push(n(refs.counts.client_overrides, 'temporary client change', 'temporary client changes'));
 	return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
 }
 
@@ -80,6 +81,10 @@ export function describeReference(r: GroupReference): string {
 	if (r.kind === 'group_window') {
 		const how = r.schedule_kind === 'group_disabled' ? 'disables' : 'enables';
 		return `Schedule ${r.schedule_name ?? ''} on ${where}, ${how}: ${r.names[0] ?? ''}`;
+	}
+	if (r.kind === 'client_override') {
+		const was = (r.original_names ?? []).join(', ') || 'no groups';
+		return `Temporary change for ${r.client ?? ''} on ${where}: ${r.names.join(', ') || 'no groups'} (to return to: ${was})`;
 	}
 	const how = r.match === 'prefixes' ? 'prefixes' : 'groups';
 	return `Client reset rule ${r.comment_prefix ?? ''} on ${where}, ${how}: ${r.names.join(', ')}`;

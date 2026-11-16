@@ -5,6 +5,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import AuditRetentionCard from '#lib/components/app/audit-retention-card.svelte';
+	import ClientTempSettingsCard from '#lib/components/app/client-temp-settings-card.svelte';
 	import FileListsCard from '#lib/components/app/file-lists-card.svelte';
 	import GeneralSettingsCard from '#lib/components/app/general-settings-card.svelte';
 	import LocalDnsCard from '#lib/components/app/local-dns-card.svelte';
@@ -33,6 +34,7 @@
 		<FileListsCard settings={data.general} onsaved={() => invalidate(settingsKey)} />
 		<LocalDnsCard settings={data.general} onsaved={() => invalidate(settingsKey)} />
 		<SchedulesSettingsCard settings={data.general} onsaved={() => invalidate(settingsKey)} />
+		<ClientTempSettingsCard settings={data.general} onsaved={() => invalidate(settingsKey)} />
 		<p class="text-muted-foreground text-sm">
 			Login methods and the LDAP server are on the <a class="underline" href="/admin/ldap">LDAP</a> page.
 		</p>

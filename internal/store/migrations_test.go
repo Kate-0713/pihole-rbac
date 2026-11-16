@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/pressly/goose/v3"
@@ -363,4 +364,148 @@ func TestUpgradeFromV2_4_0(t *testing.T) {
 		t.Fatalf("up again: %v", err)
 	}
 	check("after migrating up again", map[int]int{1: 1, 10: 0})
+}
+
+// TestUpgradeFromV2_5_0: a database as v2.5.0 left it (version 7) gets the two temporary client change tables and no
+// permission changes. The checks refuse an override with no target, two targets, an end before its start, or an
+// unfinished status with a finish time. A client can have one active member row per instance, whatever the override,
+// and a settled row frees it. A member can't be pending while inactive or settled as ok while active. Deleting an
+// instance deletes its overrides, and an override's members go with it. Migrating down to 7 removes both tables, and
+// up again restores them.
+func TestUpgradeFromV2_5_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var grantsBefore int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants`).Scan(&grantsBefore); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO instances (id, name, base_url, created_at) VALUES (5, 'pihole1', 'https://pihole1', 1), (6, 'pihole2', 'https://pihole2', 1)`,
+		`INSERT INTO instance_groups (id, name, mode, primary_instance_id, created_at) VALUES (9, 'site', 'mirrored', 5, 1)`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	var grantsAfter int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants`).Scan(&grantsAfter); err != nil || grantsAfter != grantsBefore {
+		t.Errorf("the upgrade changed grants: %d before, %d after, %v", grantsBefore, grantsAfter, err)
+	}
+
+	const cols = `(instance_id, group_id, client, starts_at, ends_at, status, created_by, created_at, finished_at)`
+	insert := func(values string) error {
+		_, err := s.w.Exec(`INSERT INTO client_group_overrides ` + cols + ` VALUES ` + values)
+		return err
+	}
+	if err := insert(`(5, NULL, '10.0.0.5', 10, 20, 'active', 'admin', 1, NULL)`); err != nil {
+		t.Fatalf("an override on an instance: %v", err)
+	}
+	if err := insert(`(NULL, 9, '10.0.0.5', 10, 20, 'active', 'admin', 1, NULL)`); err != nil {
+		t.Fatalf("an override through a mirrored group: %v", err)
+	}
+	for name, values := range map[string]string{
+		"no target":                 `(NULL, NULL, 'a', 10, 20, 'active', 'admin', 1, NULL)`,
+		"two targets":               `(5, 9, 'a', 10, 20, 'active', 'admin', 1, NULL)`,
+		"ending at its start":       `(5, NULL, 'a', 10, 10, 'active', 'admin', 1, NULL)`,
+		"an empty client":           `(5, NULL, '', 10, 20, 'active', 'admin', 1, NULL)`,
+		"an unknown status":         `(5, NULL, 'a', 10, 20, 'paused', 'admin', 1, NULL)`,
+		"active with a finish time": `(5, NULL, 'a', 10, 20, 'active', 'admin', 1, 30)`,
+		"reverted with no finish":   `(5, NULL, 'a', 10, 20, 'reverted', 'admin', 1, NULL)`,
+	} {
+		if err := insert(values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if _, err := s.w.Exec(`UPDATE client_group_overrides SET ended_by = 'admin' WHERE id = 1`); err == nil {
+		t.Error("ended_by without ended_at: accepted")
+	}
+	if _, err := s.w.Exec(`INSERT INTO client_group_overrides (instance_id, client, starts_at, ends_at, reason, created_by, created_at)
+		VALUES (5, 'x', 1, 2, ?, 'a', 1)`, strings.Repeat("r", 201)); err == nil {
+		t.Error("a reason over 200 characters: accepted")
+	}
+
+	const mcols = `(override_id, instance_id, client, original_groups, override_groups, active, revert_status)`
+	member := func(values string) error {
+		_, err := s.w.Exec(`INSERT INTO client_group_override_members ` + mcols + ` VALUES ` + values)
+		return err
+	}
+	if err := member(`(1, 5, '10.0.0.5', '["Default","kids"]', '["Default"]', 1, 'pending')`); err != nil {
+		t.Fatalf("a member: %v", err)
+	}
+	// The same client on the same instance through the group's override: one active override per client per instance.
+	if err := member(`(2, 5, '10.0.0.5', '["Default"]', '["open"]', 1, 'pending')`); err == nil {
+		t.Error("a second active override for a client on an instance was accepted")
+	}
+	if err := member(`(2, 6, '10.0.0.5', '["Default"]', '["open"]', 1, 'pending')`); err != nil {
+		t.Errorf("the same client on another instance: %v", err)
+	}
+	if err := member(`(1, 5, '10.0.0.9', '[]', '[]', 1, 'pending')`); err == nil {
+		t.Error("two member rows for one override and instance were accepted")
+	}
+	for name, values := range map[string]string{
+		"original groups not an array": `(1, 6, '10.0.0.7', '{}', '[]', 1, 'pending')`,
+		"not JSON":                     `(1, 6, '10.0.0.7', '[]', 'x', 1, 'pending')`,
+		"settled ok but active":        `(1, 6, '10.0.0.7', '[]', '[]', 1, 'ok')`,
+		"given up but active":          `(1, 6, '10.0.0.7', '[]', '[]', 1, 'given_up')`,
+		"pending but inactive":         `(1, 6, '10.0.0.7', '[]', '[]', 0, 'pending')`,
+		"an unknown revert status":     `(1, 6, '10.0.0.7', '[]', '[]', 1, 'done')`,
+	} {
+		if err := member(values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if _, err := s.w.Exec(`UPDATE client_group_override_members SET active = 0, revert_status = 'ok' WHERE override_id = 1`); err != nil {
+		t.Fatalf("settling a member: %v", err)
+	}
+	if err := member(`(2, 5, '10.0.0.5', '["Default"]', '["open"]', 1, 'pending')`); err != nil {
+		t.Errorf("a settled member didn't free the client on its instance: %v", err)
+	}
+
+	// Deleting the mirrored group deletes the override made through it, and its members go with it. Deleting an
+	// instance does the same for the overrides made on it.
+	if _, err := s.w.Exec(`DELETE FROM instance_groups WHERE id = 9`); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.r.QueryRow(`SELECT count(*) FROM client_group_overrides WHERE id = 2`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("deleting the group left its override, %d, %v", n, err)
+	}
+	if err := s.r.QueryRow(`SELECT count(*) FROM client_group_override_members WHERE override_id = 2`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("deleting an override left %d members, %v", n, err)
+	}
+	if _, err := s.w.Exec(`DELETE FROM instances WHERE id = 5`); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"client_group_overrides", "client_group_override_members"} {
+		if err := s.r.QueryRow(`SELECT count(*) FROM ` + table + ` WHERE instance_id = 5`).Scan(&n); err != nil || n != 0 {
+			t.Errorf("deleting the instance left %d rows in %s, %v", n, table, err)
+		}
+	}
+
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 7); err != nil {
+		t.Fatalf("down to 7: %v", err)
+	}
+	if err := s.r.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name LIKE 'client_group_override%'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("migrating down left %d objects, %v", n, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if err := s.r.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('client_group_overrides', 'client_group_override_members', 'client_group_override_members_active')`).Scan(&n); err != nil || n != 3 {
+		t.Errorf("up again restored %d of 3 objects, %v", n, err)
+	}
 }

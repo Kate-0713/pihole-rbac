@@ -22,6 +22,37 @@ type AuditLog struct {
 	Ip           string
 }
 
+type ClientGroupOverride struct {
+	ID         int64
+	InstanceID sql.NullInt64
+	GroupID    sql.NullInt64
+	Client     string
+	StartsAt   int64
+	EndsAt     int64
+	Reason     string
+	Status     string
+	CreatedBy  string
+	CreatedAt  int64
+	EndedBy    sql.NullString
+	EndedAt    sql.NullInt64
+	FinishedAt sql.NullInt64
+}
+
+type ClientGroupOverrideMember struct {
+	ID             int64
+	OverrideID     int64
+	InstanceID     int64
+	Client         string
+	OriginalGroups string
+	OverrideGroups string
+	Active         int64
+	RevertStatus   string
+	RevertCode     sql.NullString
+	RevertDetails  string
+	Attempts       int64
+	RevertedAt     sql.NullInt64
+}
+
 type ClientResetRun struct {
 	ID         int64
 	StartedAt  int64

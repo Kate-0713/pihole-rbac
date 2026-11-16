@@ -1349,6 +1349,108 @@ export interface paths {
         patch: operations["updateClient"];
         trace?: never;
     };
+    "/api/v1/targets/{target}/clients/temporary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Temporary client group changes
+         * @description The target's active temporary changes, and those that finished in the last 30 days (at most 100), active first. For an instance, the active changes made through a mirrored group it belongs to are listed too, read-only, with `via`. Also gives the limits a start is checked against. Since v2.6.0.
+         */
+        get: operations["listTemporaryClientChanges"];
+        put?: never;
+        /**
+         * Move a client to other Pi-hole groups for a set time
+         * @description The body names the client and the Pi-hole groups by name, and how long (`duration_minutes`, or `ends_at`). The app records the client's groups on each instance, changes them, and puts them back when the time is up. Answers with a result per instance, as a client change does, plus the stored change. Members that failed aren't covered and aren't retried; end the change and start again to cover them. A client that already has an active change on any of the instances is a 409 (code conflict, with `details.override_id` and `details.instance`). Audited as client_temp_set, one row per instance. Since v2.6.0.
+         */
+        post: operations["startTemporaryClientChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/clients/temporary/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                /** @description The temporary client change's ID. 404 for one made on another target. */
+                id: components["parameters"]["TemporaryChangeID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Extend or shorten a temporary change
+         * @description Moves the end: later than now, and within the maximum measured from the change's start. A change that is over is a 409. Changes only the app's database. Audited as client_temp_update. Since v2.6.0.
+         */
+        patch: operations["updateTemporaryClientChange"];
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/clients/temporary/{id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                /** @description The temporary client change's ID. 404 for one made on another target. */
+                id: components["parameters"]["TemporaryChangeID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End a temporary change now
+         * @description Puts the client back before answering, with a result per instance. A member that can't be reached is retried by the app every 30 seconds, and the change stays active, shown as reverting, until it is. Audited as client_temp_end, one row per instance. Since v2.6.0.
+         */
+        post: operations["endTemporaryClientChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/clients/temporary/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                /** @description The temporary client change's ID. 404 for one made on another target. */
+                id: components["parameters"]["TemporaryChangeID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a revert the app gave up on
+         * @description Only for a change whose status is failed. Runs the revert again at once on the members that were given up after a week, with a result per instance. A member that fails again is given up on again. Audited as client_temp_end. Since v2.6.0.
+         */
+        post: operations["retryTemporaryClientChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/targets/{target}/groups": {
         parameters: {
             query?: never;
@@ -2765,6 +2867,10 @@ export interface components {
             localdns_reason_required?: boolean;
             /** @description The longest a schedule's Pi-hole group window can be, 5 minutes to 365 days (since v2.5.0). Lowering it leaves existing schedules running. Absent leaves it as it is. */
             schedule_group_window_max_minutes?: number;
+            /** @description The longest a temporary client group change can last from its start, 5 minutes to 365 days (since v2.6.0). Lowering it shortens nothing already running. Absent leaves it as it is. */
+            client_temp_max_minutes?: number;
+            /** @description Whether a temporary client group change needs a reason (since v2.6.0). Absent leaves it as it is. */
+            client_temp_reason_required?: boolean;
             /** @description Directory domains a local DNS name is checked against, besides the LDAP base DN's (since v2.4.0). Each follows the hostname rules; stored lowercased. Absent leaves them as they are. */
             localdns_extra_domains?: string[];
         };
@@ -2779,6 +2885,10 @@ export interface components {
         GeneralSettings: {
             /** @description The longest a schedule's group window can be; 1440 (a day) until saved. */
             schedule_group_window_max_minutes: number;
+            /** @description The longest a temporary client group change can last; 10080 (7 days) until saved. */
+            client_temp_max_minutes: number;
+            /** @description Whether a temporary client group change needs a reason; true until saved. */
+            client_temp_reason_required: boolean;
             /** @description Whether file: lists can be added; false until saved. */
             allow_file_lists: boolean;
             /** @description Whether a local DNS change needs a reason; true until saved. */
@@ -3384,13 +3494,15 @@ export interface components {
             protected_groups: number;
             /** @description Schedules whose group window names the group. */
             group_windows: number;
+            /** @description Active temporary client group changes that name the group, as a group the client was in or one the change put it in. Counted per instance a change covers. */
+            client_overrides: number;
         };
         PiholeGroupReference: {
             /**
-             * @description A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a schedule's group window (schedules.manage on the schedule's instance or group).
+             * @description A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage), a schedule's group window (schedules.manage on the schedule's instance or group) or an active temporary client change on one instance (clients.edit on that instance).
              * @enum {string}
              */
-            kind: "client_reset_rule" | "protected_group" | "group_window";
+            kind: "client_reset_rule" | "protected_group" | "group_window" | "client_override";
             /** @enum {string} */
             scope: "instance" | "group";
             /** Format: int64 */
@@ -3403,6 +3515,17 @@ export interface components {
              * @enum {string}
              */
             match?: "names" | "prefixes";
+            /** @description A temporary client change's client. */
+            client?: string;
+            /**
+             * Format: int64
+             * @description A temporary client change's ID.
+             */
+            override_id?: number;
+            /** @description A temporary client change's original groups, which the client returns to. For an updated reference, the value after the rename. `names` holds the groups the change put the client in. */
+            original_names?: string[];
+            /** @description For an updated temporary client change, its original groups before the rename. */
+            original_before?: string[];
             /** @description A group window's schedule. */
             schedule_name?: string;
             /**
@@ -3709,6 +3832,104 @@ export interface components {
             /** @description The group names the instance doesn't have, for pihole_group_missing. */
             missing?: string[];
         };
+        /** @description Names the client and the Pi-hole groups it is moved to, by name, and either how long or when it ends. The longest is the `client_temp_max_minutes` setting and the shortest 5 minutes. The reason is 1 to 200 characters when `client_temp_reason_required` is on. */
+        TemporaryClientStart: {
+            client: string;
+            /** @description Replaces the client's groups for the duration. Every instance must have a Pi-hole group of each name. */
+            groups: string[];
+            duration_minutes?: number;
+            /** Format: date-time */
+            ends_at?: string;
+            reason?: string;
+        };
+        TemporaryClientUpdate: {
+            /** Format: date-time */
+            ends_at: string;
+        };
+        /** @description One instance a change was made on, with the client's groups there by name. */
+        TemporaryClientMember: {
+            /** Format: int64 */
+            instance_id: number;
+            instance: string;
+            original_groups: string[];
+            override_groups: string[];
+            /**
+             * @description pending: not tried yet. failed or skipped: tried and failed (skipped when the instance couldn't be called), to be retried. ok: put back. given_up: a week of retries failed.
+             * @enum {string}
+             */
+            revert_status: "pending" | "ok" | "failed" | "skipped" | "given_up";
+            /** @description Why the latest revert failed or was skipped, such as not_found, or a Pi-hole error code. */
+            revert_code?: string;
+            /** @description Original groups that no longer exist on the Pi-hole, left out of the revert. */
+            missing_groups?: string[];
+            attempts: number;
+            /** Format: date-time */
+            reverted_at?: string;
+        };
+        TemporaryClientChange: {
+            /** Format: int64 */
+            id: number;
+            /** @description Where it was set, i-<id> or g-<id>. */
+            target: string;
+            target_name: string;
+            /** @description Set when the change is listed on an instance it was made on through a mirrored group, which is the one that can change or end it (g-<id>). */
+            via?: string;
+            client: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            reason: string;
+            /**
+             * @description active until every instance was put back. reverted: it ran its time. ended: a person ended it early. failed: an instance was given up on, or lost its client.
+             * @enum {string}
+             */
+            status: "active" | "reverted" | "ended" | "failed";
+            /** @description Active and past its end, so the app is putting the client back. */
+            overdue: boolean;
+            created_by: string;
+            ended_by?: string;
+            /** Format: date-time */
+            ended_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            members: components["schemas"]["TemporaryClientMember"][];
+        };
+        TemporaryClientChangeList: {
+            changes: components["schemas"]["TemporaryClientChange"][];
+            /** @description The longest a change can last from its start (the client_temp_max_minutes setting). */
+            max_minutes: number;
+            /** @description Whether a start needs a reason (the client_temp_reason_required setting). */
+            reason_required: boolean;
+        };
+        TemporaryClientWriteResult: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Present when ok and nothing needed sending: the client already had those groups. */
+            unchanged?: boolean;
+            /** @description Present when ok. The client's groups on the instance now, by name. */
+            groups?: string[];
+            /** @description On an end or retry, the original groups that no longer exist on the Pi-hole. */
+            missing_groups?: string[];
+        };
+        TemporaryClientWriteResults: {
+            results: components["schemas"]["TemporaryClientWriteResult"][];
+            change?: components["schemas"]["TemporaryClientChange"];
+        };
+        /** @description A matching client the run left alone. */
+        ClientResetSkipped: {
+            client: string;
+            /**
+             * @description The client has an active temporary group change on this instance.
+             * @enum {string}
+             */
+            reason: "temporary_change_active";
+            /** Format: int64 */
+            override_id: number;
+        };
         ClientResetInstanceResult: {
             /** Format: int64 */
             instance_id: number;
@@ -3727,6 +3948,8 @@ export interface components {
             failed: components["schemas"]["ClientResetFailure"][];
             /** @description Matching clients already in exactly their rule's groups. */
             unchanged: number;
+            /** @description Matching clients left alone because they have an active temporary group change on this instance (since v2.6.0). Counted as neither reset nor unchanged. Absent in runs from before. */
+            skipped?: components["schemas"]["ClientResetSkipped"][];
             problems: components["schemas"]["ClientResetProblem"][];
         };
         ClientResetPreview: {
@@ -3994,6 +4217,8 @@ export interface components {
         InstanceID: number;
         /** @description The instance group's ID. */
         GroupID: number;
+        /** @description The temporary client change's ID. 404 for one made on another target. */
+        TemporaryChangeID: number;
         /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
         Members: number[];
         /** @description The role's ID. */
@@ -6522,6 +6747,193 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["TargetUnavailable"];
             415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listTemporaryClientChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The changes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientChangeList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    startTemporaryClientChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemporaryClientStart"];
+            };
+        };
+        responses: {
+            /** @description Every instance took the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientWriteResults"];
+                };
+            };
+            /** @description Some instances took the change and some didn't. Only a mirrored group can answer this. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateTemporaryClientChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                /** @description The temporary client change's ID. 404 for one made on another target. */
+                id: components["parameters"]["TemporaryChangeID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemporaryClientUpdate"];
+            };
+        };
+        responses: {
+            /** @description The change as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientChange"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    endTemporaryClientChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                /** @description The temporary client change's ID. 404 for one made on another target. */
+                id: components["parameters"]["TemporaryChangeID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every instance was put back. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientWriteResults"];
+                };
+            };
+            /** @description Some instances were put back and some weren't yet. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientWriteResults"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    retryTemporaryClientChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+                /** @description The temporary client change's ID. 404 for one made on another target. */
+                id: components["parameters"]["TemporaryChangeID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every instance was put back. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientWriteResults"];
+                };
+            };
+            /** @description Some instances were put back and some weren't. */
+            207: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryClientWriteResults"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             502: components["responses"]["TargetPiholeFailed"];
             503: components["responses"]["SetupRequired"];
         };

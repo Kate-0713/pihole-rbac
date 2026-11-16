@@ -4,7 +4,7 @@
 -->
 <script lang="ts">
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { describeCode, instanceStatusLabel, type InstanceResult } from '#lib/clientreset.js';
+	import { describeCode, describeSkip, instanceStatusLabel, type InstanceResult } from '#lib/clientreset.js';
 
 	// Each instance's part of a client reset run, or of a preview (`preview` changes the words: "would reset"). Client
 	// comments come from the Pi-holes, so they're only ever shown as text.
@@ -49,6 +49,17 @@
 						{/each}
 					</ul>
 				{/if}
+				{#if i.skipped?.length}
+					<p class="text-muted-foreground text-xs">Left alone:</p>
+					<ul class="grid gap-0.5">
+						{#each i.skipped as s (s.client)}
+							<li class="flex flex-wrap gap-x-2 text-xs">
+								<span class="font-mono">{s.client}</span>
+								<span>{describeSkip(s.reason)}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				{#each i.problems as p (p.prefix)}
 					<p class="text-xs text-amber-700 dark:text-amber-400">
 						Rule "{p.prefix}": {describeCode(p.code)}{p.missing?.length ? ` (missing ${p.missing.join(', ')})` : ''}.
@@ -60,7 +71,7 @@
 							? 'its'
 							: 'their'} groups.
 					</p>
-				{:else if i.reset.length === 0 && i.failed.length === 0 && i.problems.length === 0}
+				{:else if i.reset.length === 0 && i.failed.length === 0 && i.problems.length === 0 && !i.skipped?.length}
 					<p class="text-muted-foreground text-xs">No client matches a rule here.</p>
 				{/if}
 			{/if}

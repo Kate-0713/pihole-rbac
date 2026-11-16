@@ -368,6 +368,10 @@ func (s *Service) DeleteGroup(ctx context.Context, a rbac.Actor, id int64) error
 		if err != nil {
 			return err
 		}
+		overrides, err := t.q.ListActiveOverridesOnGroup(t.ctx, ref)
+		if err != nil {
+			return err
+		}
 		var uses []string
 		if len(roles) > 0 {
 			uses = append(uses, plural(len(roles), "role")+" "+quoteJoin(roles))
@@ -375,11 +379,19 @@ func (s *Service) DeleteGroup(ctx context.Context, a rbac.Actor, id int64) error
 		if resets > 0 {
 			uses = append(uses, plural(int(resets), "client reset target"))
 		}
+		var oids []int64
+		var onames []string
+		for _, o := range overrides {
+			oids, onames = append(oids, o.ID), append(onames, o.Client)
+		}
+		if len(overrides) > 0 {
+			uses = append(uses, plural(len(overrides), "active temporary client change"))
+		}
 		if len(uses) > 0 {
 			return &rbac.Error{
 				Code:    rbac.CodeConflict,
 				Message: fmt.Sprintf("%s is still used by %s. Remove it from them first.", g.Name, strings.Join(uses, "; ")),
-				Details: map[string]any{"roles": roles, "client_reset_targets": resets},
+				Details: map[string]any{"roles": roles, "client_reset_targets": resets, "client_overrides": overrideRefs(oids, onames)},
 			}
 		}
 		if err := t.q.DeleteInstanceGroup(t.ctx, id); err != nil {

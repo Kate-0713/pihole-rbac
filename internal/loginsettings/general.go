@@ -15,6 +15,7 @@ import (
 	_ "time/tzdata" // the schedule's time zone must load on a host without zone files, such as the distroless image
 
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/clientoverrides"
 	"github.com/Kate-0713/pihole-rbac/internal/localdns"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/schedules"
@@ -48,6 +49,12 @@ type General struct {
 	// ScheduleGroupWindowMaxMinutes is the longest a schedule's Pi-hole group window can be. Rows saved before the
 	// setting existed have none, which loads as a day. On a save, nil keeps it as it is.
 	ScheduleGroupWindowMaxMinutes *int `json:"schedule_group_window_max_minutes,omitempty"`
+	// ClientTempMaxMinutes is the longest a temporary client group change can last, from its start. Rows saved before
+	// the setting existed have none, which loads as 7 days. On a save, nil keeps it as it is.
+	ClientTempMaxMinutes *int `json:"client_temp_max_minutes,omitempty"`
+	// ClientTempReasonRequired says whether starting a temporary client group change needs a reason. Rows saved before
+	// the setting existed have none, which loads as on. On a save, nil keeps it as it is.
+	ClientTempReasonRequired *bool `json:"client_temp_reason_required,omitempty"`
 }
 
 // ResetSchedule is when client reset runs by itself: daily at Time ("HH:MM", 24-hour) in TimeZone (an IANA name),
@@ -123,6 +130,10 @@ func (g General) Validate() error {
 		return validation("schedule_group_window_max_minutes", "A group window can be limited to %d minutes to %d days.",
 			schedules.MinGroupWindowMinutes, schedules.MaxGroupWindowMinutes/(24*60))
 	}
+	if m := g.ClientTempMaxMinutes; m != nil && !clientoverrides.CheckMax(*m) {
+		return validation("client_temp_max_minutes", "A temporary client change can be limited to %d minutes to %d days.",
+			clientoverrides.MinMinutes, clientoverrides.MaxMinutes/(24*60))
+	}
 	if g.LocalDNSExtraDomains != nil {
 		if _, err := localdns.CheckExtraDomains(*g.LocalDNSExtraDomains); err != nil {
 			var fe *localdns.FieldError
@@ -181,6 +192,11 @@ func (s *Service) loadGeneral(ctx context.Context, q *db.Queries) error {
 	if g.ScheduleGroupWindowMaxMinutes != nil {
 		s.groupWindowMax = *g.ScheduleGroupWindowMaxMinutes
 	}
+	s.clientTempMax = 0
+	if g.ClientTempMaxMinutes != nil {
+		s.clientTempMax = *g.ClientTempMaxMinutes
+	}
+	s.clientTempReasonOptional = g.ClientTempReasonRequired != nil && !*g.ClientTempReasonRequired
 	s.extraDomains = nil
 	if g.LocalDNSExtraDomains != nil {
 		s.extraDomains, _ = localdns.CheckExtraDomains(*g.LocalDNSExtraDomains) // checked by Validate
@@ -210,6 +226,22 @@ func (s *Service) ScheduleLimits() schedules.Limits {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return schedules.Limits{MaxGroupWindow: time.Duration(s.groupWindowMaxMinutes()) * time.Minute}
+}
+
+// ClientOverrideLimits returns the limits a temporary client group change is checked against: the maximum duration
+// (saved or default, 7 days) and whether a reason is required (saved or default, yes).
+func (s *Service) ClientOverrideLimits() clientoverrides.Limits {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return clientoverrides.Limits{Max: time.Duration(s.clientTempMaxMinutes()) * time.Minute, ReasonRequired: !s.clientTempReasonOptional}
+}
+
+// clientTempMaxMinutes is the saved maximum for temporary client changes, or the default. s.mu must be held.
+func (s *Service) clientTempMaxMinutes() int {
+	if s.clientTempMax == 0 {
+		return clientoverrides.DefaultMinutes
+	}
+	return s.clientTempMax
 }
 
 // groupWindowMaxMinutes is the saved group window maximum, or the default. s.mu must be held.
@@ -280,12 +312,14 @@ func (s *Service) General() GeneralView {
 		extra = []string{}
 	}
 	groupWindowMax := s.groupWindowMaxMinutes()
+	clientTempMax, clientTempReason := s.clientTempMaxMinutes(), !s.clientTempReasonOptional
 	return GeneralView{
 		General: General{
 			SessionLifetimeMinutes: int(lifetime / time.Minute), IdleTimeoutMinutes: int(idle / time.Minute),
 			AuditRetentionDays: retention, ClientReset: &schedule, AllowFileLists: &allowFile,
 			LocalDNSReasonRequired: &reasonRequired, LocalDNSExtraDomains: &extra,
 			ScheduleGroupWindowMaxMinutes: &groupWindowMax,
+			ClientTempMaxMinutes:          &clientTempMax, ClientTempReasonRequired: &clientTempReason,
 		},
 		UpdatedAt: s.generalAt, UpdatedBy: s.generalBy,
 	}
@@ -351,6 +385,22 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	if *before.ScheduleGroupWindowMaxMinutes != groupWindowMax {
 		changed = append(changed, "schedule_group_window_max_minutes")
 	}
+	if g.ClientTempMaxMinutes == nil {
+		g.ClientTempMaxMinutes = before.ClientTempMaxMinutes // likewise
+	}
+	clientTempMax := *g.ClientTempMaxMinutes
+	g.ClientTempMaxMinutes = &clientTempMax
+	if *before.ClientTempMaxMinutes != clientTempMax {
+		changed = append(changed, "client_temp_max_minutes")
+	}
+	if g.ClientTempReasonRequired == nil {
+		g.ClientTempReasonRequired = before.ClientTempReasonRequired // likewise
+	}
+	clientTempReason := *g.ClientTempReasonRequired
+	g.ClientTempReasonRequired = &clientTempReason
+	if *before.ClientTempReasonRequired != clientTempReason {
+		changed = append(changed, "client_temp_reason_required")
+	}
 	if len(changed) == 0 {
 		return nil
 	}
@@ -366,6 +416,8 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 		t.entry.Detail["localdns_reason_required"] = reasonRequired
 		t.entry.Detail["localdns_extra_domains"] = extra
 		t.entry.Detail["schedule_group_window_max_minutes"] = groupWindowMax
+		t.entry.Detail["client_temp_max_minutes"] = clientTempMax
+		t.entry.Detail["client_temp_reason_required"] = clientTempReason
 		value, err := json.Marshal(g)
 		if err != nil {
 			return err
@@ -385,6 +437,8 @@ func (s *Service) SaveGeneral(ctx context.Context, a rbac.Actor, g General) erro
 	s.reasonOptional = !reasonRequired
 	s.extraDomains = extra
 	s.groupWindowMax = groupWindowMax
+	s.clientTempMax = clientTempMax
+	s.clientTempReasonOptional = !clientTempReason
 	if s.Sessions != nil {
 		s.Sessions.SetLifetimes(g.durations())
 	}

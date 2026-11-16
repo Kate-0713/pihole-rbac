@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package piholegroups finds and updates the app's references to Pi-hole groups, which are by name: client reset
-// rules (exact names, or name prefixes), protected groups and schedules' group windows. Renaming or deleting a Pi-hole group would silently
+// rules (exact names, or name prefixes), protected groups, schedules' group windows and the groups of active temporary
+// client changes. Renaming or deleting a Pi-hole group would silently
 // break them, so a rename or delete lists them first, and a rename updates the exact names where the old name is
 // really gone.
 package piholegroups
@@ -25,6 +26,7 @@ const (
 	KindResetRule Kind = "client_reset_rule" // client_reset_targets
 	KindProtected Kind = "protected_group"   // notification_protected_groups
 	KindWindow    Kind = "group_window"      // schedules with a group kind
+	KindOverride  Kind = "client_override"   // client_group_override_members that are still active
 )
 
 // Match modes of a client reset rule, as stored.
@@ -65,9 +67,18 @@ type Ref struct {
 	// A group window: the schedule's name and kind (group_enabled or group_disabled).
 	Schedule     string
 	ScheduleKind string
+
+	// An active temporary client change on one member: the client, the groups it was in and the groups the override
+	// put it in, both matched exactly, the override's ID, and the instance or mirrored group it was made through. ID
+	// is the member's row.
+	Client     string
+	Original   []string
+	Override   []string
+	OverrideID int64
+	TargetName string
 }
 
-// Load reads every reference: every client reset rule, protected group and group window.
+// Load reads every reference: every client reset rule, protected group, group window and active temporary change.
 func Load(ctx context.Context, q *db.Queries) ([]Ref, error) {
 	rules, err := q.ListClientResetRules(ctx)
 	if err != nil {
@@ -81,7 +92,11 @@ func Load(ctx context.Context, q *db.Queries) ([]Ref, error) {
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]Ref, 0, len(rules)+len(protected)+len(schedules))
+	members, err := q.ListActiveOverrideMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]Ref, 0, len(rules)+len(protected)+len(schedules)+len(members))
 	for _, r := range rules {
 		var groups []string
 		if err := json.Unmarshal([]byte(r.TargetGroups), &groups); err != nil {
@@ -107,6 +122,19 @@ func Load(ctx context.Context, q *db.Queries) ([]Ref, error) {
 			ScopeName: w.InstanceName + w.GroupName, Name: w.PiholeGroup.String, Schedule: w.Name, ScheduleKind: w.Kind,
 		})
 	}
+	for _, m := range members {
+		var original, override []string
+		if err := json.Unmarshal([]byte(m.OriginalGroups), &original); err != nil {
+			return nil, fmt.Errorf("temporary change %d on %s: %w", m.OverrideID, m.InstanceName, err)
+		}
+		if err := json.Unmarshal([]byte(m.OverrideGroups), &override); err != nil {
+			return nil, fmt.Errorf("temporary change %d on %s: %w", m.OverrideID, m.InstanceName, err)
+		}
+		refs = append(refs, Ref{
+			Kind: KindOverride, ID: m.ID, Scope: Scope{InstanceID: m.InstanceID}, ScopeName: m.InstanceName,
+			Client: m.Client, Original: original, Override: override, OverrideID: m.OverrideID, TargetName: m.TargetName,
+		})
+	}
 	return refs, nil
 }
 
@@ -117,6 +145,8 @@ func (r Ref) refersTo(name string) bool {
 	switch {
 	case r.Kind == KindWindow:
 		return r.Name == name
+	case r.Kind == KindOverride:
+		return slices.Contains(r.Original, name) || slices.Contains(r.Override, name)
 	case r.Kind == KindProtected:
 		return strings.EqualFold(r.Name, name)
 	case r.Match == MatchPrefixes:
@@ -142,6 +172,8 @@ type Counts struct {
 	ResetRules   int `json:"client_reset_rules"`
 	Protected    int `json:"protected_groups"`
 	GroupWindows int `json:"group_windows"`
+	// ClientOverrides counts the members of active temporary client changes.
+	ClientOverrides int `json:"client_overrides"`
 }
 
 // Count counts refs by kind.
@@ -155,6 +187,8 @@ func Count(refs []Ref) Counts {
 			c.Protected++
 		case KindWindow:
 			c.GroupWindows++
+		case KindOverride:
+			c.ClientOverrides++
 		}
 	}
 	return c
@@ -174,6 +208,9 @@ type Change struct {
 	Before  []string
 	After   []string
 	Dropped bool
+	// A temporary client change: Before and After are its override groups, and these its original groups.
+	BeforeOriginal []string
+	AfterOriginal  []string
 }
 
 // Check is a reference a rename leaves alone for someone to look at.
@@ -224,6 +261,13 @@ func PlanRename(refs []Ref, from, to string, where Renamed) Plan {
 			p.Changes = append(p.Changes, Change{Ref: r, Before: []string{r.Name}, After: []string{to}})
 			continue
 		}
+		if r.Kind == KindOverride {
+			p.Changes = append(p.Changes, Change{
+				Ref: r, Before: r.Override, After: renameIn(r.Override, from, to),
+				BeforeOriginal: r.Original, AfterOriginal: renameIn(r.Original, from, to),
+			})
+			continue
+		}
 		// Another group left on the scope that the entry also matches (Kids renamed while kids remains) keeps it.
 		if slices.ContainsFunc(where.Left(r.Scope), func(n string) bool { return n != to && strings.EqualFold(n, r.Name) }) {
 			p.Checks = append(p.Checks, Check{r, CheckStillInUse})
@@ -263,6 +307,15 @@ func Apply(ctx context.Context, q *db.Queries, p Plan) error {
 			var b []byte
 			if b, err = json.Marshal(c.After); err == nil {
 				err = q.UpdateClientResetRuleGroups(ctx, db.UpdateClientResetRuleGroupsParams{TargetGroups: string(b), ID: c.Ref.ID})
+			}
+		case c.Ref.Kind == KindOverride:
+			var original, override []byte
+			if original, err = json.Marshal(c.AfterOriginal); err == nil {
+				if override, err = json.Marshal(c.After); err == nil {
+					err = q.UpdateOverrideMemberGroups(ctx, db.UpdateOverrideMemberGroupsParams{
+						OriginalGroups: string(original), OverrideGroups: string(override), ID: c.Ref.ID,
+					})
+				}
 			}
 		case c.Ref.Kind == KindWindow:
 			err = q.RenameScheduleGroup(ctx, db.RenameScheduleGroupParams{PiholeGroup: sql.NullString{String: c.After[0], Valid: true}, ID: c.Ref.ID})

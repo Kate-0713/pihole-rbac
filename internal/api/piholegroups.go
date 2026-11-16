@@ -121,11 +121,12 @@ func refsIn(refs []piholegroups.Ref, scopes []piholegroups.Scope) []piholegroups
 }
 
 // refView decides which references the caller may see in full: client reset rules with settings.manage, protected
-// groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group. Counts
-// are always shown.
+// groups with notifications.manage, group windows with schedules.manage on the schedule's instance or group, and
+// temporary client changes with clients.edit on the instance. Counts are always shown.
 type refView struct {
 	rules, protected bool
 	windows          func(piholegroups.Scope) bool
+	overrides        func(piholegroups.Scope) bool
 }
 
 func (s *Server) refView(ctx context.Context) (refView, error) {
@@ -142,6 +143,7 @@ func (s *Server) refView(ctx context.Context) (refView, error) {
 			}
 			return set.Can(rbac.SchedulesManage, t)
 		},
+		overrides: func(sc piholegroups.Scope) bool { return set.Can(rbac.ClientsEdit, rbac.InstanceTarget(sc.InstanceID)) },
 	}, nil
 }
 
@@ -151,6 +153,8 @@ func (v refView) shows(r piholegroups.Ref) bool {
 		return v.rules
 	case piholegroups.KindWindow:
 		return v.windows != nil && v.windows(r.Scope)
+	case piholegroups.KindOverride:
+		return v.overrides != nil && v.overrides(r.Scope)
 	}
 	return v.protected
 }
@@ -171,6 +175,11 @@ func refJSON(r piholegroups.Ref) gen.PiholeGroupReference {
 	case piholegroups.KindWindow:
 		name, kind := r.Schedule, gen.PiholeGroupReferenceScheduleKind(r.ScheduleKind)
 		out.ScheduleName, out.ScheduleKind, out.Names = &name, &kind, []string{r.Name}
+	case piholegroups.KindOverride:
+		client, id := r.Client, r.OverrideID
+		original := slices.Clone(r.Original)
+		out.Client, out.OverrideId, out.OriginalNames = &client, &id, &original
+		out.Names = slices.Clone(r.Override)
 	default:
 		out.Names = []string{r.Name}
 	}
@@ -181,7 +190,7 @@ func refJSON(r piholegroups.Ref) gen.PiholeGroupReference {
 func (v refView) list(refs []piholegroups.Ref, each func(i int, r *gen.PiholeGroupReference)) gen.PiholeGroupReferences {
 	c := piholegroups.Count(refs)
 	out := gen.PiholeGroupReferences{
-		Counts: gen.PiholeGroupReferenceCounts{ClientResetRules: c.ResetRules, ProtectedGroups: c.Protected, GroupWindows: c.GroupWindows},
+		Counts: gen.PiholeGroupReferenceCounts{ClientResetRules: c.ResetRules, ProtectedGroups: c.Protected, GroupWindows: c.GroupWindows, ClientOverrides: c.ClientOverrides},
 		Items:  []gen.PiholeGroupReference{},
 	}
 	for i, r := range refs {
@@ -205,6 +214,8 @@ func refDetail(r piholegroups.Ref) map[string]any {
 		d["comment_prefix"], d["match"], d["names"] = r.Prefix, r.Match, r.Groups
 	case piholegroups.KindWindow:
 		d["schedule_id"], d["schedule_name"], d["schedule_kind"], d["names"] = r.ID, r.Schedule, r.ScheduleKind, []string{r.Name}
+	case piholegroups.KindOverride:
+		d["override_id"], d["client"], d["target_name"], d["original_names"], d["names"] = r.OverrideID, r.Client, r.TargetName, r.Original, r.Override
 	default:
 		d["names"] = []string{r.Name}
 	}
@@ -545,6 +556,9 @@ func (s *Server) renameRefs(ctx context.Context, full, tg target, outs []outcome
 		if e := rowFor(c.Ref.Scope); e != nil {
 			d := refDetail(c.Ref)
 			d["before"], d["names"], d["dropped"] = c.Before, c.After, c.Dropped
+			if c.Ref.Kind == piholegroups.KindOverride {
+				d["original_before"], d["original_names"] = c.BeforeOriginal, c.AfterOriginal
+			}
 			e.Detail["references_updated"] = append(anyList(e.Detail["references_updated"]), d)
 		}
 	}
@@ -565,6 +579,10 @@ func (s *Server) renameRefs(ctx context.Context, full, tg target, outs []outcome
 		c := plan.Changes[i]
 		before := slices.Clone(c.Before)
 		r.Before, r.Names = &before, slices.Clone(c.After)
+		if c.Ref.Kind == piholegroups.KindOverride {
+			originalBefore, originalAfter := slices.Clone(c.BeforeOriginal), slices.Clone(c.AfterOriginal)
+			r.OriginalBefore, r.OriginalNames = &originalBefore, &originalAfter
+		}
 		if c.Dropped {
 			dropped := true
 			r.Dropped = &dropped

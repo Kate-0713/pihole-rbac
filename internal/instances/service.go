@@ -740,6 +740,10 @@ func (t *txn) checkUnused(inst Instance) error {
 	if err != nil {
 		return err
 	}
+	overrides, err := t.q.ListActiveOverridesBlockingInstance(t.ctx, db.ListActiveOverridesBlockingInstanceParams{InstanceID: ref, InstanceID_2: inst.ID})
+	if err != nil {
+		return err
+	}
 	var uses []string
 	if len(roles) > 0 {
 		uses = append(uses, plural(len(roles), "role")+" "+quoteJoin(roles))
@@ -750,14 +754,31 @@ func (t *txn) checkUnused(inst Instance) error {
 	if resets > 0 {
 		uses = append(uses, plural(int(resets), "client reset target"))
 	}
+	if len(overrides) > 0 {
+		uses = append(uses, plural(len(overrides), "active temporary client change"))
+	}
+	var ids []int64
+	var names []string
+	for _, o := range overrides {
+		ids, names = append(ids, o.ID), append(names, o.Client)
+	}
 	if len(uses) == 0 {
 		return nil
 	}
 	return &rbac.Error{
 		Code:    rbac.CodeConflict,
 		Message: fmt.Sprintf("%s is still used by %s. Remove it from them first.", inst.Name, strings.Join(uses, "; ")),
-		Details: map[string]any{"roles": roles, "groups": groups, "client_reset_targets": resets},
+		Details: map[string]any{"roles": roles, "groups": groups, "client_reset_targets": resets, "client_overrides": overrideRefs(ids, names)},
 	}
+}
+
+// overrideRefs lists active temporary client changes for a refusal, as their IDs and clients.
+func overrideRefs(ids []int64, clients []string) []map[string]any {
+	out := make([]map[string]any, len(ids))
+	for i := range ids {
+		out[i] = map[string]any{"id": ids[i], "client": clients[i]}
+	}
+	return out
 }
 
 func plural(n int, noun string) string {

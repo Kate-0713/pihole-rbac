@@ -18,6 +18,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
+	"github.com/Kate-0713/pihole-rbac/internal/clientoverrides"
 	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
@@ -211,8 +212,21 @@ func serve() error {
 
 	// Client reset. A run the app was in the middle of when it last stopped is marked failed first, since only one
 	// run can be in progress at a time and nothing is running that one any more.
+	// Temporary client group changes come first: client reset leaves the clients they hold alone.
+	overrideService := &clientoverrides.Service{
+		Store: st, Audit: auditLog, Instances: instanceService, Limits: login.ClientOverrideLimits, Logger: logger,
+		ProtectedAdded: func(ctx context.Context, instanceID int64, before, after []string) []string {
+			protected, err := channels.ProtectedFor(ctx, instanceID)
+			if err != nil {
+				logger.Error("reading protected groups", "instance", instanceID, "err", err)
+				return nil
+			}
+			return notifications.ProtectedAdded(before, after, protected)
+		},
+	}
 	resets := &clientreset.Service{
 		Store: st, Audit: auditLog, Instances: instanceService, Protected: channels.ProtectedFor, Logger: logger,
+		Overridden: overrideService.ActiveClients,
 	}
 	if _, err := resets.FailInterrupted(ctx); err != nil {
 		return err
@@ -236,25 +250,26 @@ func serve() error {
 	go updateService.Run(ctx)
 
 	server := api.New(api.Options{
-		Store:          st,
-		Sessions:       sessions,
-		Auth:           login.Authenticator(),
-		LoginSettings:  login,
-		Notifications:  channels,
-		ClientReset:    resets,
-		Schedules:      scheduleService,
-		Updates:        updateService,
-		Audit:          auditLog,
-		Secrets:        sec,
-		Instances:      instanceService,
-		Drift:          drift,
-		Roles:          &rbac.Manager{Store: st, Audit: auditLog},
-		TrustedProxies: cfg.TrustedProxies,
-		LoginByIP:      byIP,
-		LoginByUser:    byUser,
-		Frontend:       frontend,
-		Logger:         logger,
-		Restart:        stop, // the same clean shutdown as SIGTERM; systemd or Docker starts the app again
+		Store:           st,
+		Sessions:        sessions,
+		Auth:            login.Authenticator(),
+		LoginSettings:   login,
+		Notifications:   channels,
+		ClientReset:     resets,
+		Schedules:       scheduleService,
+		ClientOverrides: overrideService,
+		Updates:         updateService,
+		Audit:           auditLog,
+		Secrets:         sec,
+		Instances:       instanceService,
+		Drift:           drift,
+		Roles:           &rbac.Manager{Store: st, Audit: auditLog},
+		TrustedProxies:  cfg.TrustedProxies,
+		LoginByIP:       byIP,
+		LoginByUser:     byUser,
+		Frontend:        frontend,
+		Logger:          logger,
+		Restart:         stop, // the same clean shutdown as SIGTERM; systemd or Docker starts the app again
 	})
 	go pruneSessions(ctx, sessions, logger)
 	// Audit rows older than the retention go at startup, daily, and soon after the retention is changed.
@@ -267,6 +282,9 @@ func serve() error {
 	}}
 	go scheduler.Run(ctx)
 	go (&schedules.Scheduler{Service: scheduleService}).Run(ctx)
+	// Temporary client group changes are put back when their time is up: at once for any that ended while the app
+	// was stopped, then every 30 seconds, with the ones that failed retried each time.
+	go (&clientoverrides.Scheduler{Service: overrideService}).Run(ctx)
 	rechecker := &auth.Rechecker{
 		Store:     st,
 		Audit:     auditLog,

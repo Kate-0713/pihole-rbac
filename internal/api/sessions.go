@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"github.com/Kate-0713/pihole-rbac/internal/clientoverrides"
 	"regexp"
 	"strconv"
 	"strings"
@@ -174,6 +175,8 @@ func (s *Server) SetGeneralSettings(ctx context.Context, req gen.SetGeneralSetti
 	g.LocalDNSReasonRequired = req.Body.LocaldnsReasonRequired
 	g.LocalDNSExtraDomains = req.Body.LocaldnsExtraDomains
 	g.ScheduleGroupWindowMaxMinutes = req.Body.ScheduleGroupWindowMaxMinutes
+	g.ClientTempMaxMinutes = req.Body.ClientTempMaxMinutes
+	g.ClientTempReasonRequired = req.Body.ClientTempReasonRequired
 	if err := s.LoginSettings.SaveGeneral(ctx, actor(ctx), g); err != nil {
 		return nil, err
 	}
@@ -194,6 +197,11 @@ func generalJSON(v loginsettings.GeneralView) gen.GeneralSettings {
 	if v.ScheduleGroupWindowMaxMinutes != nil {
 		out.ScheduleGroupWindowMaxMinutes = *v.ScheduleGroupWindowMaxMinutes
 	}
+	out.ClientTempMaxMinutes = clientoverrides.DefaultMinutes
+	if v.ClientTempMaxMinutes != nil {
+		out.ClientTempMaxMinutes = *v.ClientTempMaxMinutes
+	}
+	out.ClientTempReasonRequired = v.ClientTempReasonRequired == nil || *v.ClientTempReasonRequired
 	if r := v.ClientReset; r != nil {
 		out.ClientResetSchedule = gen.ClientResetSchedule{Enabled: r.Enabled, Time: r.Time, TimeZone: r.TimeZone}
 	}

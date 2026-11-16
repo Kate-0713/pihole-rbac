@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -172,6 +173,73 @@ func TestPruneClientResetRuns(t *testing.T) {
 	}
 	rows := rowsOf(t, st)
 	if len(rows) != 1 || !strings.Contains(rows[0].Detail, `"client_reset_runs_deleted":2`) || !strings.Contains(rows[0].Detail, `"deleted":0`) {
+		t.Errorf("prune rows %+v", rows)
+	}
+}
+
+// Finished temporary client changes are pruned with the audit log, with their members; an active one never is.
+func TestPruneClientOverrides(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	var instance int64
+	if err := st.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		instance, err = q.CreateInstance(ctx, db.CreateInstanceParams{Name: "p1", BaseUrl: "https://p1", TlsMode: "verify", CreatedAt: 1})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	add := func(client string, ends time.Time, status string) {
+		t.Helper()
+		if err := st.WithTx(ctx, func(q *db.Queries) error {
+			id, err := q.CreateClientOverride(ctx, db.CreateClientOverrideParams{InstanceID: sql.NullInt64{Int64: instance, Valid: true},
+				Client: client, StartsAt: store.Millis(ends) - 1000, EndsAt: store.Millis(ends), CreatedBy: "alice", CreatedAt: 1})
+			if err != nil {
+				return err
+			}
+			mid, err := q.CreateClientOverrideMember(ctx, db.CreateClientOverrideMemberParams{OverrideID: id, InstanceID: instance,
+				Client: client, OriginalGroups: "[]", OverrideGroups: "[]"})
+			if err != nil || status == "active" {
+				return err
+			}
+			if err := q.SettleOverrideMember(ctx, db.SettleOverrideMemberParams{ID: mid, Active: 0, RevertStatus: "ok", RevertDetails: "{}"}); err != nil {
+				return err
+			}
+			return q.FinishClientOverride(ctx, db.FinishClientOverrideParams{Status: status, FinishedAt: sql.NullInt64{Int64: store.Millis(ends), Valid: true}, ID: id})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("old", now.Add(-400*24*time.Hour), "reverted")
+	add("recent", now.Add(-24*time.Hour), "ended")
+	add("running", now.Add(-500*24*time.Hour), "active") // ends long ago but still being put back: never pruned
+	l, _ := testLogger()
+	p := &Pruner{Store: st, Audit: l, Retention: func() int { return 365 }, Now: func() time.Time { return now }}
+	if _, err := p.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.Read().ListClientOverridesOnTarget(ctx, db.ListClientOverridesOnTargetParams{
+		InstanceID: sql.NullInt64{Int64: instance, Valid: true}, Since: sql.NullInt64{Int64: 0, Valid: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	members := 0
+	for _, o := range all {
+		left = append(left, o.Client)
+		ms, err := st.Read().ListOverrideMembers(ctx, o.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		members += len(ms)
+	}
+	slices.Sort(left)
+	if !slices.Equal(left, []string{"recent", "running"}) || members != 2 {
+		t.Errorf("overrides left %v with %d members", left, members)
+	}
+	rows := rowsOf(t, st)
+	if len(rows) != 1 || !strings.Contains(rows[0].Detail, `"client_overrides_deleted":1`) {
 		t.Errorf("prune rows %+v", rows)
 	}
 }

@@ -14,8 +14,8 @@ import {
 	type GroupReferences
 } from './pihole-groups.js';
 
-const refs = (rules: number, prot: number, items: GroupReferences['items'] = [], windows = 0): GroupReferences => ({
-	counts: { client_reset_rules: rules, protected_groups: prot, group_windows: windows },
+const refs = (rules: number, prot: number, items: GroupReferences['items'] = [], windows = 0, overrides = 0): GroupReferences => ({
+	counts: { client_reset_rules: rules, protected_groups: prot, group_windows: windows, client_overrides: overrides },
 	items
 });
 
@@ -74,6 +74,13 @@ describe('describing references', () => {
 		expect(
 			describeReference({ kind: 'group_window', scope: 'group', scope_id: 2, scope_name: 'site', schedule_name: 'Weekend', schedule_kind: 'group_disabled', names: ['strict'] })
 		).toBe('Schedule Weekend on group site, disables: strict');
+	});
+	it('names a temporary client change and counts it', () => {
+		expect(
+			describeReference({ kind: 'client_override', scope: 'instance', scope_id: 1, scope_name: 'pihole1', client: '10.0.0.5', names: ['open'], original_names: ['Default', 'kids'] })
+		).toBe('Temporary change for 10.0.0.5 on pihole1: open (to return to: Default, kids)');
+		expect(countText(refs(1, 0, [], 0, 2))).toBe('1 client reset rule and 2 temporary client changes');
+		expect(hiddenCount(refs(0, 0, [], 0, 1))).toBe(1);
 	});
 	it('sums up a rename', () => {
 		expect(renameSummary(undefined)).toBeNull();

@@ -17,6 +17,7 @@ const (
 	GroupLists         = "Lists and gravity"
 	GroupLocalDNS      = "Local DNS"
 	GroupSchedules     = "Schedules"
+	GroupTempClients   = "Temporary client changes"
 	GroupInstances     = "Instances and groups"
 	GroupAccess        = "Users, roles and LDAP"
 	GroupSettings      = "Settings and system"
@@ -68,6 +69,11 @@ var actions = []ActionInfo{
 	{ActionScheduleUpdate, GroupSchedules, "A schedule changed, or switched on or off"},
 	{ActionScheduleDelete, GroupSchedules, "A schedule deleted"},
 	{ActionScheduleRun, GroupSchedules, "A schedule turned blocking off or a Pi-hole group on or off, or failed to"},
+
+	{ActionClientTempSet, GroupTempClients, "A client moved to other Pi-hole groups for a set time"},
+	{ActionClientTempUpdate, GroupTempClients, "A temporary client change's end time changed"},
+	{ActionClientTempEnd, GroupTempClients, "A temporary client change ended early, or its revert retried, by a person"},
+	{ActionClientTempRevert, GroupTempClients, "A client put back in its groups when its time was up, or the revert failed"},
 
 	{ActionInstanceCreate, GroupInstances, "An instance added"},
 	{ActionInstanceUpdate, GroupInstances, "An instance's settings changed"},

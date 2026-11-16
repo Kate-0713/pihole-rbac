@@ -202,9 +202,19 @@ func ErrorCode(e audit.Entry) string {
 	return "error"
 }
 
+// addsClient reports whether a successful row of this action can have added a client to groups: a client change, a
+// temporary one starting, or a revert or end of one putting groups back.
+func addsClient(action string) bool {
+	switch action {
+	case audit.ActionClientUpdate, audit.ActionClientTempSet, audit.ActionClientTempRevert, audit.ActionClientTempEnd:
+		return true
+	}
+	return false
+}
+
 // ProtectedGroups returns the protected Pi-hole groups a client_update added the client to, from its detail.
 func ProtectedGroups(e audit.Entry) []string {
-	if e.Action != audit.ActionClientUpdate || e.Err != nil {
+	if !addsClient(e.Action) || e.Err != nil {
 		return nil
 	}
 	return stringList(e.Detail["protected_added"])
@@ -245,7 +255,7 @@ type ProtectedClient struct {
 // reset the others, and lists only those.
 func ProtectedAlerts(e audit.Entry) []ProtectedAlert {
 	switch e.Action {
-	case audit.ActionClientUpdate:
+	case audit.ActionClientUpdate, audit.ActionClientTempSet, audit.ActionClientTempRevert, audit.ActionClientTempEnd:
 		if groups := ProtectedGroups(e); len(groups) > 0 {
 			client, _ := e.Detail["client"].(string)
 			comment, _ := e.Detail["comment"].(string)
@@ -285,9 +295,17 @@ func ForProtectedGroup(e audit.Entry, groups []string) *Message {
 // ForProtectedAlert is the alert for one client added to protected groups.
 func ForProtectedAlert(e audit.Entry, a ProtectedAlert) *Message {
 	m := &Message{}
-	m.Text("User ").Bold(e.Username).Text(" added client ")
+	if e.Action == audit.ActionClientTempRevert {
+		m.Text("The app put client ")
+	} else {
+		m.Text("User ").Bold(e.Username).Text(" added client ")
+	}
 	client, groups := a.Client, a.Groups
-	m.Code(client).clientComment(a.Comment).Text(" to protected group")
+	to := " to protected group"
+	if e.Action == audit.ActionClientTempRevert {
+		to = " back in protected group"
+	}
+	m.Code(client).clientComment(a.Comment).Text(to)
 	if len(groups) > 1 {
 		m.Text("s")
 	}

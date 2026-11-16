@@ -222,6 +222,21 @@ func (e ClientResetScope) Valid() bool {
 	}
 }
 
+// Defines values for ClientResetSkippedReason.
+const (
+	TemporaryChangeActive ClientResetSkippedReason = "temporary_change_active"
+)
+
+// Valid indicates whether the value is a known member of the ClientResetSkippedReason enum.
+func (e ClientResetSkippedReason) Valid() bool {
+	switch e {
+	case TemporaryChangeActive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DomainKind.
 const (
 	DomainKindExact DomainKind = "exact"
@@ -866,6 +881,7 @@ func (e PermissionInfoClass) Valid() bool {
 
 // Defines values for PiholeGroupReferenceKind.
 const (
+	PiholeGroupReferenceKindClientOverride  PiholeGroupReferenceKind = "client_override"
 	PiholeGroupReferenceKindClientResetRule PiholeGroupReferenceKind = "client_reset_rule"
 	PiholeGroupReferenceKindGroupWindow     PiholeGroupReferenceKind = "group_window"
 	PiholeGroupReferenceKindProtectedGroup  PiholeGroupReferenceKind = "protected_group"
@@ -874,6 +890,8 @@ const (
 // Valid indicates whether the value is a known member of the PiholeGroupReferenceKind enum.
 func (e PiholeGroupReferenceKind) Valid() bool {
 	switch e {
+	case PiholeGroupReferenceKindClientOverride:
+		return true
 	case PiholeGroupReferenceKindClientResetRule:
 		return true
 	case PiholeGroupReferenceKindGroupWindow:
@@ -1569,6 +1587,57 @@ func (e TargetHealthState) Valid() bool {
 	}
 }
 
+// Defines values for TemporaryClientChangeStatus.
+const (
+	TemporaryClientChangeStatusActive   TemporaryClientChangeStatus = "active"
+	TemporaryClientChangeStatusEnded    TemporaryClientChangeStatus = "ended"
+	TemporaryClientChangeStatusFailed   TemporaryClientChangeStatus = "failed"
+	TemporaryClientChangeStatusReverted TemporaryClientChangeStatus = "reverted"
+)
+
+// Valid indicates whether the value is a known member of the TemporaryClientChangeStatus enum.
+func (e TemporaryClientChangeStatus) Valid() bool {
+	switch e {
+	case TemporaryClientChangeStatusActive:
+		return true
+	case TemporaryClientChangeStatusEnded:
+		return true
+	case TemporaryClientChangeStatusFailed:
+		return true
+	case TemporaryClientChangeStatusReverted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TemporaryClientMemberRevertStatus.
+const (
+	TemporaryClientMemberRevertStatusFailed  TemporaryClientMemberRevertStatus = "failed"
+	TemporaryClientMemberRevertStatusGivenUp TemporaryClientMemberRevertStatus = "given_up"
+	TemporaryClientMemberRevertStatusOk      TemporaryClientMemberRevertStatus = "ok"
+	TemporaryClientMemberRevertStatusPending TemporaryClientMemberRevertStatus = "pending"
+	TemporaryClientMemberRevertStatusSkipped TemporaryClientMemberRevertStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the TemporaryClientMemberRevertStatus enum.
+func (e TemporaryClientMemberRevertStatus) Valid() bool {
+	switch e {
+	case TemporaryClientMemberRevertStatusFailed:
+		return true
+	case TemporaryClientMemberRevertStatusGivenUp:
+		return true
+	case TemporaryClientMemberRevertStatusOk:
+		return true
+	case TemporaryClientMemberRevertStatusPending:
+		return true
+	case TemporaryClientMemberRevertStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateRequestStatus.
 const (
 	UpdateRequestStatusDone       UpdateRequestStatus = "done"
@@ -2065,6 +2134,9 @@ type ClientResetInstanceResult struct {
 	// Reset In a run, the clients reset; in a preview, those a run would reset.
 	Reset []ClientResetChange `json:"reset"`
 
+	// Skipped Matching clients left alone because they have an active temporary group change on this instance (since v2.6.0). Counted as neither reset nor unchanged. Absent in runs from before.
+	Skipped *[]ClientResetSkipped `json:"skipped,omitempty"`
+
 	// Status ok when nothing failed; failed when nothing that needed resetting was reset, or the instance couldn't be read (with `code`); partial otherwise; skipped when it wasn't contacted (down, or missing its password).
 	Status ClientResetInstanceResultStatus `json:"status"`
 
@@ -2193,6 +2265,18 @@ type ClientResetSchedule struct {
 
 // ClientResetScope defines model for ClientResetScope.
 type ClientResetScope string
+
+// ClientResetSkipped A matching client the run left alone.
+type ClientResetSkipped struct {
+	Client     string `json:"client"`
+	OverrideId int64  `json:"override_id"`
+
+	// Reason The client has an active temporary group change on this instance.
+	Reason ClientResetSkippedReason `json:"reason"`
+}
+
+// ClientResetSkippedReason The client has an active temporary group change on this instance.
+type ClientResetSkippedReason string
 
 // ClientUpdate Names the client and gives at least one of comment and groups.
 type ClientUpdate struct {
@@ -2570,7 +2654,13 @@ type GeneralSettings struct {
 
 	// ClientResetSchedule When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is.
 	ClientResetSchedule ClientResetSchedule `json:"client_reset_schedule"`
-	IdleTimeoutMinutes  int                 `json:"idle_timeout_minutes"`
+
+	// ClientTempMaxMinutes The longest a temporary client group change can last; 10080 (7 days) until saved.
+	ClientTempMaxMinutes int `json:"client_temp_max_minutes"`
+
+	// ClientTempReasonRequired Whether a temporary client group change needs a reason; true until saved.
+	ClientTempReasonRequired bool `json:"client_temp_reason_required"`
+	IdleTimeoutMinutes       int  `json:"idle_timeout_minutes"`
 
 	// LocaldnsExtraDomains The extra directory domains for the local DNS check; none until saved.
 	LocaldnsExtraDomains []string `json:"localdns_extra_domains"`
@@ -2597,6 +2687,12 @@ type GeneralSettingsInput struct {
 
 	// ClientResetSchedule When client reset runs by itself: every day at `time` in `time_zone`, while `enabled`. Off, at 03:00 UTC, until saved. Runs on demand don't depend on it. On a save, absent leaves it as it is.
 	ClientResetSchedule *ClientResetSchedule `json:"client_reset_schedule,omitempty"`
+
+	// ClientTempMaxMinutes The longest a temporary client group change can last from its start, 5 minutes to 365 days (since v2.6.0). Lowering it shortens nothing already running. Absent leaves it as it is.
+	ClientTempMaxMinutes *int `json:"client_temp_max_minutes,omitempty"`
+
+	// ClientTempReasonRequired Whether a temporary client group change needs a reason (since v2.6.0). Absent leaves it as it is.
+	ClientTempReasonRequired *bool `json:"client_temp_reason_required,omitempty"`
 
 	// IdleTimeoutMinutes How long a session lasts without requests. 5 minutes to 24 hours, and at most the lifetime.
 	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`
@@ -3296,13 +3392,16 @@ type PiholeGroupReference struct {
 	// Before For an updated reference, the value before the rename.
 	Before *[]string `json:"before,omitempty"`
 
+	// Client A temporary client change's client.
+	Client *string `json:"client,omitempty"`
+
 	// CommentPrefix A client reset rule's comment prefix.
 	CommentPrefix *string `json:"comment_prefix,omitempty"`
 
 	// Dropped For an updated protected group: removed, because its instance or group already listed the new name.
 	Dropped *bool `json:"dropped,omitempty"`
 
-	// Kind A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a schedule's group window (schedules.manage on the schedule's instance or group).
+	// Kind A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage), a schedule's group window (schedules.manage on the schedule's instance or group) or an active temporary client change on one instance (clients.edit on that instance).
 	Kind PiholeGroupReferenceKind `json:"kind"`
 
 	// Match How a client reset rule matches Pi-hole groups.
@@ -3310,6 +3409,15 @@ type PiholeGroupReference struct {
 
 	// Names A client reset rule's group names or prefixes, or a protected group's or group window's name (one). For an updated reference, the value after the rename.
 	Names []string `json:"names"`
+
+	// OriginalBefore For an updated temporary client change, its original groups before the rename.
+	OriginalBefore *[]string `json:"original_before,omitempty"`
+
+	// OriginalNames A temporary client change's original groups, which the client returns to. For an updated reference, the value after the rename. `names` holds the groups the change put the client in.
+	OriginalNames *[]string `json:"original_names,omitempty"`
+
+	// OverrideId A temporary client change's ID.
+	OverrideId *int64 `json:"override_id,omitempty"`
 
 	// Reason For a reference to check: a prefix rule now matches only one of the two names; the rename didn't reach every instance the reference covers; or a protected group still matches another group left there.
 	Reason *PiholeGroupReferenceReason `json:"reason,omitempty"`
@@ -3324,7 +3432,7 @@ type PiholeGroupReference struct {
 	ScopeName    string                    `json:"scope_name"`
 }
 
-// PiholeGroupReferenceKind A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage) or a schedule's group window (schedules.manage on the schedule's instance or group).
+// PiholeGroupReferenceKind A client reset rule (shown to holders of settings.manage), a protected group (notifications.manage), a schedule's group window (schedules.manage on the schedule's instance or group) or an active temporary client change on one instance (clients.edit on that instance).
 type PiholeGroupReferenceKind string
 
 // PiholeGroupReferenceMatch How a client reset rule matches Pi-hole groups.
@@ -3341,6 +3449,8 @@ type PiholeGroupReferenceScope string
 
 // PiholeGroupReferenceCounts defines model for PiholeGroupReferenceCounts.
 type PiholeGroupReferenceCounts struct {
+	// ClientOverrides Active temporary client group changes that name the group, as a group the client was in or one the change put it in. Counted per instance a change covers.
+	ClientOverrides  int `json:"client_overrides"`
 	ClientResetRules int `json:"client_reset_rules"`
 
 	// GroupWindows Schedules whose group window names the group.
@@ -4179,6 +4289,111 @@ type TargetSummary struct {
 	Members *[]MemberRead `json:"members,omitempty"`
 }
 
+// TemporaryClientChange defines model for TemporaryClientChange.
+type TemporaryClientChange struct {
+	Client     string                  `json:"client"`
+	CreatedBy  string                  `json:"created_by"`
+	EndedAt    *time.Time              `json:"ended_at,omitempty"`
+	EndedBy    *string                 `json:"ended_by,omitempty"`
+	EndsAt     time.Time               `json:"ends_at"`
+	FinishedAt *time.Time              `json:"finished_at,omitempty"`
+	Id         int64                   `json:"id"`
+	Members    []TemporaryClientMember `json:"members"`
+
+	// Overdue Active and past its end, so the app is putting the client back.
+	Overdue  bool      `json:"overdue"`
+	Reason   string    `json:"reason"`
+	StartsAt time.Time `json:"starts_at"`
+
+	// Status active until every instance was put back. reverted: it ran its time. ended: a person ended it early. failed: an instance was given up on, or lost its client.
+	Status TemporaryClientChangeStatus `json:"status"`
+
+	// Target Where it was set, i-<id> or g-<id>.
+	Target     string `json:"target"`
+	TargetName string `json:"target_name"`
+
+	// Via Set when the change is listed on an instance it was made on through a mirrored group, which is the one that can change or end it (g-<id>).
+	Via *string `json:"via,omitempty"`
+}
+
+// TemporaryClientChangeStatus active until every instance was put back. reverted: it ran its time. ended: a person ended it early. failed: an instance was given up on, or lost its client.
+type TemporaryClientChangeStatus string
+
+// TemporaryClientChangeList defines model for TemporaryClientChangeList.
+type TemporaryClientChangeList struct {
+	Changes []TemporaryClientChange `json:"changes"`
+
+	// MaxMinutes The longest a change can last from its start (the client_temp_max_minutes setting).
+	MaxMinutes int `json:"max_minutes"`
+
+	// ReasonRequired Whether a start needs a reason (the client_temp_reason_required setting).
+	ReasonRequired bool `json:"reason_required"`
+}
+
+// TemporaryClientMember One instance a change was made on, with the client's groups there by name.
+type TemporaryClientMember struct {
+	Attempts   int    `json:"attempts"`
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// MissingGroups Original groups that no longer exist on the Pi-hole, left out of the revert.
+	MissingGroups  *[]string `json:"missing_groups,omitempty"`
+	OriginalGroups []string  `json:"original_groups"`
+	OverrideGroups []string  `json:"override_groups"`
+
+	// RevertCode Why the latest revert failed or was skipped, such as not_found, or a Pi-hole error code.
+	RevertCode *string `json:"revert_code,omitempty"`
+
+	// RevertStatus pending: not tried yet. failed or skipped: tried and failed (skipped when the instance couldn't be called), to be retried. ok: put back. given_up: a week of retries failed.
+	RevertStatus TemporaryClientMemberRevertStatus `json:"revert_status"`
+	RevertedAt   *time.Time                        `json:"reverted_at,omitempty"`
+}
+
+// TemporaryClientMemberRevertStatus pending: not tried yet. failed or skipped: tried and failed (skipped when the instance couldn't be called), to be retried. ok: put back. given_up: a week of retries failed.
+type TemporaryClientMemberRevertStatus string
+
+// TemporaryClientStart Names the client and the Pi-hole groups it is moved to, by name, and either how long or when it ends. The longest is the `client_temp_max_minutes` setting and the shortest 5 minutes. The reason is 1 to 200 characters when `client_temp_reason_required` is on.
+type TemporaryClientStart struct {
+	Client          string     `json:"client"`
+	DurationMinutes *int       `json:"duration_minutes,omitempty"`
+	EndsAt          *time.Time `json:"ends_at,omitempty"`
+
+	// Groups Replaces the client's groups for the duration. Every instance must have a Pi-hole group of each name.
+	Groups []string `json:"groups"`
+	Reason *string  `json:"reason,omitempty"`
+}
+
+// TemporaryClientUpdate defines model for TemporaryClientUpdate.
+type TemporaryClientUpdate struct {
+	EndsAt time.Time `json:"ends_at"`
+}
+
+// TemporaryClientWriteResult defines model for TemporaryClientWriteResult.
+type TemporaryClientWriteResult struct {
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error *WriteError `json:"error,omitempty"`
+
+	// Groups Present when ok. The client's groups on the instance now, by name.
+	Groups     *[]string `json:"groups,omitempty"`
+	Instance   string    `json:"instance"`
+	InstanceId int64     `json:"instance_id"`
+
+	// MissingGroups On an end or retry, the original groups that no longer exist on the Pi-hole.
+	MissingGroups *[]string `json:"missing_groups,omitempty"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+
+	// Unchanged Present when ok and nothing needed sending: the client already had those groups.
+	Unchanged *bool `json:"unchanged,omitempty"`
+}
+
+// TemporaryClientWriteResults defines model for TemporaryClientWriteResults.
+type TemporaryClientWriteResults struct {
+	Change  *TemporaryClientChange       `json:"change,omitempty"`
+	Results []TemporaryClientWriteResult `json:"results"`
+}
+
 // TestedPermissions defines model for TestedPermissions.
 type TestedPermissions struct {
 	Global []string `json:"global"`
@@ -4391,6 +4606,9 @@ type RunLimit = int
 
 // TargetID Examples: i-1
 type TargetID = string
+
+// TemporaryChangeID defines model for TemporaryChangeID.
+type TemporaryChangeID = int64
 
 // UserID defines model for UserID.
 type UserID = int64
@@ -4839,6 +5057,12 @@ type SetBlockingJSONRequestBody = BlockingInput
 // UpdateClientJSONRequestBody defines body for UpdateClient for application/json ContentType.
 type UpdateClientJSONRequestBody = ClientUpdate
 
+// StartTemporaryClientChangeJSONRequestBody defines body for StartTemporaryClientChange for application/json ContentType.
+type StartTemporaryClientChangeJSONRequestBody = TemporaryClientStart
+
+// UpdateTemporaryClientChangeJSONRequestBody defines body for UpdateTemporaryClientChange for application/json ContentType.
+type UpdateTemporaryClientChangeJSONRequestBody = TemporaryClientUpdate
+
 // DeleteDomainJSONRequestBody defines body for DeleteDomain for application/json ContentType.
 type DeleteDomainJSONRequestBody = DomainKey
 
@@ -5126,6 +5350,21 @@ type ServerInterface interface {
 	// UpdateClient Change a client's groups or comment
 	// (PATCH /api/v1/targets/{target}/clients)
 	UpdateClient(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateClientParams)
+	// ListTemporaryClientChanges Temporary client group changes
+	// (GET /api/v1/targets/{target}/clients/temporary)
+	ListTemporaryClientChanges(w http.ResponseWriter, r *http.Request, target TargetID)
+	// StartTemporaryClientChange Move a client to other Pi-hole groups for a set time
+	// (POST /api/v1/targets/{target}/clients/temporary)
+	StartTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID)
+	// UpdateTemporaryClientChange Extend or shorten a temporary change
+	// (PATCH /api/v1/targets/{target}/clients/temporary/{id})
+	UpdateTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID, id TemporaryChangeID)
+	// EndTemporaryClientChange End a temporary change now
+	// (POST /api/v1/targets/{target}/clients/temporary/{id}/end)
+	EndTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID, id TemporaryChangeID)
+	// RetryTemporaryClientChange Retry a revert the app gave up on
+	// (POST /api/v1/targets/{target}/clients/temporary/{id}/retry)
+	RetryTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID, id TemporaryChangeID)
 	// RestartDNS Restart Pi-hole's DNS resolver
 	// (POST /api/v1/targets/{target}/dns/restart)
 	RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID, params RestartDNSParams)
@@ -7105,6 +7344,163 @@ func (siw *ServerInterfaceWrapper) UpdateClient(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListTemporaryClientChanges operation middleware
+func (siw *ServerInterfaceWrapper) ListTemporaryClientChanges(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTemporaryClientChanges(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartTemporaryClientChange operation middleware
+func (siw *ServerInterfaceWrapper) StartTemporaryClientChange(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartTemporaryClientChange(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateTemporaryClientChange operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTemporaryClientChange(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id TemporaryChangeID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateTemporaryClientChange(w, r, target, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EndTemporaryClientChange operation middleware
+func (siw *ServerInterfaceWrapper) EndTemporaryClientChange(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id TemporaryChangeID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EndTemporaryClientChange(w, r, target, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetryTemporaryClientChange operation middleware
+func (siw *ServerInterfaceWrapper) RetryTemporaryClientChange(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id TemporaryChangeID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetryTemporaryClientChange(w, r, target, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RestartDNS operation middleware
 func (siw *ServerInterfaceWrapper) RestartDNS(w http.ResponseWriter, r *http.Request) {
 
@@ -8951,6 +9347,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/domains", wrapper.AddDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/clients", wrapper.ListClients)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/clients", wrapper.UpdateClient)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/clients/temporary", wrapper.ListTemporaryClientChanges)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/clients/temporary", wrapper.StartTemporaryClientChange)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/clients/temporary/{id}", wrapper.UpdateTemporaryClientChange)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/clients/temporary/{id}/end", wrapper.EndTemporaryClientChange)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/clients/temporary/{id}/retry", wrapper.RetryTemporaryClientChange)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.DeletePiholeGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.ListPiholeGroups)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/groups", wrapper.UpdatePiholeGroup)
@@ -15663,6 +16064,601 @@ func (response UpdateClient503JSONResponse) VisitUpdateClientResponse(w http.Res
 	return err
 }
 
+type ListTemporaryClientChangesRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListTemporaryClientChangesResponseObject interface {
+	VisitListTemporaryClientChangesResponse(w http.ResponseWriter) error
+}
+
+type ListTemporaryClientChanges200JSONResponse TemporaryClientChangeList
+
+func (response ListTemporaryClientChanges200JSONResponse) VisitListTemporaryClientChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTemporaryClientChanges401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListTemporaryClientChanges401JSONResponse) VisitListTemporaryClientChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTemporaryClientChanges403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListTemporaryClientChanges403JSONResponse) VisitListTemporaryClientChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTemporaryClientChanges404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListTemporaryClientChanges404JSONResponse) VisitListTemporaryClientChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTemporaryClientChanges503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListTemporaryClientChanges503JSONResponse) VisitListTemporaryClientChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChangeRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *StartTemporaryClientChangeJSONRequestBody
+}
+
+type StartTemporaryClientChangeResponseObject interface {
+	VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error
+}
+
+type StartTemporaryClientChange200JSONResponse TemporaryClientWriteResults
+
+func (response StartTemporaryClientChange200JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange207JSONResponse TemporaryClientWriteResults
+
+func (response StartTemporaryClientChange207JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response StartTemporaryClientChange400JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response StartTemporaryClientChange401JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response StartTemporaryClientChange403JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response StartTemporaryClientChange404JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response StartTemporaryClientChange409JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response StartTemporaryClientChange415JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response StartTemporaryClientChange502JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTemporaryClientChange503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response StartTemporaryClientChange503JSONResponse) VisitStartTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChangeRequestObject struct {
+	Target TargetID          `json:"target"`
+	Id     TemporaryChangeID `json:"id"`
+	Body   *UpdateTemporaryClientChangeJSONRequestBody
+}
+
+type UpdateTemporaryClientChangeResponseObject interface {
+	VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error
+}
+
+type UpdateTemporaryClientChange200JSONResponse TemporaryClientChange
+
+func (response UpdateTemporaryClientChange200JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChange400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateTemporaryClientChange400JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChange401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateTemporaryClientChange401JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChange403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateTemporaryClientChange403JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChange404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateTemporaryClientChange404JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChange409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateTemporaryClientChange409JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChange415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateTemporaryClientChange415JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTemporaryClientChange503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateTemporaryClientChange503JSONResponse) VisitUpdateTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChangeRequestObject struct {
+	Target TargetID          `json:"target"`
+	Id     TemporaryChangeID `json:"id"`
+}
+
+type EndTemporaryClientChangeResponseObject interface {
+	VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error
+}
+
+type EndTemporaryClientChange200JSONResponse TemporaryClientWriteResults
+
+func (response EndTemporaryClientChange200JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChange207JSONResponse TemporaryClientWriteResults
+
+func (response EndTemporaryClientChange207JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChange401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response EndTemporaryClientChange401JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChange403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response EndTemporaryClientChange403JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChange404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response EndTemporaryClientChange404JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChange409JSONResponse struct{ ConflictJSONResponse }
+
+func (response EndTemporaryClientChange409JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChange502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response EndTemporaryClientChange502JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EndTemporaryClientChange503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response EndTemporaryClientChange503JSONResponse) VisitEndTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChangeRequestObject struct {
+	Target TargetID          `json:"target"`
+	Id     TemporaryChangeID `json:"id"`
+}
+
+type RetryTemporaryClientChangeResponseObject interface {
+	VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error
+}
+
+type RetryTemporaryClientChange200JSONResponse TemporaryClientWriteResults
+
+func (response RetryTemporaryClientChange200JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChange207JSONResponse TemporaryClientWriteResults
+
+func (response RetryTemporaryClientChange207JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(207)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChange401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RetryTemporaryClientChange401JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChange403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RetryTemporaryClientChange403JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChange404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RetryTemporaryClientChange404JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChange409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RetryTemporaryClientChange409JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChange502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response RetryTemporaryClientChange502JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryTemporaryClientChange503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RetryTemporaryClientChange503JSONResponse) VisitRetryTemporaryClientChangeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RestartDNSRequestObject struct {
 	Target TargetID `json:"target"`
 	Params RestartDNSParams
@@ -20789,6 +21785,21 @@ type StrictServerInterface interface {
 	// UpdateClient Change a client's groups or comment
 	// (PATCH /api/v1/targets/{target}/clients)
 	UpdateClient(ctx context.Context, request UpdateClientRequestObject) (UpdateClientResponseObject, error)
+	// ListTemporaryClientChanges Temporary client group changes
+	// (GET /api/v1/targets/{target}/clients/temporary)
+	ListTemporaryClientChanges(ctx context.Context, request ListTemporaryClientChangesRequestObject) (ListTemporaryClientChangesResponseObject, error)
+	// StartTemporaryClientChange Move a client to other Pi-hole groups for a set time
+	// (POST /api/v1/targets/{target}/clients/temporary)
+	StartTemporaryClientChange(ctx context.Context, request StartTemporaryClientChangeRequestObject) (StartTemporaryClientChangeResponseObject, error)
+	// UpdateTemporaryClientChange Extend or shorten a temporary change
+	// (PATCH /api/v1/targets/{target}/clients/temporary/{id})
+	UpdateTemporaryClientChange(ctx context.Context, request UpdateTemporaryClientChangeRequestObject) (UpdateTemporaryClientChangeResponseObject, error)
+	// EndTemporaryClientChange End a temporary change now
+	// (POST /api/v1/targets/{target}/clients/temporary/{id}/end)
+	EndTemporaryClientChange(ctx context.Context, request EndTemporaryClientChangeRequestObject) (EndTemporaryClientChangeResponseObject, error)
+	// RetryTemporaryClientChange Retry a revert the app gave up on
+	// (POST /api/v1/targets/{target}/clients/temporary/{id}/retry)
+	RetryTemporaryClientChange(ctx context.Context, request RetryTemporaryClientChangeRequestObject) (RetryTemporaryClientChangeResponseObject, error)
 	// RestartDNS Restart Pi-hole's DNS resolver
 	// (POST /api/v1/targets/{target}/dns/restart)
 	RestartDNS(ctx context.Context, request RestartDNSRequestObject) (RestartDNSResponseObject, error)
@@ -23008,6 +24019,153 @@ func (sh *strictHandler) UpdateClient(w http.ResponseWriter, r *http.Request, ta
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateClientResponseObject); ok {
 		if err := validResponse.VisitUpdateClientResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTemporaryClientChanges operation middleware
+func (sh *strictHandler) ListTemporaryClientChanges(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListTemporaryClientChangesRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTemporaryClientChanges(ctx, request.(ListTemporaryClientChangesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTemporaryClientChanges")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTemporaryClientChangesResponseObject); ok {
+		if err := validResponse.VisitListTemporaryClientChangesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartTemporaryClientChange operation middleware
+func (sh *strictHandler) StartTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request StartTemporaryClientChangeRequestObject
+
+	request.Target = target
+
+	var body StartTemporaryClientChangeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartTemporaryClientChange(ctx, request.(StartTemporaryClientChangeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartTemporaryClientChange")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartTemporaryClientChangeResponseObject); ok {
+		if err := validResponse.VisitStartTemporaryClientChangeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateTemporaryClientChange operation middleware
+func (sh *strictHandler) UpdateTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID, id TemporaryChangeID) {
+	var request UpdateTemporaryClientChangeRequestObject
+
+	request.Target = target
+	request.Id = id
+
+	var body UpdateTemporaryClientChangeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateTemporaryClientChange(ctx, request.(UpdateTemporaryClientChangeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateTemporaryClientChange")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateTemporaryClientChangeResponseObject); ok {
+		if err := validResponse.VisitUpdateTemporaryClientChangeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EndTemporaryClientChange operation middleware
+func (sh *strictHandler) EndTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID, id TemporaryChangeID) {
+	var request EndTemporaryClientChangeRequestObject
+
+	request.Target = target
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EndTemporaryClientChange(ctx, request.(EndTemporaryClientChangeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EndTemporaryClientChange")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EndTemporaryClientChangeResponseObject); ok {
+		if err := validResponse.VisitEndTemporaryClientChangeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryTemporaryClientChange operation middleware
+func (sh *strictHandler) RetryTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID, id TemporaryChangeID) {
+	var request RetryTemporaryClientChangeRequestObject
+
+	request.Target = target
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryTemporaryClientChange(ctx, request.(RetryTemporaryClientChangeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryTemporaryClientChange")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RetryTemporaryClientChangeResponseObject); ok {
+		if err := validResponse.VisitRetryTemporaryClientChangeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

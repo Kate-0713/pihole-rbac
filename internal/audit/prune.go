@@ -5,6 +5,7 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"sync"
 	"time"
@@ -95,7 +96,7 @@ func (p *Pruner) Prune(ctx context.Context) (int64, error) {
 	}
 	days := p.Retention()
 	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
-	var n, runs int64
+	var n, runs, overrides int64
 	entry := Entry{At: now, Username: SystemUser, Action: ActionAuditPrune, Target: "audit_log"}
 	err := p.Store.WithTx(ctx, func(q *db.Queries) error {
 		var err error
@@ -105,11 +106,15 @@ func (p *Pruner) Prune(ctx context.Context) (int64, error) {
 		if runs, err = q.DeleteClientResetRunsBefore(ctx, store.Millis(cutoff)); err != nil {
 			return err
 		}
-		if n == 0 && runs == 0 {
+		if overrides, err = q.DeleteClientOverridesBefore(ctx, sql.NullInt64{Int64: store.Millis(cutoff), Valid: true}); err != nil {
+			return err
+		}
+		if n == 0 && runs == 0 && overrides == 0 {
 			return nil
 		}
 		entry.Detail = map[string]any{
-			"deleted": n, "client_reset_runs_deleted": runs, "before": cutoff.UTC().Format(time.RFC3339),
+			"deleted": n, "client_reset_runs_deleted": runs, "client_overrides_deleted": overrides,
+			"before":         cutoff.UTC().Format(time.RFC3339),
 			"retention_days": days,
 		}
 		_, err = Insert(ctx, q, entry)
@@ -118,7 +123,7 @@ func (p *Pruner) Prune(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if n+runs > 0 && p.Audit != nil {
+	if n+runs+overrides > 0 && p.Audit != nil {
 		p.Audit.Log(entry)
 	}
 	return n, nil

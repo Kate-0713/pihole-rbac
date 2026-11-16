@@ -239,6 +239,13 @@ func instanceResultsJSON(rs []clientreset.InstanceResult) []gen.ClientResetInsta
 				GroupsBefore: nonNilStrings(c.Before), GroupsAfter: nonNilStrings(c.After),
 			})
 		}
+		if len(r.Skipped) > 0 {
+			sk := make([]gen.ClientResetSkipped, 0, len(r.Skipped))
+			for _, k := range r.Skipped {
+				sk = append(sk, gen.ClientResetSkipped{Client: k.Client, Reason: gen.ClientResetSkippedReason(k.Reason), OverrideId: k.OverrideID})
+			}
+			ir.Skipped = &sk
+		}
 		for _, f := range r.Failed {
 			ir.Failed = append(ir.Failed, gen.ClientResetFailure{Client: f.Client, Comment: f.Comment, Prefix: f.Prefix, Code: f.Code})
 		}

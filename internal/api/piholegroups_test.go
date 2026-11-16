@@ -77,6 +77,9 @@ func (e *testEnv) refsNow() []string {
 		if r.Kind == piholegroups.KindProtected || r.Kind == piholegroups.KindWindow {
 			names = []string{r.Name}
 		}
+		if r.Kind == piholegroups.KindOverride {
+			names = []string{strings.Join(r.Original, ",") + " -> " + strings.Join(r.Override, ",")}
+		}
 		out = append(out, r.Scope.String()+" "+string(r.Kind)+" "+r.Prefix+" "+strings.Join(names, ","))
 	}
 	slices.Sort(out)
@@ -443,6 +446,90 @@ func TestPiholeGroupWindowReferences(t *testing.T) {
 	res = te.admin.do(http.MethodDelete, te.path("/groups?confirm=true"), gen.PiholeGroupKey{Name: "children"})
 	mustStatus(t, res, http.StatusOK)
 	if del := decode[gen.PiholeGroupDeleteResults](t, res); del.References == nil || del.References.Counts.GroupWindows != 1 {
+		t.Errorf("delete references %s", res.Body)
+	}
+	if got := te.refsNow(); !slices.Equal(got, want) {
+		t.Errorf("a delete changed references: %q", got)
+	}
+}
+
+// addOverride stores an active temporary client change on an instance directly: the client was in original and the
+// change put it in override.
+func (e *testEnv) addOverride(instanceID int64, client string, original, override string) {
+	e.t.Helper()
+	ctx := context.Background()
+	err := e.st.WithTx(ctx, func(q *db.Queries) error {
+		id, err := q.CreateClientOverride(ctx, db.CreateClientOverrideParams{
+			InstanceID: sql.NullInt64{Int64: instanceID, Valid: true}, Client: client, StartsAt: 10, EndsAt: 20, CreatedBy: "admin", CreatedAt: 10,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = q.CreateClientOverrideMember(ctx, db.CreateClientOverrideMemberParams{
+			OverrideID: id, InstanceID: instanceID, Client: client, OriginalGroups: original, OverrideGroups: override,
+		})
+		return err
+	})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// TestPiholeGroupOverrideReferences: an active temporary client change is a reference to the Pi-hole groups it names,
+// counted for everyone and shown in full only to holders of clients.edit on its instance; a rename updates both its
+// original and its override groups, and a delete lists it without removing it.
+func TestPiholeGroupOverrideReferences(t *testing.T) {
+	te := newTargetEnv(t)
+	te.ph.AddGroup("kids")
+	te.ph.AddGroup("open")
+	te.addOverride(te.id, "10.0.0.5", `["Default","kids"]`, `["Default","open"]`)
+	te.addOverride(te.id, "10.0.0.6", `["Default"]`, `["Default","Kids"]`) // names match exactly
+	te.addGrantUser("editor", "editor-password-1", grant(rbac.PiholeGroupsEdit, "instance", te.id))
+	te.addGrantUser("clients", "clients-password-1", grant(rbac.PiholeGroupsEdit, "instance", te.id), grant(rbac.ClientsEdit, "instance", te.id))
+	for _, tt := range []struct {
+		user, password string
+		items          int
+	}{{"editor", "editor-password-1", 0}, {"clients", "clients-password-1", 1}} {
+		u := decode[gen.PiholeGroupUsage](t, te.loggedIn(tt.user, tt.password).do(http.MethodGet, te.path("/groups/usage?name=kids"), nil))
+		if u.References.Counts != (gen.PiholeGroupReferenceCounts{ClientOverrides: 1}) || len(u.References.Items) != tt.items {
+			t.Errorf("%s sees %+v", tt.user, u.References)
+			continue
+		}
+		if tt.items == 1 {
+			it := u.References.Items[0]
+			if it.Kind != gen.PiholeGroupReferenceKindClientOverride || it.Client == nil || *it.Client != "10.0.0.5" ||
+				it.OriginalNames == nil || !slices.Equal(*it.OriginalNames, []string{"Default", "kids"}) || !slices.Equal(it.Names, []string{"Default", "open"}) {
+				t.Errorf("item %+v", it)
+			}
+		}
+	}
+
+	rename := gen.PiholeGroupUpdate{Name: "kids", NewName: strp("children")}
+	if res := te.admin.do(http.MethodPatch, te.path("/groups"), rename); res.Code != http.StatusConflict {
+		t.Fatalf("unconfirmed rename: %d %s", res.Code, res.Body)
+	}
+	res := te.admin.do(http.MethodPatch, te.path("/groups?confirm=true"), rename)
+	mustStatus(t, res, http.StatusOK)
+	body := decode[gen.PiholeGroupWriteResults](t, res)
+	if body.References == nil || body.References.Updated.Counts != (gen.PiholeGroupReferenceCounts{ClientOverrides: 1}) {
+		t.Fatalf("references %s", res.Body)
+	}
+	want := sorted(te.target+" client_override  Default,children -> Default,open", te.target+" client_override  Default -> Default,Kids")
+	if got := te.refsNow(); !slices.Equal(got, want) {
+		t.Errorf("after the rename:\n got %q\nwant %q", got, want)
+	}
+	_, detail := te.lastAudit()
+	updated := anyList(detail["references_updated"])
+	if len(updated) != 1 {
+		t.Fatalf("audit %v", detail)
+	}
+	if d, _ := updated[0].(map[string]any); d["client"] != "10.0.0.5" || d["override_id"] == nil || d["original_names"] == nil || d["original_before"] == nil {
+		t.Errorf("audit reference %v", updated[0])
+	}
+
+	res = te.admin.do(http.MethodDelete, te.path("/groups?confirm=true"), gen.PiholeGroupKey{Name: "children"})
+	mustStatus(t, res, http.StatusOK)
+	if del := decode[gen.PiholeGroupDeleteResults](t, res); del.References == nil || del.References.Counts.ClientOverrides != 1 || len(del.References.Items) != 1 {
 		t.Errorf("delete references %s", res.Body)
 	}
 	if got := te.refsNow(); !slices.Equal(got, want) {

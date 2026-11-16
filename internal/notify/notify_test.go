@@ -601,3 +601,33 @@ func TestAuditSink(t *testing.T) {
 		t.Errorf("sink got %v", got)
 	}
 }
+
+// Temporary client changes raise the same protected group alert a client update does: when one starts in a protected
+// group, and when a revert or an end puts a client back in one. A failed row raises nothing.
+func TestProtectedAlertsForTemporaryChanges(t *testing.T) {
+	for _, tc := range []struct {
+		action string
+		err    error
+		user   string
+		want   string
+	}{
+		{audit.ActionClientTempSet, nil, "alice", "User alice added client 10.0.0.5 (tablet) to protected group kids on pihole1"},
+		{audit.ActionClientTempEnd, nil, "alice", "User alice added client 10.0.0.5 (tablet) to protected group kids on pihole1"},
+		{audit.ActionClientTempRevert, nil, audit.SystemUser, "The app put client 10.0.0.5 (tablet) back in protected group kids on pihole1"},
+		{audit.ActionClientTempRevert, errors.New("x"), audit.SystemUser, ""},
+		{audit.ActionClientTempUpdate, nil, "alice", ""},
+	} {
+		e := audit.Entry{Username: tc.user, Action: tc.action, InstanceName: "pihole1", Err: tc.err,
+			Detail: map[string]any{"client": "10.0.0.5", "comment": "tablet", "protected_added": []string{"kids"}}}
+		alerts := ProtectedAlerts(e)
+		if tc.want == "" {
+			if len(alerts) != 0 {
+				t.Errorf("%s with err %v: alerts %+v", tc.action, tc.err, alerts)
+			}
+			continue
+		}
+		if len(alerts) != 1 || ForProtectedAlert(e, alerts[0]).Plain() != tc.want {
+			t.Errorf("%s: alerts %+v, message %q", tc.action, alerts, tc.want)
+		}
+	}
+}

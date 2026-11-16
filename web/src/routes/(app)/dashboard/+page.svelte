@@ -15,6 +15,7 @@
 	import { formatCount, formatDateTime, formatPercent } from '#lib/format.js';
 	import { openBlocking, statusLine } from '#lib/schedules.js';
 	import { can } from '#lib/permissions.js';
+	import { dashboardItems, summaryLine } from '#lib/temp-changes.js';
 	import { whileVisible } from '#lib/poll.js';
 	import { session } from '#lib/stores/session.svelte.js';
 	import { targets, withTarget } from '#lib/stores/targets.svelte.js';
@@ -45,6 +46,9 @@
 	let scheduleItems = $derived((data.schedules?.schedules ?? []).filter((s) => s.open || s.next_edge).slice(0, 5));
 	let blockingWindow = $derived(openBlocking(data.schedules));
 	const when = (iso: string) => formatDateTime(iso);
+	// The temporary client changes still running (or failing to be put back), for their card. `fetchedAt` is when the
+	// data was read, so the time left is as of then and moves on with each refresh.
+	let tempItems = $derived(dashboardItems(data.temps?.changes ?? []));
 </script>
 
 <svelte:head>
@@ -122,6 +126,27 @@
 					<ul class="grid gap-1 text-sm" aria-label="Schedules">
 						{#each scheduleItems as item (item.id)}
 							<li class={item.open ? 'font-medium' : ''}>{statusLine(item, when, data.target)}</li>
+						{/each}
+					</ul>
+				</Card.Content>
+			</Card.Root>
+		{/if}
+
+		{#if tempItems.length > 0}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Temporary changes</Card.Title>
+					<Card.Description>Clients moved to other groups for a while. The app puts them back.</Card.Description>
+					{#if can('clients.view', data.target)}
+						<Card.Action><a class="text-sm underline" href={withTarget('/clients', data.target)}>Clients</a></Card.Action>
+					{/if}
+				</Card.Header>
+				<Card.Content>
+					<ul class="grid gap-1 text-sm" aria-label="Temporary changes">
+						{#each tempItems as c (c.id)}
+							<li class={c.overdue || c.status === 'failed' ? 'text-destructive font-medium' : ''}>
+								{summaryLine(c, new Date(data.fetchedAt))}{c.via ? ` (set through ${c.target_name})` : ''}
+							</li>
 						{/each}
 					</ul>
 				</Card.Content>

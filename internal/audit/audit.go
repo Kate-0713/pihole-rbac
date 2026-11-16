@@ -120,6 +120,13 @@ const (
 	ActionScheduleDelete = "schedule_delete"
 	ActionScheduleRun    = "schedule_run"
 
+	// Temporary client group changes (v2.6.0). Set and end are one row per member, by the user. Revert is the
+	// app's own, by SystemUser, once per member that was changed or failed on.
+	ActionClientTempSet    = "client_temp_set"
+	ActionClientTempUpdate = "client_temp_update"
+	ActionClientTempEnd    = "client_temp_end"
+	ActionClientTempRevert = "client_temp_revert"
+
 	// Gravity runs, since v2.3.0: when a run starts, and per instance when its part ends.
 	ActionGravityStart = "gravity_start"
 	ActionGravityRun   = "gravity_run"
