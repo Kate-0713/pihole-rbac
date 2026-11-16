@@ -159,6 +159,12 @@ type RoleLdapGroup struct {
 	CreatedAt   int64
 }
 
+type RoleTotpRequired struct {
+	RoleID int64
+	SetAt  int64
+	SetBy  string
+}
+
 type Schedule struct {
 	ID          int64
 	Name        string
@@ -244,7 +250,31 @@ type User struct {
 	LastLoginAt  sql.NullInt64
 }
 
+type UserRecoveryCode struct {
+	ID       int64
+	UserID   int64
+	CodeHash []byte
+	UsedAt   sql.NullInt64
+}
+
 type UserRole struct {
 	UserID int64
 	RoleID int64
+}
+
+type UserTotp struct {
+	UserID           int64
+	SecretCiphertext []byte
+	SecretNonce      []byte
+	SecretKeyID      string
+	CreatedAt        int64
+	EnabledAt        sql.NullInt64
+	LastStep         int64
+}
+
+type UserTotpPolicy struct {
+	UserID int64
+	Policy string
+	SetAt  int64
+	SetBy  string
 }

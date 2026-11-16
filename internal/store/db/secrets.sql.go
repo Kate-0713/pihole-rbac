@@ -140,6 +140,49 @@ func (q *Queries) ListSealedSettings(ctx context.Context) ([]ListSealedSettingsR
 	return items, nil
 }
 
+const listSealedTOTPSecrets = `-- name: ListSealedTOTPSecrets :many
+SELECT t.user_id, u.username, t.secret_ciphertext, t.secret_nonce, t.secret_key_id
+FROM user_totp t JOIN users u ON u.id = t.user_id
+ORDER BY t.user_id
+`
+
+type ListSealedTOTPSecretsRow struct {
+	UserID           int64
+	Username         string
+	SecretCiphertext []byte
+	SecretNonce      []byte
+	SecretKeyID      string
+}
+
+func (q *Queries) ListSealedTOTPSecrets(ctx context.Context) ([]ListSealedTOTPSecretsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSealedTOTPSecrets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSealedTOTPSecretsRow{}
+	for rows.Next() {
+		var i ListSealedTOTPSecretsRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.SecretCiphertext,
+			&i.SecretNonce,
+			&i.SecretKeyID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reencryptChannelSecret = `-- name: ReencryptChannelSecret :exec
 UPDATE notification_channels SET secret_ciphertext = ?, secret_nonce = ?, secret_key_id = ? WHERE id = ?
 `
@@ -199,6 +242,27 @@ func (q *Queries) ReencryptSettingSecret(ctx context.Context, arg ReencryptSetti
 		arg.SecretNonce,
 		arg.SecretKeyID,
 		arg.Key,
+	)
+	return err
+}
+
+const reencryptTOTPSecret = `-- name: ReencryptTOTPSecret :exec
+UPDATE user_totp SET secret_ciphertext = ?, secret_nonce = ?, secret_key_id = ? WHERE user_id = ?
+`
+
+type ReencryptTOTPSecretParams struct {
+	SecretCiphertext []byte
+	SecretNonce      []byte
+	SecretKeyID      string
+	UserID           int64
+}
+
+func (q *Queries) ReencryptTOTPSecret(ctx context.Context, arg ReencryptTOTPSecretParams) error {
+	_, err := q.db.ExecContext(ctx, reencryptTOTPSecret,
+		arg.SecretCiphertext,
+		arg.SecretNonce,
+		arg.SecretKeyID,
+		arg.UserID,
 	)
 	return err
 }

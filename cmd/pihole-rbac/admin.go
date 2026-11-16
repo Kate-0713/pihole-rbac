@@ -160,7 +160,7 @@ func resetAdmin(username string) error {
 			return err
 		}
 		entry.UserID = res.UserID
-		entry.Detail = map[string]any{"created": res.Created, "sessions_ended": res.SessionsEnded}
+		entry.Detail = map[string]any{"created": res.Created, "sessions_ended": res.SessionsEnded, "totp_removed": res.TOTPRemoved}
 		_, err = audit.Insert(ctx, q, entry)
 		return err
 	})
@@ -173,6 +173,9 @@ func resetAdmin(username string) error {
 		fmt.Fprintf(stdout, "Created local admin %q.\n", entry.Target)
 	} else {
 		fmt.Fprintf(stdout, "Reset %q: new password set, account enabled, admin role ensured, %d session(s) ended.\n", entry.Target, res.SessionsEnded)
+		if res.TOTPRemoved {
+			fmt.Fprintln(stdout, "Its two-factor login was removed. Set it up again from the account menu after logging in.")
+		}
 	}
 	return nil
 }

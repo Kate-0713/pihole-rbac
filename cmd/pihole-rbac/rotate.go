@@ -19,13 +19,14 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
+	"github.com/Kate-0713/pihole-rbac/internal/totp"
 )
 
 // maxKeyFile is the most of an old key file that is read; a key is 44 characters of base64.
 const maxKeyFile = 64 << 10
 
 // cmdRotateKey is `pihole-rbac rotate-key --old-key-file <path>`: it re-encrypts every stored secret (instance
-// passwords, the LDAP bind password, notification channel secrets) from the old master key, read from the file, to
+// passwords, the LDAP bind password, notification channel secrets, users' TOTP secrets) from the old master key, read from the file, to
 // the new one, from PIHOLE_RBAC_SECRET_KEY (or _FILE) as serve reads it. The old key never appears on the command
 // line or in the process list.
 func cmdRotateKey(args []string) error {
@@ -235,8 +236,9 @@ func itThey(n int) string {
 	return "are"
 }
 
-// sealedRows lists every stored secret: instance passwords, settings secrets (the LDAP bind password) and channel
-// secrets, each with the associated data it was sealed with.
+// sealedRows lists every stored secret: instance passwords, settings secrets (the LDAP bind password), channel
+// secrets and users' TOTP secrets (those waiting for their first code included),
+// each with the associated data it was sealed with.
 func sealedRows(ctx context.Context, q *db.Queries) ([]sealedRow, error) {
 	var out []sealedRow
 	instances, err := q.ListSealedInstancePasswords(ctx)
@@ -290,6 +292,23 @@ func sealedRows(ctx context.Context, q *db.Queries) ([]sealedRow, error) {
 			save: func(q *db.Queries, s secrets.Sealed) error {
 				return q.ReencryptChannelSecret(ctx, db.ReencryptChannelSecretParams{
 					SecretCiphertext: s.Ciphertext, SecretNonce: s.Nonce, SecretKeyID: validString(s.KeyID), ID: id,
+				})
+			},
+		})
+	}
+	totps, err := q.ListSealedTOTPSecrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, tr := range totps {
+		id := tr.UserID
+		out = append(out, sealedRow{
+			label:  "the two-factor secret of " + tr.Username,
+			aad:    totp.AAD(id),
+			sealed: secrets.Sealed{KeyID: tr.SecretKeyID, Nonce: tr.SecretNonce, Ciphertext: tr.SecretCiphertext},
+			save: func(q *db.Queries, s secrets.Sealed) error {
+				return q.ReencryptTOTPSecret(ctx, db.ReencryptTOTPSecretParams{
+					SecretCiphertext: s.Ciphertext, SecretNonce: s.Nonce, SecretKeyID: s.KeyID, UserID: id,
 				})
 			},
 		})

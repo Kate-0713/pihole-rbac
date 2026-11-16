@@ -86,10 +86,11 @@ commands:
   serve                        run the server (the default)
   setup [--print-token]        show whether first-run setup is open; --print-token makes a new setup token
   user reset-admin <username>  break-glass recovery: set a local admin's password (read from the terminal or stdin),
-                               enable the account and give it the admin role, creating it if needed
+                               enable the account, give it the admin role and remove its two-factor login, creating
+                               the account if needed
   rotate-key --old-key-file <path>
                                re-encrypt the stored secrets (instance passwords, the LDAP bind password, notification
-                               channel secrets) from the old master key in the file to the new one in
+                               channel secrets, two-factor secrets) from the old master key in the file to the new one in
                                PIHOLE_RBAC_SECRET_KEY; then reload secrets or restart
   import-json --config <config.json> [--permissions <file>] [--users <file>] [--instance-name <name>]
               [--time-zone <zone>] [--offline] [--apply]

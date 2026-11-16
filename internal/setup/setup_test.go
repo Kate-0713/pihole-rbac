@@ -198,9 +198,24 @@ func TestResetAdmin(t *testing.T) {
 		if err := q.SetUserDisabled(ctx, db.SetUserDisabledParams{Disabled: true, ID: adminID}); err != nil {
 			return err
 		}
-		return q.CreateSession(ctx, db.CreateSessionParams{
+		if err := q.CreateSession(ctx, db.CreateSessionParams{
 			IDHash: make([]byte, 32), PublicID: "AAAAAAAAAAAAAAAAAAAAAA", UserID: adminID, CreatedAt: 0, ExpiresAt: 1,
-		})
+		}); err != nil {
+			return err
+		}
+		// And the authenticator is lost: two-factor login is on, with a recovery code, and the account must use it.
+		if _, err := q.SetPendingUserTOTP(ctx, db.SetPendingUserTOTPParams{
+			UserID: adminID, SecretCiphertext: []byte{1}, SecretNonce: make([]byte, 12), SecretKeyID: "k", CreatedAt: 1,
+		}); err != nil {
+			return err
+		}
+		if _, err := q.EnableUserTOTP(ctx, db.EnableUserTOTPParams{EnabledAt: sql.NullInt64{Int64: 2, Valid: true}, LastStep: 1, UserID: adminID}); err != nil {
+			return err
+		}
+		if err := q.AddRecoveryCode(ctx, db.AddRecoveryCodeParams{UserID: adminID, CodeHash: make([]byte, 32)}); err != nil {
+			return err
+		}
+		return q.SetUserTOTPPolicy(ctx, db.SetUserTOTPPolicyParams{UserID: adminID, Policy: "required", SetAt: 1, SetBy: "admin"})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -210,8 +225,22 @@ func TestResetAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Created || res.UserID != adminID || res.SessionsEnded != 1 {
+	if res.Created || res.UserID != adminID || res.SessionsEnded != 1 || !res.TOTPRemoved {
 		t.Fatalf("result = %+v", res)
+	}
+	if _, err := st.Read().GetUserTOTP(ctx, adminID); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("the two-factor secret after the reset: %v", err)
+	}
+	if n, _ := st.Read().CountUnusedRecoveryCodes(ctx, adminID); n != 0 {
+		t.Errorf("%d recovery codes left after the reset", n)
+	}
+	// Whether the account must use TOTP is someone's decision, which a reset doesn't undo.
+	if p, err := st.Read().GetUserTOTPPolicy(ctx, adminID); err != nil || p.Policy != "required" {
+		t.Errorf("the account's own setting after the reset: %+v, %v", p, err)
+	}
+	// A second reset has nothing to remove.
+	if res, err := resetAdmin(t, st, "admin", "recovered-password-1"); err != nil || res.TOTPRemoved {
+		t.Fatalf("second reset = %+v, %v", res, err)
 	}
 	u, _ := st.Read().GetUser(ctx, adminID)
 	if u.Disabled || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash.String), []byte("recovered-password-1")) != nil {
@@ -220,7 +249,7 @@ func TestResetAdmin(t *testing.T) {
 
 	// A new name creates a new local admin.
 	res, err = resetAdmin(t, st, "rescue", "recovered-password-2")
-	if err != nil || !res.Created {
+	if err != nil || !res.Created || res.TOTPRemoved {
 		t.Fatalf("result = %+v, %v", res, err)
 	}
 	if roles, _ := st.Read().ListUserRoleIDs(ctx, res.UserID); !slices.Equal(roles, []int64{1}) {

@@ -175,12 +175,15 @@ type ResetResult struct {
 	UserID        int64
 	Created       bool  // the account didn't exist and was created
 	SessionsEnded int64 // the account's sessions, ended because its password changed
+	TOTPRemoved   bool  // the account had two-factor login, on or waiting for its first code, which was removed
 }
 
 // ResetAdmin is the break-glass recovery: it sets a local account's password, enables it and makes sure it holds the
-// builtin admin role, creating the account if it doesn't exist. Every session of the account ends. If setup was
-// still open, it is closed, since there is now an admin, and the starter roles are created. It works through q, the
-// caller's transaction, which also writes the audit entry.
+// builtin admin role, creating the account if it doesn't exist. Every session of the account ends, and its two-factor
+// login (TOTP secret and recovery codes) is removed, since a lost authenticator is one of the things this recovers
+// from. Whether the account must use TOTP isn't changed: if it must, the next login goes straight to setting it up
+// again. If setup was still open, it is closed, since there is now an admin, and the starter roles are created. It
+// works through q, the caller's transaction, which also writes the audit entry.
 func ResetAdmin(ctx context.Context, q *db.Queries, username, password string, now time.Time) (ResetResult, error) {
 	username = auth.NormalizeUsername(username)
 	hash, err := auth.HashPassword(password)
@@ -220,6 +223,11 @@ func ResetAdmin(ctx context.Context, q *db.Queries, username, password string, n
 		if res.SessionsEnded, err = q.DeleteUserSessions(ctx, u.ID); err != nil {
 			return ResetResult{}, err
 		}
+		removed, err := q.DeleteUserTOTP(ctx, u.ID)
+		if err != nil {
+			return ResetResult{}, err
+		}
+		res.TOTPRemoved = removed > 0
 	}
 
 	roles, err := q.ListUserRoleIDs(ctx, res.UserID)

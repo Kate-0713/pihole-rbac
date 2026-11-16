@@ -15,6 +15,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
+	"github.com/Kate-0713/pihole-rbac/internal/totp"
 )
 
 // keyPair is an old and a new master key, with ciphers, and the old one written to a file.
@@ -62,8 +63,11 @@ func seal(t *testing.T, c *secrets.Cipher, plain string, aad []byte) secrets.Sea
 func ns(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
 func ni(n int64) sql.NullInt64   { return sql.NullInt64{Int64: n, Valid: true} }
 
+// totpSecret is the two-factor secret seedSecrets stores for alice.
+var totpSecret = secrets.NewValue([]byte("alice-totp-secret-20"))
+
 // seedSecrets stores an instance password and the LDAP bind password under c1, a channel secret under c1 and another
-// under c2, and returns the row IDs.
+// under c2, and a user's two-factor secret under c1, and returns the row IDs (the user is found by name).
 func seedSecrets(t *testing.T, st *store.Store, c1, c2 *secrets.Cipher) (instance, ch1, ch2 int64) {
 	t.Helper()
 	ctx := context.Background()
@@ -101,7 +105,18 @@ func seedSecrets(t *testing.T, st *store.Store, c1, c2 *secrets.Cipher) (instanc
 				ch2 = id
 			}
 		}
-		return nil
+		u, err := q.CreateLocalUser(ctx, db.CreateLocalUserParams{Username: "alice", PasswordHash: ns("x"), CreatedAt: 1})
+		if err != nil {
+			return err
+		}
+		ts, err := totp.Seal(c1, u.ID, totpSecret)
+		if err != nil {
+			return err
+		}
+		_, err = q.SetPendingUserTOTP(ctx, db.SetPendingUserTOTPParams{
+			UserID: u.ID, SecretCiphertext: ts.Ciphertext, SecretNonce: ts.Nonce, SecretKeyID: ts.KeyID, CreatedAt: 444,
+		})
+		return err
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -138,6 +153,17 @@ func opens(t *testing.T, st *store.Store, c *secrets.Cipher, instance, ch1, ch2 
 			t.Errorf("channel %d's last change was rewritten", id)
 		}
 	}
+	u, _ := q.GetUserByUsername(ctx, "alice")
+	row, err := q.GetUserTOTP(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := totp.Open(c, row); err != nil || !v.Equal(totpSecret) {
+		t.Errorf("two-factor secret: %v", err)
+	}
+	if row.CreatedAt != 444 || row.EnabledAt.Valid || row.LastStep != 0 {
+		t.Errorf("the two-factor secret's row was rewritten: %+v", row)
+	}
 }
 
 func auditCount(t *testing.T, st *store.Store, action string) int {
@@ -167,7 +193,7 @@ func TestRotateKey(t *testing.T) {
 	}
 	out := c.out.String()
 	for _, want := range []string{
-		"Re-encrypted 3 stored secrets under the new key: instance pihole1, the LDAP bind password, channel Ops.",
+		"Re-encrypted 4 stored secrets under the new key: instance pihole1, the LDAP bind password, channel Ops, the two-factor secret of alice.",
 		"1 was already under it: channel Room.",
 		"reload secrets", "still hold these secrets under the old key",
 	} {
@@ -179,13 +205,13 @@ func TestRotateKey(t *testing.T) {
 	if !strings.Contains(c.errOut.String(), `AUDIT user="(cli)" action=rotate_key target="secrets" result=success`) {
 		t.Errorf("AUDIT line: %q", c.errOut)
 	}
-	for _, secret := range []string{"pihole-password", "bind-password", "token-ops", k.newEncoded} {
+	for _, secret := range []string{"pihole-password", "bind-password", "token-ops", totpSecret.Reveal(), totp.Encode(totpSecret), k.newEncoded} {
 		if strings.Contains(c.out.String()+c.errOut.String(), secret) {
 			t.Errorf("a secret was printed: %s", secret)
 		}
 	}
 	rows, _ := st.Read().ListRecentAudit(context.Background(), 1)
-	if rows[0].Action != "rotate_key" || !strings.Contains(rows[0].Detail, `"rotated":["instance pihole1","the LDAP bind password","channel Ops"]`) ||
+	if rows[0].Action != "rotate_key" || !strings.Contains(rows[0].Detail, `"rotated":["instance pihole1","the LDAP bind password","channel Ops","the two-factor secret of alice"]`) ||
 		!strings.Contains(rows[0].Detail, `"already":["channel Room"]`) || rows[0].Username != cliUser {
 		t.Errorf("audit row: %+v", rows[0])
 	}
@@ -194,7 +220,7 @@ func TestRotateKey(t *testing.T) {
 	if err := c.run("", "rotate-key", "--old-key-file", k.oldFile); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(c.out.String(), "Every stored secret (4) is already under the new key") || auditCount(t, st, "rotate_key") != 1 {
+	if !strings.Contains(c.out.String(), "Every stored secret (5) is already under the new key") || auditCount(t, st, "rotate_key") != 1 {
 		t.Errorf("second run: %q, %d rows", c.out, auditCount(t, st, "rotate_key"))
 	}
 }

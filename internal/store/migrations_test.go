@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"strings"
 	"testing"
@@ -578,4 +580,174 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 	if err := s.r.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('client_group_overrides', 'client_group_override_members', 'client_group_override_members_active')`).Scan(&n); err != nil || n != 3 {
 		t.Errorf("up again restored %d of 3 objects, %v", n, err)
 	}
+}
+
+// TestUpgradeFromV2_7_0: a database as v2.7.0 left it (version 9) gets the four two-factor tables and no change to
+// its users, roles, grants or sessions. A secret needs its nonce and key ID, a user has one secret, recovery codes
+// need a secret and go with it, the builtin admin role can be made to require TOTP, a user's own setting is required
+// or exempt, and deleting a user removes all of theirs. Migrating down to 9 removes the tables, and up again restores
+// them empty.
+func TestUpgradeFromV2_7_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO users (id, username, source, password_hash, created_at) VALUES (5, 'alice', 'local', 'x', 1)`,
+		`INSERT INTO users (id, username, source, ldap_dn, created_at) VALUES (6, 'bob', 'ldap', 'cn=bob,dc=lab', 1)`,
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'domains.edit', 'all')`,
+		`INSERT INTO user_roles (user_id, role_id) VALUES (5, 1), (5, 10)`,
+		`INSERT INTO sessions (id_hash, public_id, user_id, created_at, expires_at, last_seen_at, roles_checked_at)
+			VALUES (zeroblob(32), 'AAAAAAAAAAAAAAAAAAAAAA', 6, 1, 2, 1, 1)`,
+		`INSERT INTO session_roles (session_id_hash, role_id) VALUES (zeroblob(32), 10)`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	counts := func(st *Store) string {
+		t.Helper()
+		var out []string
+		for _, table := range []string{"users", "roles", "role_grants", "user_roles", "sessions", "session_roles"} {
+			var n int
+			if err := st.r.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, fmt.Sprintf("%s=%d", table, n))
+		}
+		return strings.Join(out, " ")
+	}
+	before := counts(s)
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	if after := counts(s); after != before {
+		t.Errorf("the upgrade changed existing rows: %s before, %s after", before, after)
+	}
+	tables := []string{"user_totp", "user_recovery_codes", "role_totp_required", "user_totp_policy"}
+	empty := func(when string) {
+		t.Helper()
+		for _, table := range tables {
+			var n int
+			if err := s.r.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil || n != 0 {
+				t.Errorf("%s: %s has %d rows, %v", when, table, n, err)
+			}
+		}
+	}
+	empty("after upgrading")
+
+	exec := func(q string, args ...any) error {
+		_, err := s.w.Exec(q, args...)
+		return err
+	}
+	const secret = `INSERT INTO user_totp (user_id, secret_ciphertext, secret_nonce, secret_key_id, created_at) VALUES `
+	if err := exec(secret + `(5, x'0102', zeroblob(12), 'k1', 1)`); err != nil {
+		t.Fatalf("a secret: %v", err)
+	}
+	var enabled sql.NullInt64
+	var lastStep int64
+	if err := s.r.QueryRow(`SELECT enabled_at, last_step FROM user_totp WHERE user_id = 5`).Scan(&enabled, &lastStep); err != nil || enabled.Valid || lastStep != 0 {
+		t.Errorf("a new secret: enabled %v, last step %d, %v: want not enabled, step 0", enabled, lastStep, err)
+	}
+	for name, values := range map[string]string{
+		"a second secret for a user": `(5, x'0102', zeroblob(12), 'k1', 1)`,
+		"a secret for nobody":        `(99, x'0102', zeroblob(12), 'k1', 1)`,
+		"an empty ciphertext":        `(6, x'', zeroblob(12), 'k1', 1)`,
+		"no ciphertext":              `(6, NULL, zeroblob(12), 'k1', 1)`,
+		"a short nonce":              `(6, x'0102', zeroblob(8), 'k1', 1)`,
+		"no nonce":                   `(6, x'0102', NULL, 'k1', 1)`,
+		"an empty key ID":            `(6, x'0102', zeroblob(12), '', 1)`,
+		"no key ID":                  `(6, x'0102', zeroblob(12), NULL, 1)`,
+	} {
+		if err := exec(secret + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if err := exec(`UPDATE user_totp SET last_step = -1 WHERE user_id = 5`); err == nil {
+		t.Error("a negative last step: accepted")
+	}
+
+	const code = `INSERT INTO user_recovery_codes (user_id, code_hash) VALUES `
+	if err := exec(code + `(5, zeroblob(32))`); err != nil {
+		t.Fatalf("a recovery code: %v", err)
+	}
+	for name, values := range map[string]string{
+		"the same code twice":              `(5, zeroblob(32))`,
+		"a code for a user with no secret": `(6, zeroblob(32))`,
+		"a hash that isn't 32 bytes":       `(5, zeroblob(20))`,
+	} {
+		if err := exec(code + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+
+	// The builtin admin role's own row can't be updated, but it can be listed here.
+	if err := exec(`INSERT INTO role_totp_required (role_id, set_at, set_by) VALUES (1, 1, 'alice'), (10, 1, 'alice')`); err != nil {
+		t.Fatalf("requiring TOTP for the builtin admin role and another: %v", err)
+	}
+	if err := exec(`INSERT INTO role_totp_required (role_id, set_at) VALUES (99, 1)`); err == nil {
+		t.Error("a requirement for a role that doesn't exist: accepted")
+	}
+	if err := exec(`INSERT INTO user_totp_policy (user_id, policy, set_at, set_by) VALUES (5, 'required', 1, 'alice'), (6, 'exempt', 1, 'alice')`); err != nil {
+		t.Fatalf("users' own settings: %v", err)
+	}
+	for name, values := range map[string]string{
+		"an unknown setting":   `(5, 'optional', 1, 'alice')`,
+		"a second setting":     `(6, 'required', 1, 'alice')`,
+		"a setting for nobody": `(99, 'required', 1, 'alice')`,
+	} {
+		if err := exec(`INSERT INTO user_totp_policy (user_id, policy, set_at, set_by) VALUES ` + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+
+	// Removing a role removes its requirement. Deleting a user removes their secret, codes and setting.
+	if err := exec(`DELETE FROM role_grants WHERE role_id = 10`); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec(`DELETE FROM user_roles WHERE role_id = 10`); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec(`DELETE FROM sessions`); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec(`DELETE FROM roles WHERE id = 10`); err != nil {
+		t.Fatalf("deleting a role that requires TOTP: %v", err)
+	}
+	var left int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_totp_required`).Scan(&left); err != nil || left != 1 {
+		t.Errorf("requirements after deleting a role: %d, %v, want 1", left, err)
+	}
+	if err := exec(`DELETE FROM users WHERE id = 5`); err != nil {
+		t.Fatalf("deleting a user with TOTP: %v", err)
+	}
+	for table, want := range map[string]int{"user_totp": 0, "user_recovery_codes": 0, "user_totp_policy": 1} {
+		var n int
+		if err := s.r.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil || n != want {
+			t.Errorf("after deleting the user: %s has %d rows, %v, want %d", table, n, err, want)
+		}
+	}
+
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 9); err != nil {
+		t.Fatalf("down to 9: %v", err)
+	}
+	for _, table := range tables {
+		if ok, err := s.tableExists(ctx, table); err != nil || ok {
+			t.Errorf("after migrating down: %s still exists (%v)", table, err)
+		}
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	empty("after migrating up again")
 }

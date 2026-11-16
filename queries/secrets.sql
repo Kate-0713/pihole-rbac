@@ -24,3 +24,11 @@ UPDATE settings SET secret_ciphertext = ?, secret_nonce = ?, secret_key_id = ? W
 
 -- name: ReencryptChannelSecret :exec
 UPDATE notification_channels SET secret_ciphertext = ?, secret_nonce = ?, secret_key_id = ? WHERE id = ?;
+
+-- name: ListSealedTOTPSecrets :many
+SELECT t.user_id, u.username, t.secret_ciphertext, t.secret_nonce, t.secret_key_id
+FROM user_totp t JOIN users u ON u.id = t.user_id
+ORDER BY t.user_id;
+
+-- name: ReencryptTOTPSecret :exec
+UPDATE user_totp SET secret_ciphertext = ?, secret_nonce = ?, secret_key_id = ? WHERE user_id = ?;
