@@ -237,6 +237,57 @@ func (e ClientResetSkippedReason) Valid() bool {
 	}
 }
 
+// Defines values for DHCPStaticMark.
+const (
+	DHCPStaticMarkExtraFields  DHCPStaticMark = "extra_fields"
+	DHCPStaticMarkIpv6         DHCPStaticMark = "ipv6"
+	DHCPStaticMarkMultipleMacs DHCPStaticMark = "multiple_macs"
+	DHCPStaticMarkNoMac        DHCPStaticMark = "no_mac"
+	DHCPStaticMarkUnparsed     DHCPStaticMark = "unparsed"
+)
+
+// Valid indicates whether the value is a known member of the DHCPStaticMark enum.
+func (e DHCPStaticMark) Valid() bool {
+	switch e {
+	case DHCPStaticMarkExtraFields:
+		return true
+	case DHCPStaticMarkIpv6:
+		return true
+	case DHCPStaticMarkMultipleMacs:
+		return true
+	case DHCPStaticMarkNoMac:
+		return true
+	case DHCPStaticMarkUnparsed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DHCPWritable.
+const (
+	DHCPWritableAppSudoOff DHCPWritable = "app_sudo_off"
+	DHCPWritableLocked     DHCPWritable = "locked"
+	DHCPWritableOk         DHCPWritable = "ok"
+	DHCPWritableUnknown    DHCPWritable = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the DHCPWritable enum.
+func (e DHCPWritable) Valid() bool {
+	switch e {
+	case DHCPWritableAppSudoOff:
+		return true
+	case DHCPWritableLocked:
+		return true
+	case DHCPWritableOk:
+		return true
+	case DHCPWritableUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DomainKind.
 const (
 	DomainKindExact DomainKind = "exact"
@@ -821,19 +872,19 @@ func (e LocalDNSKind) Valid() bool {
 
 // Defines values for LocalDNSMark.
 const (
-	Comment       LocalDNSMark = "comment"
-	MultipleNames LocalDNSMark = "multiple_names"
-	Unparsed      LocalDNSMark = "unparsed"
+	LocalDNSMarkComment       LocalDNSMark = "comment"
+	LocalDNSMarkMultipleNames LocalDNSMark = "multiple_names"
+	LocalDNSMarkUnparsed      LocalDNSMark = "unparsed"
 )
 
 // Valid indicates whether the value is a known member of the LocalDNSMark enum.
 func (e LocalDNSMark) Valid() bool {
 	switch e {
-	case Comment:
+	case LocalDNSMarkComment:
 		return true
-	case MultipleNames:
+	case LocalDNSMarkMultipleNames:
 		return true
-	case Unparsed:
+	case LocalDNSMarkUnparsed:
 		return true
 	default:
 		return false
@@ -2322,6 +2373,199 @@ type CurrentSession struct {
 	// PublicId Identifies this session in the sessions list and the audit log. Can't be used to authenticate.
 	PublicId string      `json:"public_id"`
 	User     SessionUser `json:"user"`
+}
+
+// DHCPInstance defines model for DHCPInstance.
+type DHCPInstance struct {
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Locked The settings (by the names this API uses) an environment variable fixes, which Pi-hole's API can't change.
+	Locked []string `json:"locked"`
+
+	// Settings The DHCP settings the app manages. Addresses are empty when unset.
+	Settings DHCPSettings `json:"settings"`
+
+	// Writable ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is read-only (misc.readOnly). unknown: the instance couldn't be read.
+	Writable DHCPWritable `json:"writable"`
+}
+
+// DHCPLease defines model for DHCPLease.
+type DHCPLease struct {
+	ClientId *string `json:"client_id,omitempty"`
+
+	// Expires When the lease ends, in Unix seconds; 0 means it doesn't expire.
+	Expires *int64 `json:"expires,omitempty"`
+
+	// Hwaddr The MAC address, absent when Pi-hole has none. For an IPv6 lease it may be an IAID, not a MAC.
+	Hwaddr     *string `json:"hwaddr,omitempty"`
+	Instance   string  `json:"instance"`
+	InstanceId int64   `json:"instance_id"`
+	Ip         string  `json:"ip"`
+	Ipv6       bool    `json:"ipv6"`
+
+	// Name The device's hostname, absent when it gave none.
+	Name *string `json:"name,omitempty"`
+}
+
+// DHCPLeaseRef defines model for DHCPLeaseRef.
+type DHCPLeaseRef struct {
+	Ip string `json:"ip"`
+}
+
+// DHCPLeaseSource defines model for DHCPLeaseSource.
+type DHCPLeaseSource struct {
+	// Active DHCP is on, on this instance.
+	Active bool `json:"active"`
+
+	// Included Its leases are in the list. False for a mirrored group's member with DHCP off.
+	Included   bool   `json:"included"`
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+}
+
+// DHCPLeases defines model for DHCPLeases.
+type DHCPLeases struct {
+	Instances []DHCPLeaseSource `json:"instances"`
+	Leases    []DHCPLease       `json:"leases"`
+	Members   *[]MemberRead     `json:"members,omitempty"`
+}
+
+// DHCPSettings The DHCP settings the app manages. Addresses are empty when unset.
+type DHCPSettings struct {
+	Active               bool   `json:"active"`
+	End                  string `json:"end"`
+	IgnoreUnknownClients bool   `json:"ignore_unknown_clients"`
+	Ipv6                 bool   `json:"ipv6"`
+
+	// LeaseTime Empty keeps dnsmasq's default.
+	LeaseTime string `json:"lease_time"`
+	MultiDns  bool   `json:"multi_dns"`
+
+	// Netmask Empty is allowed: Pi-hole then guesses from the class of `start`.
+	Netmask     string `json:"netmask"`
+	RapidCommit bool   `json:"rapid_commit"`
+	Router      string `json:"router"`
+	Start       string `json:"start"`
+}
+
+// DHCPSettingsPatch The settings to change; a field that isn't sent is left alone.
+type DHCPSettingsPatch struct {
+	Active               *bool   `json:"active,omitempty"`
+	End                  *string `json:"end,omitempty"`
+	IgnoreUnknownClients *bool   `json:"ignore_unknown_clients,omitempty"`
+	Ipv6                 *bool   `json:"ipv6,omitempty"`
+	LeaseTime            *string `json:"lease_time,omitempty"`
+	MultiDns             *bool   `json:"multi_dns,omitempty"`
+	Netmask              *string `json:"netmask,omitempty"`
+	RapidCommit          *bool   `json:"rapid_commit,omitempty"`
+	Router               *string `json:"router,omitempty"`
+	Start                *string `json:"start,omitempty"`
+}
+
+// DHCPSettingsRead defines model for DHCPSettingsRead.
+type DHCPSettingsRead struct {
+	// Instances The instances that answered, the primary first through a mirrored group.
+	Instances []DHCPInstance `json:"instances"`
+
+	// Members Through a mirrored group, how each member answered.
+	Members *[]MemberRead `json:"members,omitempty"`
+}
+
+// DHCPStaticInstance defines model for DHCPStaticInstance.
+type DHCPStaticInstance struct {
+	Instance   string `json:"instance"`
+	InstanceId int64  `json:"instance_id"`
+
+	// Locked The static leases are set by an environment variable, so Pi-hole's API can't change them.
+	Locked       bool              `json:"locked"`
+	StaticLeases []DHCPStaticLease `json:"static_leases"`
+
+	// Subnet The subnet DHCP's settings give, as a prefix, when there is one, which new leases must fall in.
+	Subnet *string `json:"subnet,omitempty"`
+
+	// Writable ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is read-only (misc.readOnly). unknown: the instance couldn't be read.
+	Writable DHCPWritable `json:"writable"`
+}
+
+// DHCPStaticLease defines model for DHCPStaticLease.
+type DHCPStaticLease struct {
+	Hostname *string `json:"hostname,omitempty"`
+	Ip       *string `json:"ip,omitempty"`
+
+	// Key What identifies the lease: its lowercase MAC and address, or its value for an entry that can't be read.
+	Key string  `json:"key"`
+	Mac *string `json:"mac,omitempty"`
+
+	// Marks Why the app couldn't have written the entry, so it can be deleted but not changed.
+	Marks []DHCPStaticMark `json:"marks"`
+
+	// Value Pi-hole's string, exactly as read. Text: show it as text.
+	Value string `json:"value"`
+}
+
+// DHCPStaticLeaseDelete defines model for DHCPStaticLeaseDelete.
+type DHCPStaticLeaseDelete struct {
+	// Lease A static lease, by its MAC and address, or by `value` (Pi-hole's string as read), not both.
+	Lease DHCPStaticLeaseRef `json:"lease"`
+}
+
+// DHCPStaticLeaseInput defines model for DHCPStaticLeaseInput.
+type DHCPStaticLeaseInput struct {
+	Hostname *string `json:"hostname,omitempty"`
+	Ip       string  `json:"ip"`
+	Mac      string  `json:"mac"`
+}
+
+// DHCPStaticLeaseRef A static lease, by its MAC and address, or by `value` (Pi-hole's string as read), not both.
+type DHCPStaticLeaseRef struct {
+	Ip    *string `json:"ip,omitempty"`
+	Mac   *string `json:"mac,omitempty"`
+	Value *string `json:"value,omitempty"`
+}
+
+// DHCPStaticLeaseUpdate defines model for DHCPStaticLeaseUpdate.
+type DHCPStaticLeaseUpdate struct {
+	// From A static lease, by its MAC and address, or by `value` (Pi-hole's string as read), not both.
+	From DHCPStaticLeaseRef   `json:"from"`
+	To   DHCPStaticLeaseInput `json:"to"`
+}
+
+// DHCPStaticLeases defines model for DHCPStaticLeases.
+type DHCPStaticLeases struct {
+	Instances []DHCPStaticInstance `json:"instances"`
+	Members   *[]MemberRead        `json:"members,omitempty"`
+}
+
+// DHCPStaticMark defines model for DHCPStaticMark.
+type DHCPStaticMark string
+
+// DHCPWritable ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is read-only (misc.readOnly). unknown: the instance couldn't be read.
+type DHCPWritable string
+
+// DHCPWriteResult defines model for DHCPWriteResult.
+type DHCPWriteResult struct {
+	// Added For a failed change, the new lease was added but the old one couldn't be deleted.
+	Added *bool `json:"added,omitempty"`
+
+	// Error Why an instance failed or was skipped. Present exactly when the status isn't ok.
+	Error      *WriteError `json:"error,omitempty"`
+	Instance   string      `json:"instance"`
+	InstanceId int64       `json:"instance_id"`
+
+	// RestartPending Pi-hole accepted the change but hadn't answered again within 15 seconds of restarting.
+	RestartPending *bool `json:"restart_pending,omitempty"`
+
+	// Status ok: the change was made. failed: the Pi-hole was asked and the change failed (see `error`). skipped: the instance wasn't asked, because it was found down moments ago or can't be used (see `error`).
+	Status WriteStatus `json:"status"`
+
+	// Unchanged Nothing was sent, since the instance was already as asked.
+	Unchanged *bool `json:"unchanged,omitempty"`
+}
+
+// DHCPWriteResults defines model for DHCPWriteResults.
+type DHCPWriteResults struct {
+	Results []DHCPWriteResult `json:"results"`
 }
 
 // DNSRecord defines model for DNSRecord.
@@ -4619,6 +4863,9 @@ type ClientResetConflict = Error
 // Conflict defines model for Conflict.
 type Conflict = Error
 
+// DHCPConflict defines model for DHCPConflict.
+type DHCPConflict = Error
+
 // Forbidden defines model for Forbidden.
 type Forbidden = Error
 
@@ -4744,13 +4991,13 @@ type ListClientResetRunsParams struct {
 
 // SetRoleGrantsParams defines parameters for SetRoleGrants.
 type SetRoleGrantsParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // RemoveLDAPMappingParams defines parameters for RemoveLDAPMapping.
 type RemoveLDAPMappingParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4785,6 +5032,12 @@ type ListTargetClientResetRunsParams struct {
 type UpdateClientParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
+}
+
+// UpdateDHCPSettingsParams defines parameters for UpdateDHCPSettings.
+type UpdateDHCPSettingsParams struct {
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // RestartDNSParams defines parameters for RestartDNS.
@@ -4828,7 +5081,7 @@ type DeletePiholeGroupParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4837,7 +5090,7 @@ type UpdatePiholeGroupParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4882,7 +5135,7 @@ type UpdateCNAMEParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4891,7 +5144,7 @@ type AddCNAMEParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4906,7 +5159,7 @@ type UpdateDNSRecordParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4915,7 +5168,7 @@ type AddDNSRecordParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -4963,19 +5216,19 @@ type ListQueriesParamsResult string
 
 // DeleteUserParams defines parameters for DeleteUser.
 type DeleteUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // DisableUserParams defines parameters for DisableUser.
 type DisableUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // SetUserRolesParams defines parameters for SetUserRoles.
 type SetUserRolesParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5062,6 +5315,21 @@ type StartTemporaryClientChangeJSONRequestBody = TemporaryClientStart
 
 // UpdateTemporaryClientChangeJSONRequestBody defines body for UpdateTemporaryClientChange for application/json ContentType.
 type UpdateTemporaryClientChangeJSONRequestBody = TemporaryClientUpdate
+
+// DeleteDHCPLeaseJSONRequestBody defines body for DeleteDHCPLease for application/json ContentType.
+type DeleteDHCPLeaseJSONRequestBody = DHCPLeaseRef
+
+// UpdateDHCPSettingsJSONRequestBody defines body for UpdateDHCPSettings for application/json ContentType.
+type UpdateDHCPSettingsJSONRequestBody = DHCPSettingsPatch
+
+// DeleteDHCPStaticLeaseJSONRequestBody defines body for DeleteDHCPStaticLease for application/json ContentType.
+type DeleteDHCPStaticLeaseJSONRequestBody = DHCPStaticLeaseDelete
+
+// UpdateDHCPStaticLeaseJSONRequestBody defines body for UpdateDHCPStaticLease for application/json ContentType.
+type UpdateDHCPStaticLeaseJSONRequestBody = DHCPStaticLeaseUpdate
+
+// AddDHCPStaticLeaseJSONRequestBody defines body for AddDHCPStaticLease for application/json ContentType.
+type AddDHCPStaticLeaseJSONRequestBody = DHCPStaticLeaseInput
 
 // DeleteDomainJSONRequestBody defines body for DeleteDomain for application/json ContentType.
 type DeleteDomainJSONRequestBody = DomainKey
@@ -5365,6 +5633,30 @@ type ServerInterface interface {
 	// RetryTemporaryClientChange Retry a revert the app gave up on
 	// (POST /api/v1/targets/{target}/clients/temporary/{id}/retry)
 	RetryTemporaryClientChange(w http.ResponseWriter, r *http.Request, target TargetID, id TemporaryChangeID)
+	// GetDHCP DHCP settings
+	// (GET /api/v1/targets/{target}/dhcp)
+	GetDHCP(w http.ResponseWriter, r *http.Request, target TargetID)
+	// DeleteDHCPLease Delete a lease
+	// (DELETE /api/v1/targets/{target}/dhcp/leases)
+	DeleteDHCPLease(w http.ResponseWriter, r *http.Request, target TargetID)
+	// ListDHCPLeases DHCP leases
+	// (GET /api/v1/targets/{target}/dhcp/leases)
+	ListDHCPLeases(w http.ResponseWriter, r *http.Request, target TargetID)
+	// UpdateDHCPSettings Change the DHCP settings
+	// (PATCH /api/v1/targets/{target}/dhcp/settings)
+	UpdateDHCPSettings(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateDHCPSettingsParams)
+	// DeleteDHCPStaticLease Delete a static lease
+	// (DELETE /api/v1/targets/{target}/dhcp/static-leases)
+	DeleteDHCPStaticLease(w http.ResponseWriter, r *http.Request, target TargetID)
+	// ListDHCPStaticLeases Static DHCP leases
+	// (GET /api/v1/targets/{target}/dhcp/static-leases)
+	ListDHCPStaticLeases(w http.ResponseWriter, r *http.Request, target TargetID)
+	// UpdateDHCPStaticLease Change a static lease
+	// (PATCH /api/v1/targets/{target}/dhcp/static-leases)
+	UpdateDHCPStaticLease(w http.ResponseWriter, r *http.Request, target TargetID)
+	// AddDHCPStaticLease Add a static lease
+	// (POST /api/v1/targets/{target}/dhcp/static-leases)
+	AddDHCPStaticLease(w http.ResponseWriter, r *http.Request, target TargetID)
 	// RestartDNS Restart Pi-hole's DNS resolver
 	// (POST /api/v1/targets/{target}/dns/restart)
 	RestartDNS(w http.ResponseWriter, r *http.Request, target TargetID, params RestartDNSParams)
@@ -7501,6 +7793,230 @@ func (siw *ServerInterfaceWrapper) RetryTemporaryClientChange(w http.ResponseWri
 	handler.ServeHTTP(w, r)
 }
 
+// GetDHCP operation middleware
+func (siw *ServerInterfaceWrapper) GetDHCP(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDHCP(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDHCPLease operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDHCPLease(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDHCPLease(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDHCPLeases operation middleware
+func (siw *ServerInterfaceWrapper) ListDHCPLeases(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDHCPLeases(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDHCPSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDHCPSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateDHCPSettingsParams
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDHCPSettings(w, r, target, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDHCPStaticLease operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDHCPStaticLease(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDHCPStaticLease(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDHCPStaticLeases operation middleware
+func (siw *ServerInterfaceWrapper) ListDHCPStaticLeases(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDHCPStaticLeases(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDHCPStaticLease operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDHCPStaticLease(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDHCPStaticLease(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddDHCPStaticLease operation middleware
+func (siw *ServerInterfaceWrapper) AddDHCPStaticLease(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "target" -------------
+	var target TargetID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "target", r.PathValue("target"), &target, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddDHCPStaticLease(w, r, target)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RestartDNS operation middleware
 func (siw *ServerInterfaceWrapper) RestartDNS(w http.ResponseWriter, r *http.Request) {
 
@@ -9371,6 +9887,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/cnames", wrapper.DeleteCNAME)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/cnames", wrapper.UpdateCNAME)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/local-dns/cnames", wrapper.AddCNAME)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp", wrapper.GetDHCP)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp/leases", wrapper.DeleteDHCPLease)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp/leases", wrapper.ListDHCPLeases)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp/static-leases", wrapper.DeleteDHCPStaticLease)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp/static-leases", wrapper.ListDHCPStaticLeases)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp/static-leases", wrapper.UpdateDHCPStaticLease)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp/static-leases", wrapper.AddDHCPStaticLease)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/targets/{target}/dhcp/settings", wrapper.UpdateDHCPSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/targets/{target}/queries", wrapper.ListQueries)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.GetClientResetRules)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/client-reset/rules", wrapper.SetClientResetRules)
@@ -9391,6 +9915,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 type ClientResetConflictJSONResponse Error
 
 type ConflictJSONResponse Error
+
+type DHCPConflictJSONResponse Error
 
 type ForbiddenJSONResponse Error
 
@@ -16659,6 +17185,1052 @@ func (response RetryTemporaryClientChange503JSONResponse) VisitRetryTemporaryCli
 	return err
 }
 
+type GetDHCPRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type GetDHCPResponseObject interface {
+	VisitGetDHCPResponse(w http.ResponseWriter) error
+}
+
+type GetDHCP200JSONResponse DHCPSettingsRead
+
+func (response GetDHCP200JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDHCP400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response GetDHCP400JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDHCP401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetDHCP401JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDHCP403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetDHCP403JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDHCP404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetDHCP404JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDHCP409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response GetDHCP409JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDHCP502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response GetDHCP502JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDHCP503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetDHCP503JSONResponse) VisitGetDHCPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLeaseRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *DeleteDHCPLeaseJSONRequestBody
+}
+
+type DeleteDHCPLeaseResponseObject interface {
+	VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error
+}
+
+type DeleteDHCPLease200JSONResponse DHCPWriteResults
+
+func (response DeleteDHCPLease200JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response DeleteDHCPLease400JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteDHCPLease401JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteDHCPLease403JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteDHCPLease404JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease409JSONResponse struct{ DHCPConflictJSONResponse }
+
+func (response DeleteDHCPLease409JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DeleteDHCPLease415JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response DeleteDHCPLease502JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPLease503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteDHCPLease503JSONResponse) VisitDeleteDHCPLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeasesRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListDHCPLeasesResponseObject interface {
+	VisitListDHCPLeasesResponse(w http.ResponseWriter) error
+}
+
+type ListDHCPLeases200JSONResponse DHCPLeases
+
+func (response ListDHCPLeases200JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeases400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListDHCPLeases400JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeases401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListDHCPLeases401JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeases403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListDHCPLeases403JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeases404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListDHCPLeases404JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeases409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListDHCPLeases409JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeases502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListDHCPLeases502JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPLeases503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListDHCPLeases503JSONResponse) VisitListDHCPLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettingsRequestObject struct {
+	Target TargetID `json:"target"`
+	Params UpdateDHCPSettingsParams
+	Body   *UpdateDHCPSettingsJSONRequestBody
+}
+
+type UpdateDHCPSettingsResponseObject interface {
+	VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error
+}
+
+type UpdateDHCPSettings200JSONResponse DHCPWriteResults
+
+func (response UpdateDHCPSettings200JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateDHCPSettings400JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateDHCPSettings401JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateDHCPSettings403JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateDHCPSettings404JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings409JSONResponse struct{ DHCPConflictJSONResponse }
+
+func (response UpdateDHCPSettings409JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateDHCPSettings415JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateDHCPSettings502JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPSettings503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateDHCPSettings503JSONResponse) VisitUpdateDHCPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLeaseRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *DeleteDHCPStaticLeaseJSONRequestBody
+}
+
+type DeleteDHCPStaticLeaseResponseObject interface {
+	VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error
+}
+
+type DeleteDHCPStaticLease200JSONResponse DHCPWriteResults
+
+func (response DeleteDHCPStaticLease200JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response DeleteDHCPStaticLease400JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteDHCPStaticLease401JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteDHCPStaticLease403JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteDHCPStaticLease404JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease409JSONResponse struct{ DHCPConflictJSONResponse }
+
+func (response DeleteDHCPStaticLease409JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DeleteDHCPStaticLease415JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response DeleteDHCPStaticLease502JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDHCPStaticLease503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteDHCPStaticLease503JSONResponse) VisitDeleteDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeasesRequestObject struct {
+	Target TargetID `json:"target"`
+}
+
+type ListDHCPStaticLeasesResponseObject interface {
+	VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error
+}
+
+type ListDHCPStaticLeases200JSONResponse DHCPStaticLeases
+
+func (response ListDHCPStaticLeases200JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeases400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ListDHCPStaticLeases400JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeases401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListDHCPStaticLeases401JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeases403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListDHCPStaticLeases403JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeases404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListDHCPStaticLeases404JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeases409JSONResponse struct{ TargetUnavailableJSONResponse }
+
+func (response ListDHCPStaticLeases409JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeases502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response ListDHCPStaticLeases502JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDHCPStaticLeases503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListDHCPStaticLeases503JSONResponse) VisitListDHCPStaticLeasesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLeaseRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *UpdateDHCPStaticLeaseJSONRequestBody
+}
+
+type UpdateDHCPStaticLeaseResponseObject interface {
+	VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error
+}
+
+type UpdateDHCPStaticLease200JSONResponse DHCPWriteResults
+
+func (response UpdateDHCPStaticLease200JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response UpdateDHCPStaticLease400JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateDHCPStaticLease401JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateDHCPStaticLease403JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateDHCPStaticLease404JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease409JSONResponse struct{ DHCPConflictJSONResponse }
+
+func (response UpdateDHCPStaticLease409JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateDHCPStaticLease415JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response UpdateDHCPStaticLease502JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateDHCPStaticLease503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateDHCPStaticLease503JSONResponse) VisitUpdateDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLeaseRequestObject struct {
+	Target TargetID `json:"target"`
+	Body   *AddDHCPStaticLeaseJSONRequestBody
+}
+
+type AddDHCPStaticLeaseResponseObject interface {
+	VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error
+}
+
+type AddDHCPStaticLease200JSONResponse DHCPWriteResults
+
+func (response AddDHCPStaticLease200JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease400JSONResponse struct{ InvalidOrRejectedJSONResponse }
+
+func (response AddDHCPStaticLease400JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddDHCPStaticLease401JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddDHCPStaticLease403JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddDHCPStaticLease404JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease409JSONResponse struct{ DHCPConflictJSONResponse }
+
+func (response AddDHCPStaticLease409JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response AddDHCPStaticLease415JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease502JSONResponse struct{ TargetPiholeFailedJSONResponse }
+
+func (response AddDHCPStaticLease502JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDHCPStaticLease503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response AddDHCPStaticLease503JSONResponse) VisitAddDHCPStaticLeaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RestartDNSRequestObject struct {
 	Target TargetID `json:"target"`
 	Params RestartDNSParams
@@ -21800,6 +23372,30 @@ type StrictServerInterface interface {
 	// RetryTemporaryClientChange Retry a revert the app gave up on
 	// (POST /api/v1/targets/{target}/clients/temporary/{id}/retry)
 	RetryTemporaryClientChange(ctx context.Context, request RetryTemporaryClientChangeRequestObject) (RetryTemporaryClientChangeResponseObject, error)
+	// GetDHCP DHCP settings
+	// (GET /api/v1/targets/{target}/dhcp)
+	GetDHCP(ctx context.Context, request GetDHCPRequestObject) (GetDHCPResponseObject, error)
+	// DeleteDHCPLease Delete a lease
+	// (DELETE /api/v1/targets/{target}/dhcp/leases)
+	DeleteDHCPLease(ctx context.Context, request DeleteDHCPLeaseRequestObject) (DeleteDHCPLeaseResponseObject, error)
+	// ListDHCPLeases DHCP leases
+	// (GET /api/v1/targets/{target}/dhcp/leases)
+	ListDHCPLeases(ctx context.Context, request ListDHCPLeasesRequestObject) (ListDHCPLeasesResponseObject, error)
+	// UpdateDHCPSettings Change the DHCP settings
+	// (PATCH /api/v1/targets/{target}/dhcp/settings)
+	UpdateDHCPSettings(ctx context.Context, request UpdateDHCPSettingsRequestObject) (UpdateDHCPSettingsResponseObject, error)
+	// DeleteDHCPStaticLease Delete a static lease
+	// (DELETE /api/v1/targets/{target}/dhcp/static-leases)
+	DeleteDHCPStaticLease(ctx context.Context, request DeleteDHCPStaticLeaseRequestObject) (DeleteDHCPStaticLeaseResponseObject, error)
+	// ListDHCPStaticLeases Static DHCP leases
+	// (GET /api/v1/targets/{target}/dhcp/static-leases)
+	ListDHCPStaticLeases(ctx context.Context, request ListDHCPStaticLeasesRequestObject) (ListDHCPStaticLeasesResponseObject, error)
+	// UpdateDHCPStaticLease Change a static lease
+	// (PATCH /api/v1/targets/{target}/dhcp/static-leases)
+	UpdateDHCPStaticLease(ctx context.Context, request UpdateDHCPStaticLeaseRequestObject) (UpdateDHCPStaticLeaseResponseObject, error)
+	// AddDHCPStaticLease Add a static lease
+	// (POST /api/v1/targets/{target}/dhcp/static-leases)
+	AddDHCPStaticLease(ctx context.Context, request AddDHCPStaticLeaseRequestObject) (AddDHCPStaticLeaseResponseObject, error)
 	// RestartDNS Restart Pi-hole's DNS resolver
 	// (POST /api/v1/targets/{target}/dns/restart)
 	RestartDNS(ctx context.Context, request RestartDNSRequestObject) (RestartDNSResponseObject, error)
@@ -24166,6 +25762,250 @@ func (sh *strictHandler) RetryTemporaryClientChange(w http.ResponseWriter, r *ht
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RetryTemporaryClientChangeResponseObject); ok {
 		if err := validResponse.VisitRetryTemporaryClientChangeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDHCP operation middleware
+func (sh *strictHandler) GetDHCP(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request GetDHCPRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDHCP(ctx, request.(GetDHCPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDHCP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDHCPResponseObject); ok {
+		if err := validResponse.VisitGetDHCPResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteDHCPLease operation middleware
+func (sh *strictHandler) DeleteDHCPLease(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request DeleteDHCPLeaseRequestObject
+
+	request.Target = target
+
+	var body DeleteDHCPLeaseJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteDHCPLease(ctx, request.(DeleteDHCPLeaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteDHCPLease")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteDHCPLeaseResponseObject); ok {
+		if err := validResponse.VisitDeleteDHCPLeaseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDHCPLeases operation middleware
+func (sh *strictHandler) ListDHCPLeases(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListDHCPLeasesRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDHCPLeases(ctx, request.(ListDHCPLeasesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDHCPLeases")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDHCPLeasesResponseObject); ok {
+		if err := validResponse.VisitListDHCPLeasesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateDHCPSettings operation middleware
+func (sh *strictHandler) UpdateDHCPSettings(w http.ResponseWriter, r *http.Request, target TargetID, params UpdateDHCPSettingsParams) {
+	var request UpdateDHCPSettingsRequestObject
+
+	request.Target = target
+	request.Params = params
+
+	var body UpdateDHCPSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateDHCPSettings(ctx, request.(UpdateDHCPSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateDHCPSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateDHCPSettingsResponseObject); ok {
+		if err := validResponse.VisitUpdateDHCPSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteDHCPStaticLease operation middleware
+func (sh *strictHandler) DeleteDHCPStaticLease(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request DeleteDHCPStaticLeaseRequestObject
+
+	request.Target = target
+
+	var body DeleteDHCPStaticLeaseJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteDHCPStaticLease(ctx, request.(DeleteDHCPStaticLeaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteDHCPStaticLease")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteDHCPStaticLeaseResponseObject); ok {
+		if err := validResponse.VisitDeleteDHCPStaticLeaseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDHCPStaticLeases operation middleware
+func (sh *strictHandler) ListDHCPStaticLeases(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request ListDHCPStaticLeasesRequestObject
+
+	request.Target = target
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDHCPStaticLeases(ctx, request.(ListDHCPStaticLeasesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDHCPStaticLeases")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDHCPStaticLeasesResponseObject); ok {
+		if err := validResponse.VisitListDHCPStaticLeasesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateDHCPStaticLease operation middleware
+func (sh *strictHandler) UpdateDHCPStaticLease(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request UpdateDHCPStaticLeaseRequestObject
+
+	request.Target = target
+
+	var body UpdateDHCPStaticLeaseJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateDHCPStaticLease(ctx, request.(UpdateDHCPStaticLeaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateDHCPStaticLease")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateDHCPStaticLeaseResponseObject); ok {
+		if err := validResponse.VisitUpdateDHCPStaticLeaseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddDHCPStaticLease operation middleware
+func (sh *strictHandler) AddDHCPStaticLease(w http.ResponseWriter, r *http.Request, target TargetID) {
+	var request AddDHCPStaticLeaseRequestObject
+
+	request.Target = target
+
+	var body AddDHCPStaticLeaseJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddDHCPStaticLease(ctx, request.(AddDHCPStaticLeaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddDHCPStaticLease")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddDHCPStaticLeaseResponseObject); ok {
+		if err := validResponse.VisitAddDHCPStaticLeaseResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

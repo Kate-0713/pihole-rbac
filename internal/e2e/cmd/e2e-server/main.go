@@ -94,6 +94,9 @@ func run() error {
 	// The app changes local DNS only where app_sudo is on. pihole2 needs it too, for reconciling a group of the two.
 	ph2.SetAppSudo(true)
 	ph2.SetRestartOutage(0)
+	// pihole2 already serves DHCP, so turning it on for pihole1 warns about it.
+	ph2.SetDHCP(piholetest.DHCPSettings{Active: true, Start: "10.9.0.100", End: "10.9.0.200", Router: "10.9.0.1",
+		Netmask: "255.255.255.0", LeaseTime: "12h"})
 	// A directory for the LDAP page's tests. The seeded server doesn't use it until a test saves its settings.
 	directory, err := ldaptest.Start("127.0.0.1:0")
 	if err != nil {
@@ -255,6 +258,17 @@ func fillPihole(ph *piholetest.Server) {
 	ph.SetLocalDNS([]string{"10.0.0.5 nas.lab", "10.0.0.6 printer.lab printer # office"}, []string{"files.lab,nas.lab"})
 	ph.SetAppSudo(true)
 	ph.SetRestartOutage(0)
+
+	// DHCP, off with a range set so a test can turn it on: two static leases (one with a lease time, as if added in
+	// Pi-hole's own admin, which the app won't write) and three leases, one of them static already.
+	ph.SetDHCP(piholetest.DHCPSettings{Start: "192.168.1.100", End: "192.168.1.200", Router: "192.168.1.1",
+		Netmask: "255.255.255.0", LeaseTime: "24h"})
+	ph.SetStaticLeases([]string{"aa:bb:cc:00:00:01,192.168.1.10,nas", "aa:bb:cc:00:00:02,192.168.1.11,tv,12h"})
+	ph.SetLeases([]piholetest.DHCPLease{
+		{Expires: 4_000_000_000, HWAddr: "aa:bb:cc:00:00:01", IP: "192.168.1.10", Name: "nas", ClientID: "*"},
+		{Expires: 4_000_000_000, HWAddr: "aa:bb:cc:00:00:09", IP: "192.168.1.120", Name: "phone", ClientID: "*"},
+		{Expires: 0, HWAddr: "aa:bb:cc:00:00:08", IP: "192.168.1.121", Name: "*", ClientID: "*"},
+	})
 
 	// Five queries, newest first, a minute apart and ending a minute ago: two blocked, three answered, one of them
 	// cached and for AAAA.

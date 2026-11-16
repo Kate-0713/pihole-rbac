@@ -1680,6 +1680,114 @@ export interface paths {
         patch: operations["updateCNAME"];
         trace?: never;
     };
+    "/api/v1/targets/{target}/dhcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * DHCP settings
+         * @description The DHCP settings of each instance the target names, whether DHCP is on, and whether the app can change them. Pi-hole only lets the app's password change config while webserver.api.app_sudo is on. Through a mirrored group (which DHCP doesn't mirror) every enabled member is read and answered separately, the primary first; `members` says how each answered, and a request fails only when none did. Reading isn't audited. Since v2.7.0.
+         */
+        get: operations["getDHCP"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/dhcp/leases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * DHCP leases
+         * @description The leases in dnsmasq's lease file, each naming its instance. Pi-hole reads the file whether or not DHCP is on, so an instance with DHCP off can show stale leases: for an instance target they are shown, with `active` false; through a mirrored group, a member with DHCP off has its leases left out (`included` false in `instances`). `*` in Pi-hole's name and client ID columns is read as absent. Reading isn't audited. Since v2.7.0.
+         */
+        get: operations["listDHCPLeases"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a lease
+         * @description Deletes the lease for `ip`: the device asks for an address again, and this doesn't block it. Not a config write, so nothing restarts. Instance targets only: a mirrored group target is a 400, since DHCP isn't mirrored. A lease Pi-hole doesn't have is a 404 (not_found), a Pi-hole whose DHCP is off a 409 (pihole_dhcp_off) and one that is busy a 409 (pihole_busy), which can be repeated. Audited as dhcp_lease_delete. Since v2.7.0.
+         */
+        delete: operations["deleteDHCPLease"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/dhcp/static-leases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Static DHCP leases
+         * @description The static leases (dhcp.hosts) of each instance the target names, each with its key, its fields as read and marks for an entry the app couldn't have written (those can be deleted, not changed). Through a mirrored group every enabled member is read and answered separately. Reading isn't audited. Since v2.7.0.
+         */
+        get: operations["listDHCPStaticLeases"];
+        put?: never;
+        /**
+         * Add a static lease
+         * @description Adds the static lease `<mac>,<ip>[,<hostname>]` with the MAC lowercase and the address canonical. It must not share its MAC or address with another static lease (409 conflict, with `details.field`). Pi-hole restarts DNS and DHCP to serve it, and the app waits for it to answer again; if it hasn't within 15 seconds the result has `restart_pending`. Instance targets only. Audited as dhcp_static_add. Since v2.7.0.
+         */
+        post: operations["addDHCPStaticLease"];
+        /**
+         * Delete a static lease
+         * @description Deletes every string of the static lease `lease` names, sending Pi-hole its own strings, never the request's text. Pi-hole restarts DNS and DHCP. A lease that isn't there is a 404. Instance targets only. Audited as dhcp_static_delete. Since v2.7.0.
+         */
+        delete: operations["deleteDHCPStaticLease"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a static lease
+         * @description Replaces the lease `from` names (by its MAC and address, or by `value`, Pi-hole's string as read) with `to`: the new one is added without a restart, then the old one deleted, so Pi-hole restarts once. If the delete fails the result is failed with `added` true: the new lease is in place and the old one is still there. A `to` that changes nothing sends nothing. `to` must not share its MAC or address with another static lease. A lease that isn't there is a 404. Instance targets only. Audited as dhcp_static_update. Since v2.7.0.
+         */
+        patch: operations["updateDHCPStaticLease"];
+        trace?: never;
+    };
+    "/api/v1/targets/{target}/dhcp/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the DHCP settings
+         * @description Changes the fields sent and leaves the rest. Pi-hole checks the settings as a whole once DHCP is on, so the app does too, on the result: start, end and router set and in one subnet, the router outside the range, start not after end, a contiguous netmask (empty is allowed: Pi-hole then guesses from the class of the start address), and a lease time of seconds or a number with m, h, d or w, from 2 minutes to 365 days. Values equal to the current ones aren't sent. One PATCH goes to Pi-hole, which restarts DNS and DHCP; the app waits for it to answer again, and the result has `restart_pending` if it hasn't within 15 seconds. Turning DHCP on or off, or changing start, end, router, netmask or ignore_unknown_clients, answers 409 confirmation_required with `details.summary` (the changes) until `confirm=true`; turning it on also lists in `details.other_active` any other enabled instance that already has DHCP on. A change that changes nothing sends nothing and isn't audited. Instance targets only. Audited as dhcp_settings_update with each changed setting's old and new value. Since v2.7.0.
+         */
+        patch: operations["updateDHCPSettings"];
+        trace?: never;
+    };
     "/api/v1/targets/{target}/queries": {
         parameters: {
             query?: never;
@@ -3094,6 +3202,150 @@ export interface components {
             /** @description For a CNAME change, Pi-hole accepted it but hadn't answered again within 15 seconds of restarting its resolver. */
             restart_pending?: boolean;
         };
+        /** @description The DHCP settings the app manages. Addresses are empty when unset. */
+        DHCPSettings: {
+            active: boolean;
+            start: string;
+            end: string;
+            router: string;
+            /** @description Empty is allowed: Pi-hole then guesses from the class of `start`. */
+            netmask: string;
+            /** @description Empty keeps dnsmasq's default. */
+            lease_time: string;
+            ipv6: boolean;
+            rapid_commit: boolean;
+            multi_dns: boolean;
+            ignore_unknown_clients: boolean;
+        };
+        /** @description The settings to change; a field that isn't sent is left alone. */
+        DHCPSettingsPatch: {
+            active?: boolean;
+            start?: string;
+            end?: string;
+            router?: string;
+            netmask?: string;
+            lease_time?: string;
+            ipv6?: boolean;
+            rapid_commit?: boolean;
+            multi_dns?: boolean;
+            ignore_unknown_clients?: boolean;
+        };
+        /**
+         * @description ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is read-only (misc.readOnly). unknown: the instance couldn't be read.
+         * @enum {string}
+         */
+        DHCPWritable: "ok" | "app_sudo_off" | "locked" | "unknown";
+        DHCPInstance: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            writable: components["schemas"]["DHCPWritable"];
+            /** @description The settings (by the names this API uses) an environment variable fixes, which Pi-hole's API can't change. */
+            locked: string[];
+            settings: components["schemas"]["DHCPSettings"];
+        };
+        DHCPSettingsRead: {
+            /** @description The instances that answered, the primary first through a mirrored group. */
+            instances: components["schemas"]["DHCPInstance"][];
+            /** @description Through a mirrored group, how each member answered. */
+            members?: components["schemas"]["MemberRead"][];
+        };
+        DHCPLease: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            ip: string;
+            /** @description The MAC address, absent when Pi-hole has none. For an IPv6 lease it may be an IAID, not a MAC. */
+            hwaddr?: string;
+            /** @description The device's hostname, absent when it gave none. */
+            name?: string;
+            client_id?: string;
+            /**
+             * Format: int64
+             * @description When the lease ends, in Unix seconds; 0 means it doesn't expire.
+             */
+            expires?: number;
+            ipv6: boolean;
+        };
+        DHCPLeaseSource: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            /** @description DHCP is on, on this instance. */
+            active: boolean;
+            /** @description Its leases are in the list. False for a mirrored group's member with DHCP off. */
+            included: boolean;
+        };
+        DHCPLeases: {
+            leases: components["schemas"]["DHCPLease"][];
+            instances: components["schemas"]["DHCPLeaseSource"][];
+            members?: components["schemas"]["MemberRead"][];
+        };
+        DHCPLeaseRef: {
+            ip: string;
+        };
+        DHCPStaticLease: {
+            /** @description What identifies the lease: its lowercase MAC and address, or its value for an entry that can't be read. */
+            key: string;
+            /** @description Pi-hole's string, exactly as read. Text: show it as text. */
+            value: string;
+            mac?: string;
+            ip?: string;
+            hostname?: string;
+            /** @description Why the app couldn't have written the entry, so it can be deleted but not changed. */
+            marks: components["schemas"]["DHCPStaticMark"][];
+        };
+        /** @enum {string} */
+        DHCPStaticMark: "extra_fields" | "multiple_macs" | "ipv6" | "no_mac" | "unparsed";
+        DHCPStaticInstance: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            writable: components["schemas"]["DHCPWritable"];
+            /** @description The static leases are set by an environment variable, so Pi-hole's API can't change them. */
+            locked: boolean;
+            /** @description The subnet DHCP's settings give, as a prefix, when there is one, which new leases must fall in. */
+            subnet?: string;
+            static_leases: components["schemas"]["DHCPStaticLease"][];
+        };
+        DHCPStaticLeases: {
+            instances: components["schemas"]["DHCPStaticInstance"][];
+            members?: components["schemas"]["MemberRead"][];
+        };
+        DHCPStaticLeaseInput: {
+            mac: string;
+            ip: string;
+            hostname?: string;
+        };
+        /** @description A static lease, by its MAC and address, or by `value` (Pi-hole's string as read), not both. */
+        DHCPStaticLeaseRef: {
+            mac?: string;
+            ip?: string;
+            value?: string;
+        };
+        DHCPStaticLeaseUpdate: {
+            from: components["schemas"]["DHCPStaticLeaseRef"];
+            to: components["schemas"]["DHCPStaticLeaseInput"];
+        };
+        DHCPStaticLeaseDelete: {
+            lease: components["schemas"]["DHCPStaticLeaseRef"];
+        };
+        DHCPWriteResults: {
+            results: components["schemas"]["DHCPWriteResult"][];
+        };
+        DHCPWriteResult: {
+            instance: string;
+            /** Format: int64 */
+            instance_id: number;
+            status: components["schemas"]["WriteStatus"];
+            error?: components["schemas"]["WriteError"];
+            /** @description Nothing was sent, since the instance was already as asked. */
+            unchanged?: boolean;
+            /** @description For a failed change, the new lease was added but the old one couldn't be deleted. */
+            added?: boolean;
+            /** @description Pi-hole accepted the change but hadn't answered again within 15 seconds of restarting. */
+            restart_pending?: boolean;
+        };
         LocalDNSDrift: {
             instance: string;
             /** Format: int64 */
@@ -4151,6 +4403,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description A change that needs `confirm=true` (code confirmation_required, with `details.summary` and, for turning DHCP on, `details.other_active`); a static lease that shares its MAC or address with another (code conflict, with `details.field`); a lease that can't be deleted while DHCP is off (code pihole_dhcp_off) or while Pi-hole is busy (code pihole_busy: repeat it); or an instance that can't be used or won't let the app change its config (instance_password_missing, instance_misconfigured, pihole_app_sudo_off, pihole_config_locked). On a write, a Pi-hole failure here means it failed, and `details.results` has the result. */
+        DHCPConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The Pi-hole didn't respond (code pihole_unreachable), refused the app password (code pihole_auth_rejected) or answered unexpectedly (code pihole_status_error). `details.instance` names the instance. When it is a mirrored group's primary, `details.group` names the group and `details.primary` is true: reads of domains, clients and Pi-hole groups come from the primary alone. The underlying error goes to the server log only. On a write, this answer means no instance succeeded, and `details.results` has the result per instance, in the shape of the 200 response's `results`. */
         TargetPiholeFailed: {
             headers: {
@@ -4223,7 +4484,7 @@ export interface components {
         Members: number[];
         /** @description The role's ID. */
         RoleID: number;
-        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
         Confirm: boolean;
         /** @description The user's ID. */
         UserID: number;
@@ -5358,7 +5619,7 @@ export interface operations {
     setRoleGrants: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -5456,7 +5717,7 @@ export interface operations {
     removeLDAPMapping: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -5567,7 +5828,7 @@ export interface operations {
     deleteUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -5623,7 +5884,7 @@ export interface operations {
     disableUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -5685,7 +5946,7 @@ export interface operations {
     setUserRoles: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7020,7 +7281,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7069,7 +7330,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7443,7 +7704,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7539,7 +7800,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7588,7 +7849,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7684,7 +7945,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7723,6 +7984,274 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["LocalDNSConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getDHCP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings per instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPSettingsRead"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listDHCPLeases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The leases. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPLeases"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteDHCPLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DHCPLeaseRef"];
+            };
+        };
+        responses: {
+            /** @description The lease was deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["DHCPConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listDHCPStaticLeases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The static leases per instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPStaticLeases"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TargetUnavailable"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    addDHCPStaticLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DHCPStaticLeaseInput"];
+            };
+        };
+        responses: {
+            /** @description The lease was added. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["DHCPConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteDHCPStaticLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DHCPStaticLeaseDelete"];
+            };
+        };
+        responses: {
+            /** @description The lease was deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["DHCPConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateDHCPStaticLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DHCPStaticLeaseUpdate"];
+            };
+        };
+        responses: {
+            /** @description The lease was changed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["DHCPConflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            502: components["responses"]["TargetPiholeFailed"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateDHCPSettings: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description `i-<instance id>` for one instance, or `g-<group id>` for a mirrored group, which reads its domains, clients and Pi-hole groups from its primary, reads its dashboard and query log from every enabled member, and sends writes to every enabled member. A target that doesn't exist, including an independent group, is a 403 like one the user holds nothing on; a disabled instance, or a mirrored group whose primary is disabled, is a 404. */
+                target: components["parameters"]["TargetID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DHCPSettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description The settings were changed, or were already as asked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DHCPWriteResults"];
+                };
+            };
+            400: components["responses"]["InvalidOrRejected"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["DHCPConflict"];
             415: components["responses"]["UnsupportedMediaType"];
             502: components["responses"]["TargetPiholeFailed"];
             503: components["responses"]["SetupRequired"];

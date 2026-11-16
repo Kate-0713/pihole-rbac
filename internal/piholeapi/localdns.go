@@ -156,7 +156,13 @@ func checkConfigValue(value string) error {
 }
 
 func configPath(item, value string, restart bool) string {
-	p := "/api/config/dns/" + item + "/" + url.PathEscape(value)
+	return configItemPath("dns", item, value, restart)
+}
+
+// configItemPath is the path of one element of a config array: section and item name it (dns and hosts), and value
+// is the element, escaped as one path segment.
+func configItemPath(section, item, value string, restart bool) string {
+	p := "/api/config/" + section + "/" + item + "/" + url.PathEscape(value)
 	if !restart {
 		p += "?restart=false"
 	}
@@ -186,10 +192,30 @@ func (c *Client) DeleteCNAME(ctx context.Context, value string, restart bool) er
 }
 
 func (c *Client) configWrite(ctx context.Context, method, item, value string, restart bool) error {
+	return c.configWriteAt(ctx, method, "dns", item, value, restart)
+}
+
+// configWriteAt adds or removes one element of the config array section.item.
+func (c *Client) configWriteAt(ctx context.Context, method, section, item, value string, restart bool) error {
 	if err := checkConfigValue(value); err != nil {
 		return err
 	}
-	return configFailure(c.do(ctx, method, configPath(item, value, restart), nil, nil))
+	return configFailure(c.do(ctx, method, configItemPath(section, item, value, restart), nil, nil))
+}
+
+// configReadOnly reads misc.readOnly. Pi-holes without the setting read as false.
+func (c *Client) configReadOnly(ctx context.Context) (bool, error) {
+	var ro struct {
+		Config struct {
+			Misc struct {
+				ReadOnly bool `json:"readOnly"`
+			} `json:"misc"`
+		} `json:"config"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/config/misc/readOnly", nil, &ro); err != nil {
+		return false, err
+	}
+	return ro.Config.Misc.ReadOnly, nil
 }
 
 // configFailure turns Pi-hole's refusals of a config change into ErrAppSudoOff, ErrConfigLocked or

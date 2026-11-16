@@ -135,7 +135,7 @@ func (s *Server) config(w http.ResponseWriter, r *http.Request, seg []string) {
 		s.getConfig(w, r, seg)
 		return
 	}
-	if r.Method != http.MethodPut && r.Method != http.MethodDelete {
+	if r.Method != http.MethodPut && r.Method != http.MethodDelete && !(r.Method == http.MethodPatch && len(seg) == 1) {
 		writeJSON(w, http.StatusBadRequest, errBody("bad_request", "Invalid request method"))
 		return
 	}
@@ -153,11 +153,19 @@ func (s *Server) config(w http.ResponseWriter, r *http.Request, seg []string) {
 		}})
 		return
 	}
-	if len(seg) < 4 || seg[1] != "dns" || (seg[2] != "hosts" && seg[2] != "cnameRecords") {
+	if r.Method == http.MethodPatch {
+		s.patchConfig(w, r)
+		return
+	}
+	dhcpHosts := len(seg) >= 4 && seg[1] == "dhcp" && seg[2] == "hosts"
+	if !dhcpHosts && (len(seg) < 4 || seg[1] != "dns" || (seg[2] != "hosts" && seg[2] != "cnameRecords")) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"took": 0.001})
 		return
 	}
 	item := seg[2]
+	if dhcpHosts {
+		item = "dhcp.hosts"
+	}
 	value := strings.Join(seg[3:], "/") // FTL takes everything after the item's path as the value
 	if item == "hosts" && r.Method == http.MethodPut {
 		// FTL v6.9 stores a host record with runs of spaces collapsed (seen on a real Pi-hole); a delete still
@@ -169,8 +177,11 @@ func (s *Server) config(w http.ResponseWriter, r *http.Request, seg []string) {
 		return
 	}
 	arr, env, key := &s.hosts, s.hostsEnv, "dns.hosts"
-	if item == "cnameRecords" {
+	switch item {
+	case "cnameRecords":
 		arr, env, key = &s.cnames, s.cnamesEnv, "dns.cnameRecords"
+	case "dhcp.hosts":
+		arr, env, key = &s.dhcp.hosts, s.dhcp.env["hosts"], "dhcp.hosts"
 	}
 	if env {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
@@ -189,10 +200,18 @@ func (s *Server) config(w http.ResponseWriter, r *http.Request, seg []string) {
 		}
 		next := append(slices.Clone(*arr), value)
 		var problem string
-		if item == "hosts" {
+		switch item {
+		case "hosts":
 			problem = validateHosts(next)
-		} else {
+		case "cnameRecords":
 			problem = validateCNAMEs(next)
+		default: // dhcp.hosts: FTL's validate_array_no_newline, and nothing more
+			for i, v := range next {
+				if strings.ContainsAny(v, "\r\n") {
+					problem = fmt.Sprintf("[%d]: contains newline characters", i)
+					break
+				}
+			}
 		}
 		if problem != "" {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
@@ -208,7 +227,7 @@ func (s *Server) config(w http.ResponseWriter, r *http.Request, seg []string) {
 		}
 		*arr = slices.Delete(slices.Clone(*arr), i, i+1)
 	}
-	if item == "cnameRecords" && r.URL.Query().Get("restart") != "false" {
+	if (item == "cnameRecords" || item == "dhcp.hosts") && r.URL.Query().Get("restart") != "false" {
 		s.restart()
 	}
 	if r.Method == http.MethodPut {
@@ -238,6 +257,8 @@ func (s *Server) getConfig(w http.ResponseWriter, r *http.Request, seg []string)
 		body = map[string]any{"dns": map[string]any{"hosts": hosts}}
 	case "dns/cnameRecords":
 		body = map[string]any{"dns": map[string]any{"cnameRecords": cnames}}
+	case "dhcp":
+		body = map[string]any{"dhcp": s.dhcpConfig(detailed)}
 	case "webserver/api/app_sudo":
 		body = map[string]any{"webserver": map[string]any{"api": map[string]any{"app_sudo": s.appSudo}}}
 	case "misc/readOnly":

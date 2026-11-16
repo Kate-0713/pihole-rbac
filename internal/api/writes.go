@@ -159,7 +159,13 @@ func describeCode(pf *piholeFailure) failure {
 		f.message = fmt.Sprintf("Pi-hole %q doesn't let the app change its settings: webserver.api.app_sudo is off. An administrator can turn it on with: pihole-FTL --config webserver.api.app_sudo true", pf.Instance)
 	case piholeapi.CodeConfigLocked:
 		f.status = http.StatusConflict
-		f.message = fmt.Sprintf("Pi-hole %q won't let its local DNS be changed through its API: the records are set by an environment variable, or its config is read-only.", pf.Instance)
+		f.message = fmt.Sprintf("Pi-hole %q won't let that be changed through its API: it is set by an environment variable, or its config is read-only.", pf.Instance)
+	case piholeapi.CodeDHCPOff:
+		f.status = http.StatusConflict
+		f.message = fmt.Sprintf("Pi-hole %q has DHCP turned off, so it won't delete a lease.", pf.Instance)
+	case piholeapi.CodeBusy:
+		f.status = http.StatusConflict
+		f.message = fmt.Sprintf("Pi-hole %q was too busy to answer in time. Try again.", pf.Instance)
 	case piholeapi.CodeAuthRejected:
 		f.message = fmt.Sprintf("Pi-hole %q refused the app's password. An administrator needs to check it.", pf.Instance)
 	case piholeapi.CodeStatusError:

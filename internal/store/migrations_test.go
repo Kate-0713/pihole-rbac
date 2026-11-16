@@ -366,8 +366,75 @@ func TestUpgradeFromV2_4_0(t *testing.T) {
 	check("after migrating up again", map[int]int{1: 1, 10: 0})
 }
 
+// TestUpgradeFromV2_6_0: a database as v2.6.0 left it (version 8) gets dhcp.view, dhcp.edit and dhcp.config on the
+// builtin admin role only. A role that can edit local DNS doesn't get them. Migrating down to 8 removes them
+// everywhere, and up again restores the builtin admin's.
+func TestUpgradeFromV2_6_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 8))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'localdns.edit', 'all'), (10, 'domains.edit', 'all')`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	perms := []string{"dhcp.view", "dhcp.edit", "dhcp.config"}
+	check := func(when string, want map[int]int) {
+		t.Helper()
+		for role, n := range want {
+			for _, p := range perms {
+				var got int
+				q := `SELECT count(*) FROM role_grants WHERE role_id = ? AND permission = ? AND scope_type = 'all'`
+				if err := s.r.QueryRow(q, role, p).Scan(&got); err != nil {
+					t.Fatal(err)
+				}
+				if got != n {
+					t.Errorf("%s: role %d has %d %s grants, want %d", when, role, got, p, n)
+				}
+			}
+		}
+	}
+	check("after upgrading", map[int]int{1: 1, 10: 0})
+
+	// A grant on another role, so the Down section's first DELETE has something to remove.
+	if _, err := s.w.Exec(`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'dhcp.config', 'all')`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 8); err != nil {
+		t.Fatalf("down to 8: %v", err)
+	}
+	check("after migrating down", map[int]int{1: 0, 10: 0})
+	var dns int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE role_id = 10 AND permission = 'localdns.edit'`).Scan(&dns); err != nil || dns != 1 {
+		t.Errorf("migrating down touched other grants: %d localdns.edit grants on role 10, %v", dns, err)
+	}
+	if _, err := s.w.Exec(`DELETE FROM role_grants WHERE role_id = 1 AND permission = 'domains.view'`); err == nil {
+		t.Error("the builtin admin's grants can be deleted after migrating down: the trigger wasn't recreated")
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	check("after migrating up again", map[int]int{1: 1, 10: 0})
+}
+
 // TestUpgradeFromV2_5_0: a database as v2.5.0 left it (version 7) gets the two temporary client change tables and no
-// permission changes. The checks refuse an override with no target, two targets, an end before its start, or an
+// permission changes of its own (the DHCP grants a later migration adds aren't counted). The checks refuse an override with no target, two targets, an end before its start, or an
 // unfinished status with a finish time. A client can have one active member row per instance, whatever the override,
 // and a settled row frees it. A member can't be pending while inactive or settled as ok while active. Deleting an
 // instance deletes its overrides, and an override's members go with it. Migrating down to 7 removes both tables, and
@@ -380,7 +447,7 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 		t.Fatal(err)
 	}
 	var grantsBefore int
-	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants`).Scan(&grantsBefore); err != nil {
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%'`).Scan(&grantsBefore); err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
@@ -398,7 +465,7 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 		t.Fatalf("upgrade: %v", err)
 	}
 	var grantsAfter int
-	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants`).Scan(&grantsAfter); err != nil || grantsAfter != grantsBefore {
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%'`).Scan(&grantsAfter); err != nil || grantsAfter != grantsBefore {
 		t.Errorf("the upgrade changed grants: %d before, %d after, %v", grantsBefore, grantsAfter, err)
 	}
 

@@ -16,6 +16,7 @@ const (
 	GroupPihole        = "Pi-hole changes"
 	GroupLists         = "Lists and gravity"
 	GroupLocalDNS      = "Local DNS"
+	GroupDHCP          = "DHCP"
 	GroupSchedules     = "Schedules"
 	GroupTempClients   = "Temporary client changes"
 	GroupInstances     = "Instances and groups"
@@ -64,6 +65,12 @@ var actions = []ActionInfo{
 	{ActionCNAMEAdd, GroupLocalDNS, "A CNAME added, which restarts DNS on the Pi-hole"},
 	{ActionCNAMEUpdate, GroupLocalDNS, "A CNAME changed, which restarts DNS on the Pi-hole"},
 	{ActionCNAMEDelete, GroupLocalDNS, "A CNAME deleted, which restarts DNS on the Pi-hole"},
+
+	{ActionDHCPSettingsUpdate, GroupDHCP, "DHCP turned on or off, or its settings changed, which restarts DNS and DHCP on the Pi-hole"},
+	{ActionDHCPStaticAdd, GroupDHCP, "A static DHCP lease added, which restarts DNS and DHCP on the Pi-hole"},
+	{ActionDHCPStaticUpdate, GroupDHCP, "A static DHCP lease changed, which restarts DNS and DHCP on the Pi-hole"},
+	{ActionDHCPStaticDelete, GroupDHCP, "A static DHCP lease deleted, which restarts DNS and DHCP on the Pi-hole"},
+	{ActionDHCPLeaseDelete, GroupDHCP, "A DHCP lease deleted"},
 
 	{ActionScheduleCreate, GroupSchedules, "A schedule added"},
 	{ActionScheduleUpdate, GroupSchedules, "A schedule changed, or switched on or off"},

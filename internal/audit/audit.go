@@ -113,6 +113,14 @@ const (
 	ActionCNAMEUpdate     = "cname_update"
 	ActionCNAMEDelete     = "cname_delete"
 
+	// DHCP, since v2.7.0: a lease deleted, a static lease added, changed or deleted, or the settings changed, on one
+	// instance. Settings and static lease changes restart FTL on it. Reading isn't audited.
+	ActionDHCPLeaseDelete    = "dhcp_lease_delete"
+	ActionDHCPStaticAdd      = "dhcp_static_add"
+	ActionDHCPStaticUpdate   = "dhcp_static_update"
+	ActionDHCPStaticDelete   = "dhcp_static_delete"
+	ActionDHCPSettingsUpdate = "dhcp_settings_update"
+
 	// Schedules, since v2.5.0: changes to schedules by a user, and once per instance an edge (a window's start or end)
 	// or its retry sent something to, or failed on, by (system).
 	ActionScheduleCreate = "schedule_create"

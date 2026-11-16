@@ -147,6 +147,10 @@ func Kind(err error) string {
 		return CodeConfigLocked
 	case errors.Is(err, ErrAlreadyPresent):
 		return CodeAlreadyPresent
+	case errors.Is(err, ErrDHCPOff):
+		return CodeDHCPOff
+	case errors.Is(err, ErrBusy):
+		return CodeBusy
 	case errors.Is(err, ErrRejected):
 		return CodeRejected
 	case errors.Is(err, ErrGravityRunning):

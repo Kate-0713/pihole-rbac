@@ -145,6 +145,7 @@ type Server struct {
 	pending             []int    // what is left of the current restart's pattern
 	droppingNow         bool     // whether pending[0] counts dropped connections
 	startedAt           time.Time
+	dhcp                dhcpState // the DHCP service: settings, static leases and the lease file
 }
 
 // New starts a plain HTTP fake that accepts password. It is closed when the test ends.
@@ -484,6 +485,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.writeList(w, r, seg)
 	case seg[0] == "config":
 		s.config(w, r, seg)
+	case seg[0] == "dhcp" && len(seg) >= 2 && seg[1] == "leases":
+		s.dhcpLeases(w, r, seg)
 	case route == "GET info/ftl" && len(seg) == 2:
 		s.infoFTL(w)
 	case route == "GET queries" && len(seg) == 1:

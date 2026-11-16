@@ -3579,6 +3579,306 @@ paths:
           $ref: "#/components/responses/TargetPiholeFailed"
         "503":
           $ref: "#/components/responses/SetupRequired"
+  /api/v1/targets/{target}/dhcp:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: DHCP settings
+      description: >-
+        The DHCP settings of each instance the target names, whether DHCP is on, and whether the app can change them.
+        Pi-hole only lets the app's password change config while webserver.api.app_sudo is on. Through a mirrored
+        group (which DHCP doesn't mirror) every enabled member is read and answered separately, the primary first;
+        `members` says how each answered, and a request fails only when none did. Reading isn't audited. Since v2.7.0.
+      operationId: getDHCP
+      x-permission: target:dhcp.view
+      responses:
+        "200":
+          description: The settings per instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPSettingsRead"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+  /api/v1/targets/{target}/dhcp/leases:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: DHCP leases
+      description: >-
+        The leases in dnsmasq's lease file, each naming its instance. Pi-hole reads the file whether or not DHCP is on,
+        so an instance with DHCP off can show stale leases: for an instance target they are shown, with `active`
+        false; through a mirrored group, a member with DHCP off has its leases left out (`included` false in
+        `instances`). `*` in Pi-hole's name and client ID columns is read as absent. Reading isn't audited. Since v2.7.0.
+      operationId: listDHCPLeases
+      x-permission: target:dhcp.view
+      responses:
+        "200":
+          description: The leases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPLeases"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a lease
+      description: >-
+        Deletes the lease for `ip`: the device asks for an address again, and this doesn't block it. Not a config write,
+        so nothing restarts. Instance targets only: a mirrored group target is a 400, since DHCP isn't mirrored. A lease
+        Pi-hole doesn't have is a 404 (not_found), a Pi-hole whose DHCP is off a 409 (pihole_dhcp_off) and one that is
+        busy a 409 (pihole_busy), which can be repeated. Audited as dhcp_lease_delete. Since v2.7.0.
+      operationId: deleteDHCPLease
+      x-permission: target:dhcp.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DHCPLeaseRef"
+      responses:
+        "200":
+          description: The lease was deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/DHCPConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+  /api/v1/targets/{target}/dhcp/static-leases:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    get:
+      summary: Static DHCP leases
+      description: >-
+        The static leases (dhcp.hosts) of each instance the target names, each with its key, its fields as read and
+        marks for an entry the app couldn't have written (those can be deleted, not changed). Through a mirrored group
+        every enabled member is read and answered separately. Reading isn't audited. Since v2.7.0.
+      operationId: listDHCPStaticLeases
+      x-permission: target:dhcp.view
+      responses:
+        "200":
+          description: The static leases per instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPStaticLeases"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TargetUnavailable"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add a static lease
+      description: >-
+        Adds the static lease `<mac>,<ip>[,<hostname>]` with the MAC lowercase and the address canonical. It must not
+        share its MAC or address with another static lease (409 conflict, with `details.field`). Pi-hole restarts DNS
+        and DHCP to serve it, and the app waits for it to answer again; if it hasn't within 15 seconds the result has
+        `restart_pending`. Instance targets only. Audited as dhcp_static_add. Since v2.7.0.
+      operationId: addDHCPStaticLease
+      x-permission: target:dhcp.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DHCPStaticLeaseInput"
+      responses:
+        "200":
+          description: The lease was added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/DHCPConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    patch:
+      summary: Change a static lease
+      description: >-
+        Replaces the lease `from` names (by its MAC and address, or by `value`, Pi-hole's string as read) with `to`: the
+        new one is added without a restart, then the old one deleted, so Pi-hole restarts once. If the delete fails the
+        result is failed with `added` true: the new lease is in place and the old one is still there. A `to` that
+        changes nothing sends nothing. `to` must not share its MAC or address with another static lease. A lease that
+        isn't there is a 404. Instance targets only. Audited as dhcp_static_update. Since v2.7.0.
+      operationId: updateDHCPStaticLease
+      x-permission: target:dhcp.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DHCPStaticLeaseUpdate"
+      responses:
+        "200":
+          description: The lease was changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/DHCPConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a static lease
+      description: >-
+        Deletes every string of the static lease `lease` names, sending Pi-hole its own strings, never the request's
+        text. Pi-hole restarts DNS and DHCP. A lease that isn't there is a 404. Instance targets only. Audited as
+        dhcp_static_delete. Since v2.7.0.
+      operationId: deleteDHCPStaticLease
+      x-permission: target:dhcp.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DHCPStaticLeaseDelete"
+      responses:
+        "200":
+          description: The lease was deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/DHCPConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+  /api/v1/targets/{target}/dhcp/settings:
+    parameters:
+      - $ref: "#/components/parameters/TargetID"
+    patch:
+      summary: Change the DHCP settings
+      description: >-
+        Changes the fields sent and leaves the rest. Pi-hole checks the settings as a whole once DHCP is on, so the
+        app does too, on the result: start, end and router set and in one subnet, the router outside the range, start
+        not after end, a contiguous netmask (empty is allowed: Pi-hole then guesses from the class of the start
+        address), and a lease time of seconds or a number with m, h, d or w, from 2 minutes to 365 days. Values equal
+        to the current ones aren't sent. One PATCH goes to Pi-hole, which restarts DNS and DHCP; the app waits for it
+        to answer again, and the result has `restart_pending` if it hasn't within 15 seconds. Turning DHCP on or off,
+        or changing start, end, router, netmask or ignore_unknown_clients, answers 409 confirmation_required with
+        `details.summary` (the changes) until `confirm=true`; turning it on also lists in `details.other_active` any
+        other enabled instance that already has DHCP on. A change that changes nothing sends nothing and isn't
+        audited. Instance targets only. Audited as dhcp_settings_update with each changed setting's old and new
+        value. Since v2.7.0.
+      operationId: updateDHCPSettings
+      x-permission: target:dhcp.config
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DHCPSettingsPatch"
+      responses:
+        "200":
+          description: The settings were changed, or were already as asked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DHCPWriteResults"
+        "400":
+          $ref: "#/components/responses/InvalidOrRejected"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/DHCPConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          $ref: "#/components/responses/TargetPiholeFailed"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
   /api/v1/targets/{target}/queries:
     parameters:
       - $ref: "#/components/parameters/TargetID"
@@ -4205,7 +4505,7 @@ components:
       description: >-
         Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own
         roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames
-        or deletes a group the app refers to, or disables the Default group; or a local DNS name under a directory domain.
+        or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
       schema:
         type: boolean
         default: false
@@ -4379,6 +4679,18 @@ components:
         instance_misconfigured, pihole_app_sudo_off (webserver.api.app_sudo is off) or pihole_config_locked (the
         records are set by an environment variable, or the config is read-only). On a write, a Pi-hole failure here
         means no instance succeeded, and `details.results` has the result per instance.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    DHCPConflict:
+      description: >-
+        A change that needs `confirm=true` (code confirmation_required, with `details.summary` and, for turning DHCP
+        on, `details.other_active`); a static lease that shares its MAC or address with another (code conflict, with
+        `details.field`); a lease that can't be deleted while DHCP is off (code pihole_dhcp_off) or while Pi-hole is
+        busy (code pihole_busy: repeat it); or an instance that can't be used or won't let the app change its config
+        (instance_password_missing, instance_misconfigured, pihole_app_sudo_off, pihole_config_locked). On a write, a
+        Pi-hole failure here means it failed, and `details.results` has the result.
       content:
         application/json:
           schema:
@@ -6907,6 +7219,326 @@ components:
           description: >-
             For a CNAME change, Pi-hole accepted it but hadn't answered again within 15 seconds of restarting its
             resolver.
+
+    DHCPSettings:
+      type: object
+      additionalProperties: false
+      required: [active, start, end, router, netmask, lease_time, ipv6, rapid_commit, multi_dns, ignore_unknown_clients]
+      description: The DHCP settings the app manages. Addresses are empty when unset.
+      properties:
+        active:
+          type: boolean
+        start:
+          type: string
+        end:
+          type: string
+        router:
+          type: string
+        netmask:
+          type: string
+          description: "Empty is allowed: Pi-hole then guesses from the class of `start`."
+        lease_time:
+          type: string
+          description: "Empty keeps dnsmasq's default."
+        ipv6:
+          type: boolean
+        rapid_commit:
+          type: boolean
+        multi_dns:
+          type: boolean
+        ignore_unknown_clients:
+          type: boolean
+
+    DHCPSettingsPatch:
+      type: object
+      additionalProperties: false
+      description: The settings to change; a field that isn't sent is left alone.
+      properties:
+        active:
+          type: boolean
+        start:
+          type: string
+          maxLength: 45
+        end:
+          type: string
+          maxLength: 45
+        router:
+          type: string
+          maxLength: 45
+        netmask:
+          type: string
+          maxLength: 45
+        lease_time:
+          type: string
+          maxLength: 16
+        ipv6:
+          type: boolean
+        rapid_commit:
+          type: boolean
+        multi_dns:
+          type: boolean
+        ignore_unknown_clients:
+          type: boolean
+
+    DHCPWritable:
+      type: string
+      enum: [ok, app_sudo_off, locked, unknown]
+      description: >-
+        ok: the app can change it. app_sudo_off: webserver.api.app_sudo is off on the Pi-hole. locked: its config is
+        read-only (misc.readOnly). unknown: the instance couldn't be read.
+
+    DHCPInstance:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, writable, locked, settings]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        writable:
+          $ref: "#/components/schemas/DHCPWritable"
+        locked:
+          type: array
+          description: "The settings (by the names this API uses) an environment variable fixes, which Pi-hole's API can't change."
+          items:
+            type: string
+        settings:
+          $ref: "#/components/schemas/DHCPSettings"
+
+    DHCPSettingsRead:
+      type: object
+      additionalProperties: false
+      required: [instances]
+      properties:
+        instances:
+          type: array
+          description: The instances that answered, the primary first through a mirrored group.
+          items:
+            $ref: "#/components/schemas/DHCPInstance"
+        members:
+          type: array
+          description: Through a mirrored group, how each member answered.
+          items:
+            $ref: "#/components/schemas/MemberRead"
+
+    DHCPLease:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, ip, ipv6]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        ip:
+          type: string
+        hwaddr:
+          type: string
+          description: "The MAC address, absent when Pi-hole has none. For an IPv6 lease it may be an IAID, not a MAC."
+        name:
+          type: string
+          description: The device's hostname, absent when it gave none.
+        client_id:
+          type: string
+        expires:
+          type: integer
+          format: int64
+          description: "When the lease ends, in Unix seconds; 0 means it doesn't expire."
+        ipv6:
+          type: boolean
+
+    DHCPLeaseSource:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, active, included]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        active:
+          type: boolean
+          description: DHCP is on, on this instance.
+        included:
+          type: boolean
+          description: Its leases are in the list. False for a mirrored group's member with DHCP off.
+
+    DHCPLeases:
+      type: object
+      additionalProperties: false
+      required: [leases, instances]
+      properties:
+        leases:
+          type: array
+          items:
+            $ref: "#/components/schemas/DHCPLease"
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/DHCPLeaseSource"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberRead"
+
+    DHCPLeaseRef:
+      type: object
+      additionalProperties: false
+      required: [ip]
+      properties:
+        ip:
+          type: string
+          maxLength: 45
+
+    DHCPStaticLease:
+      type: object
+      additionalProperties: false
+      required: [key, value, marks]
+      properties:
+        key:
+          type: string
+          description: "What identifies the lease: its lowercase MAC and address, or its value for an entry that can't be read."
+        value:
+          type: string
+          description: "Pi-hole's string, exactly as read. Text: show it as text."
+        mac:
+          type: string
+        ip:
+          type: string
+        hostname:
+          type: string
+        marks:
+          type: array
+          description: Why the app couldn't have written the entry, so it can be deleted but not changed.
+          items:
+            $ref: "#/components/schemas/DHCPStaticMark"
+
+    DHCPStaticMark:
+      type: string
+      enum: [extra_fields, multiple_macs, ipv6, no_mac, unparsed]
+
+    DHCPStaticInstance:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, writable, locked, static_leases]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        writable:
+          $ref: "#/components/schemas/DHCPWritable"
+        locked:
+          type: boolean
+          description: "The static leases are set by an environment variable, so Pi-hole's API can't change them."
+        subnet:
+          type: string
+          description: The subnet DHCP's settings give, as a prefix, when there is one, which new leases must fall in.
+        static_leases:
+          type: array
+          items:
+            $ref: "#/components/schemas/DHCPStaticLease"
+
+    DHCPStaticLeases:
+      type: object
+      additionalProperties: false
+      required: [instances]
+      properties:
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/DHCPStaticInstance"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberRead"
+
+    DHCPStaticLeaseInput:
+      type: object
+      additionalProperties: false
+      required: [mac, ip]
+      properties:
+        mac:
+          type: string
+          maxLength: 64
+        ip:
+          type: string
+          maxLength: 45
+        hostname:
+          type: string
+          maxLength: 253
+
+    DHCPStaticLeaseRef:
+      type: object
+      additionalProperties: false
+      description: A static lease, by its MAC and address, or by `value` (Pi-hole's string as read), not both.
+      properties:
+        mac:
+          type: string
+          maxLength: 64
+        ip:
+          type: string
+          maxLength: 45
+        value:
+          type: string
+          maxLength: 1000
+
+    DHCPStaticLeaseUpdate:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from:
+          $ref: "#/components/schemas/DHCPStaticLeaseRef"
+        to:
+          $ref: "#/components/schemas/DHCPStaticLeaseInput"
+
+    DHCPStaticLeaseDelete:
+      type: object
+      additionalProperties: false
+      required: [lease]
+      properties:
+        lease:
+          $ref: "#/components/schemas/DHCPStaticLeaseRef"
+
+    DHCPWriteResults:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/DHCPWriteResult"
+
+    DHCPWriteResult:
+      type: object
+      additionalProperties: false
+      required: [instance, instance_id, status]
+      properties:
+        instance:
+          type: string
+        instance_id:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/WriteStatus"
+        error:
+          $ref: "#/components/schemas/WriteError"
+        unchanged:
+          type: boolean
+          description: Nothing was sent, since the instance was already as asked.
+        added:
+          type: boolean
+          description: For a failed change, the new lease was added but the old one couldn't be deleted.
+        restart_pending:
+          type: boolean
+          description: Pi-hole accepted the change but hadn't answered again within 15 seconds of restarting.
 
     LocalDNSDrift:
       type: object

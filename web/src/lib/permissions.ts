@@ -35,6 +35,9 @@ export type TargetPermission =
 	| 'localdns.view'
 	| 'localdns.edit'
 	| 'schedules.manage'
+	| 'dhcp.view'
+	| 'dhcp.edit'
+	| 'dhcp.config'
 	| 'drift.view'
 	| 'drift.reconcile';
 

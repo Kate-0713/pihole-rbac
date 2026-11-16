@@ -33,6 +33,9 @@ const (
 	LocalDNSView       Permission = "localdns.view"
 	LocalDNSEdit       Permission = "localdns.edit"
 	SchedulesManage    Permission = "schedules.manage"
+	DHCPView           Permission = "dhcp.view"
+	DHCPEdit           Permission = "dhcp.edit"
+	DHCPConfig         Permission = "dhcp.config"
 	DriftView          Permission = "drift.view"
 	DriftReconcile     Permission = "drift.reconcile"
 	InstancesManage    Permission = "instances.manage"
@@ -96,6 +99,9 @@ var catalogue = []Info{
 	{LocalDNSView, ClassInstance, "List local DNS records and CNAMEs"},
 	{LocalDNSEdit, ClassInstance, "Add, change and delete local DNS records and CNAMEs"},
 	{SchedulesManage, ClassInstance, "Create, change and delete blocking and Pi-hole group schedules (saving also needs blocking.toggle or piholegroups.edit)"},
+	{DHCPView, ClassInstance, "Read DHCP leases, static leases and settings"},
+	{DHCPEdit, ClassInstance, "Delete DHCP leases, and add, change and delete static leases"},
+	{DHCPConfig, ClassInstance, "Turn DHCP on and off and change its range, router, netmask, lease time and other settings"},
 	{DriftView, ClassGroup, "View the drift report for a mirrored group"},
 	{DriftReconcile, ClassGroup, "Reconcile a mirrored group"},
 	{InstancesManage, ClassGlobal, "Add, edit and group instances"},
