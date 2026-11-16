@@ -28,6 +28,9 @@ var releasedMigrations = map[string]string{
 	"00004_piholegroups_edit.sql":            "47b6db8acabd7369e41a283d7137099eb1531119c75a783fe649c72306f5def0", // v2.2.0
 	"00005_lists_gravity.sql":                "e021f6da7d3a49a4d49eba551b3e0c19ea690577a06e24d9777141f925a5842a", // v2.3.0
 	"00006_localdns.sql":                     "f5a0d8ab1e2eaadd1fcc082618d1ed7e21fc9202483601fd957947e1d57a701f", // v2.4.0
+	"00007_schedules.sql":                    "319fb6d3405008ce0dc8f5526639e6af374ca5f5ca64a8978901887c094c71e0", // v2.5.0
+	"00008_client_overrides.sql":             "5d25b3286763bd1f845cc6528a703a3277a8d219a6405805d0af4d7e661553de", // v2.6.0
+	"00009_dhcp.sql":                         "9cc6d2d1141ecec2065dcc95f5283a75a080ccb5e749dba01caac7167cc26769", // v2.7.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
