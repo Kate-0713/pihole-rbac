@@ -33,6 +33,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
+	"github.com/Kate-0713/pihole-rbac/internal/totp"
 	"github.com/Kate-0713/pihole-rbac/internal/updates"
 )
 
@@ -62,6 +63,7 @@ type Options struct {
 	Instances       *instances.Service       // instance changes, and the client pool for health and secret reloads
 	Drift           *instances.Drift         // mirrored groups' drift reports; nil in tests that don't need them
 	Roles           *rbac.Manager            // changes to roles, grants, user roles, LDAP mappings and users
+	TOTP            *totp.Service            // a user's own two-factor login; nil in tests that don't need it
 	LoginSettings   *loginsettings.Service   // login methods, LDAP settings and bind password; nil in tests that don't need them
 	Notifications   *notifications.Service   // notification channels; nil in tests that don't need them
 	ClientReset     *clientreset.Service     // client reset rules and runs; nil in tests that don't need them

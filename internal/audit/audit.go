@@ -62,6 +62,11 @@ const (
 	ActionUserPassword   = "user_password"   // an admin set a local user's password; never the value
 	ActionPasswordChange = "password_change" // a user changed their own password; never the value
 
+	ActionTOTPEnable              = "totp_enable"               // a user turned two-factor login on
+	ActionTOTPDisable             = "totp_disable"              // a user turned theirs off, or an admin removed it (detail.by)
+	ActionRecoveryCodeUsed        = "recovery_code_used"        // a recovery code was used in place of a six-digit code
+	ActionRecoveryCodesRegenerate = "recovery_codes_regenerate" // a user replaced their recovery codes
+
 	// Pi-hole instances. An enable or edit refused because the connection test failed is recorded as a failure.
 	// ActionInstanceTest only appears as the attempted action of a permission_denied row: a test changes nothing.
 	ActionInstanceCreate   = "instance_create"

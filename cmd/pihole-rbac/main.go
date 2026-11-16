@@ -32,6 +32,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 	"github.com/Kate-0713/pihole-rbac/internal/spa"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
+	"github.com/Kate-0713/pihole-rbac/internal/totp"
 	"github.com/Kate-0713/pihole-rbac/internal/updates"
 	"github.com/Kate-0713/pihole-rbac/web"
 )
@@ -265,6 +266,7 @@ func serve() error {
 		Instances:       instanceService,
 		Drift:           drift,
 		Roles:           &rbac.Manager{Store: st, Audit: auditLog},
+		TOTP:            &totp.Service{Store: st, Audit: auditLog, Cipher: sec.Cipher},
 		TrustedProxies:  cfg.TrustedProxies,
 		LoginByIP:       byIP,
 		LoginByUser:     byUser,

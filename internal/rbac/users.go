@@ -262,6 +262,37 @@ func (m *Manager) SetUserPassword(ctx context.Context, a Actor, userID int64, pa
 	})
 }
 
+// RemoveUserTOTP removes another user's two-factor login, secret and recovery codes, for someone who has lost both
+// their authenticator and their recovery codes. It needs users.manage and every grant of the user's roles
+// (invariant 7), so nobody can weaken the login of an account more privileged than their own. The user's sessions
+// end. The actor's own is refused: that would let a stolen admin session drop the second factor without the
+// password and code that turning it off asks for. A user who doesn't have it on is left as they are.
+func (m *Manager) RemoveUserTOTP(ctx context.Context, a Actor, userID int64) error {
+	return m.do(ctx, a, audit.ActionTOTPDisable, func(t *txn) error {
+		u, err := t.managedUser(userID)
+		if err != nil {
+			return err
+		}
+		if userID == t.actor.UserID {
+			return newError(CodeValidation, map[string]any{"user_id": userID},
+				"Turn your own two-factor login off from your account, which asks for your password and a code.")
+		}
+		row, err := t.q.GetUserTOTP(t.ctx, userID)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && !row.EnabledAt.Valid) {
+			return errNoChange
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := t.q.DeleteUserTOTP(t.ctx, userID); err != nil {
+			return err
+		}
+		t.entry.Detail["by"] = "admin"
+		t.entry.Detail["source"] = u.Source
+		return t.endSessions(userID, "")
+	})
+}
+
 // ChangeOwnPassword changes the actor's own password, given their current one. It needs no permission: every local
 // user may change their own password. A wrong current password is auth.ErrInvalidCredentials, which the API counts
 // against the login limits and audits, so this can't be used to guess passwords faster than the login page. The

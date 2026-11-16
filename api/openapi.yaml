@@ -250,6 +250,159 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/auth/totp:
+    get:
+      summary: Your two-factor login
+      description: >-
+        Whether the caller has two-factor login (TOTP) on, whether they must use it, and how many recovery codes they
+        have left. Never the secret.
+      operationId: getTOTP
+      x-permission: session
+      responses:
+        "200":
+          description: The caller's two-factor login.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/auth/totp/setup:
+    post:
+      summary: Start setting up two-factor login
+      description: >-
+        Makes a new secret for the caller and returns it, once, as a QR code, an otpauth:// URI and text to type in.
+        Nothing changes at login until a code from it is confirmed. Asking again replaces a secret that was never
+        confirmed. Refused with 409 conflict while two-factor login is on (turn it off first), or when the app has no
+        master key to store the secret with (`details.reason`: `enabled` or `no_master_key`).
+      operationId: setupTOTP
+      x-permission: session
+      responses:
+        "200":
+          description: The new secret. It isn't shown again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPEnrolment"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/auth/totp/confirm:
+    post:
+      summary: Turn two-factor login on
+      description: >-
+        Takes a six-digit code made from the secret that setup returned. A correct one turns two-factor login on, ends
+        the caller's other sessions, and returns the recovery codes, once. A wrong one is 401 totp_invalid. With no
+        secret waiting, or two-factor login already on, it is 409 conflict.
+      operationId: confirmTOTP
+      x-permission: session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPCode"
+      responses:
+        "200":
+          description: Two-factor login is on. The recovery codes aren't shown again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodes"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/TOTPInvalid"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/auth/totp/disable:
+    post:
+      summary: Turn two-factor login off
+      description: >-
+        Needs the caller's password (checked in the directory for an LDAP user) and a six-digit code or a recovery
+        code. A wrong password is 401 invalid_credentials and a wrong code 401 totp_invalid; both count against the
+        same per-address and per-username limits as logging in, and while a limit applies the request is refused with
+        429 without checking either. On success the secret and recovery codes are removed, and the caller's other
+        sessions end. With two-factor login off already, it is 409 conflict.
+      operationId: disableTOTP
+      x-permission: session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPDisable"
+      responses:
+        "204":
+          description: Two-factor login is off.
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/TOTPInvalid"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/auth/totp/recovery-codes:
+    post:
+      summary: Get new recovery codes
+      description: >-
+        Replaces all of the caller's recovery codes with ten new ones, returned once. Needs a six-digit code or one of
+        the current recovery codes; a wrong one is 401 totp_invalid and counts against the login limits, as for turning
+        two-factor login off. With two-factor login off, it is 409 conflict.
+      operationId: regenerateRecoveryCodes
+      x-permission: session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPCode"
+      responses:
+        "200":
+          description: The new recovery codes. They aren't shown again, and the old ones no longer work.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodes"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/TOTPInvalid"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/system/secrets:
     get:
       summary: List the secrets
@@ -1433,6 +1586,37 @@ paths:
           $ref: "#/components/responses/NotFound"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/users/{id}/totp:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    delete:
+      summary: Remove a user's two-factor login
+      description: >-
+        For someone who has lost their authenticator and their recovery codes: removes the user's secret and recovery
+        codes and ends their sessions, so their next login asks for the password alone. Needs every grant of every
+        role the user has, so nobody can weaken the login of an account more privileged than their own. Your own is
+        refused (code validation_failed): turn it off from your account, which asks for your password and a code. A
+        user without two-factor login is returned unchanged.
+      operationId: removeUserTOTP
+      x-permission: users.manage
+      responses:
+        "200":
+          description: The user, now without two-factor login.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/SetupRequired"
 
@@ -4724,6 +4908,14 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    TOTPInvalid:
+      description: >-
+        The code is wrong, was used before or has expired (code totp_invalid); where the request carries a password,
+        the password is wrong (code invalid_credentials); or there is no valid session (code unauthenticated).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     RateLimited:
       description: Too many failed attempts (code rate_limited). Retry after the given number of seconds.
       headers:
@@ -5960,6 +6152,86 @@ components:
           maxLength: 1024
           description: At least 12 characters and at most 72 bytes, and not the current password.
 
+    TOTPStatus:
+      type: object
+      additionalProperties: false
+      required: [available, enabled, pending, required, recovery_codes_left]
+      properties:
+        available:
+          type: boolean
+          description: >-
+            Whether two-factor login can be set up. False when the app has no master key, which the secret is stored
+            under.
+        enabled:
+          type: boolean
+        enabled_at:
+          type: string
+          format: date-time
+          description: When it was turned on. Absent when it is off.
+        pending:
+          type: boolean
+          description: Whether a secret from setup is waiting for its first code.
+        required:
+          type: boolean
+          description: Whether the caller must use two-factor login, by their own setting or one of their roles'.
+        recovery_codes_left:
+          type: integer
+          description: Unused recovery codes. 0 when two-factor login is off.
+
+    TOTPEnrolment:
+      type: object
+      additionalProperties: false
+      required: [secret, uri, qr]
+      properties:
+        secret:
+          type: string
+          description: The secret in base32, for typing into an authenticator app that can't scan the QR code.
+        uri:
+          type: string
+          description: The otpauth:// URI the QR code holds.
+        qr:
+          type: string
+          description: The QR code as a data:image/svg+xml URI, for an img element.
+
+    TOTPCode:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: >-
+            A six-digit code from the authenticator app, or where the operation says so a recovery code. Spaces, and a
+            recovery code's hyphens and case, are ignored.
+
+    TOTPDisable:
+      type: object
+      additionalProperties: false
+      required: [password, code]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: A six-digit code from the authenticator app, or a recovery code.
+
+    RecoveryCodes:
+      type: object
+      additionalProperties: false
+      required: [recovery_codes]
+      properties:
+        recovery_codes:
+          type: array
+          description: Ten single-use codes, each of which stands in for a six-digit code once.
+          items:
+            type: string
+
     UserCreate:
       type: object
       additionalProperties: false
@@ -6023,7 +6295,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, username, source, disabled, created_at, roles, manageable]
+      required: [id, username, source, disabled, totp_enabled, created_at, roles, manageable]
       properties:
         id:
           type: integer
@@ -6038,6 +6310,9 @@ components:
           description: The user's DN in the directory, for LDAP users.
         disabled:
           type: boolean
+        totp_enabled:
+          type: boolean
+          description: Whether the user has two-factor login on.
         created_at:
           type: string
           format: date-time

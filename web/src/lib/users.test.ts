@@ -10,6 +10,7 @@ const user = (over: Partial<User> = {}): User => ({
 	username: 'erin',
 	source: 'local',
 	disabled: false,
+	totp_enabled: false,
 	created_at: '2026-10-24T10:00:00Z',
 	roles: [],
 	manageable: true,

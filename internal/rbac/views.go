@@ -109,6 +109,8 @@ type UserDetails struct {
 	User   db.User
 	Roles  []RoleRef // sorted by name
 	Grants []Grant   // every grant of every role, for working out whether the caller holds them all
+	// TOTPEnabled says whether the user has two-factor login on. A secret waiting for its first code doesn't count.
+	TOTPEnabled bool
 }
 
 // RoleRef names a role.
@@ -141,6 +143,10 @@ func ListUsers(ctx context.Context, q *db.Queries) ([]UserDetails, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rbac: list LDAP session roles: %w", err)
 	}
+	totp, err := q.ListTOTPUserIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rbac: list users with TOTP: %w", err)
+	}
 
 	// ListRoles is sorted by name, so each user's roles come out in that order.
 	order := make(map[int64]int, len(roles))
@@ -163,7 +169,7 @@ func ListUsers(ctx context.Context, q *db.Queries) ([]UserDetails, error) {
 	for i, u := range users {
 		ids := held[u.ID]
 		slices.SortFunc(ids, func(a, b int64) int { return order[a] - order[b] })
-		d := UserDetails{User: u, Roles: make([]RoleRef, 0, len(ids)), Grants: []Grant{}}
+		d := UserDetails{User: u, Roles: make([]RoleRef, 0, len(ids)), Grants: []Grant{}, TOTPEnabled: slices.Contains(totp, u.ID)}
 		for _, id := range ids {
 			d.Roles = append(d.Roles, RoleRef{ID: id, Name: roles[order[id]].Name})
 			d.Grants = append(d.Grants, byRole[id]...)

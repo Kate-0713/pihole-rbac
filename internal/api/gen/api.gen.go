@@ -4129,6 +4129,12 @@ type ReconcileResult struct {
 	Results []ReconcileItemResult `json:"results"`
 }
 
+// RecoveryCodes defines model for RecoveryCodes.
+type RecoveryCodes struct {
+	// RecoveryCodes Ten single-use codes, each of which stands in for a six-digit code once.
+	RecoveryCodes []string `json:"recovery_codes"`
+}
+
 // ReloadFailure defines model for ReloadFailure.
 type ReloadFailure struct {
 	// Message Why the secret couldn't be loaded. Never contains the value.
@@ -4460,6 +4466,50 @@ type SetupStatus struct {
 	SetupRequired bool `json:"setup_required"`
 }
 
+// TOTPCode defines model for TOTPCode.
+type TOTPCode struct {
+	// Code A six-digit code from the authenticator app, or where the operation says so a recovery code. Spaces, and a recovery code's hyphens and case, are ignored.
+	Code string `json:"code"`
+}
+
+// TOTPDisable defines model for TOTPDisable.
+type TOTPDisable struct {
+	// Code A six-digit code from the authenticator app, or a recovery code.
+	Code     string `json:"code"`
+	Password string `json:"password"`
+}
+
+// TOTPEnrolment defines model for TOTPEnrolment.
+type TOTPEnrolment struct {
+	// Qr The QR code as a data:image/svg+xml URI, for an img element.
+	Qr string `json:"qr"`
+
+	// Secret The secret in base32, for typing into an authenticator app that can't scan the QR code.
+	Secret string `json:"secret"`
+
+	// Uri The otpauth:// URI the QR code holds.
+	Uri string `json:"uri"`
+}
+
+// TOTPStatus defines model for TOTPStatus.
+type TOTPStatus struct {
+	// Available Whether two-factor login can be set up. False when the app has no master key, which the secret is stored under.
+	Available bool `json:"available"`
+	Enabled   bool `json:"enabled"`
+
+	// EnabledAt When it was turned on. Absent when it is off.
+	EnabledAt *time.Time `json:"enabled_at,omitempty"`
+
+	// Pending Whether a secret from setup is waiting for its first code.
+	Pending bool `json:"pending"`
+
+	// RecoveryCodesLeft Unused recovery codes. 0 when two-factor login is off.
+	RecoveryCodesLeft int `json:"recovery_codes_left"`
+
+	// Required Whether the caller must use two-factor login, by their own setting or one of their roles'.
+	Required bool `json:"required"`
+}
+
 // Target defines model for Target.
 type Target struct {
 	// Drifted For a mirrored group: whether its members differed from the primary at the last drift check. Absent until a check has compared them (see GET /instance-groups/{id}/drift).
@@ -4726,9 +4776,12 @@ type User struct {
 	Manageable bool `json:"manageable"`
 
 	// Roles Sorted by name. A local user's assigned roles; an LDAP user's are the roles their current sessions hold, so empty when they aren't logged in.
-	Roles    []RoleRef  `json:"roles"`
-	Source   UserSource `json:"source"`
-	Username string     `json:"username"`
+	Roles  []RoleRef  `json:"roles"`
+	Source UserSource `json:"source"`
+
+	// TotpEnabled Whether the user has two-factor login on.
+	TotpEnabled bool   `json:"totp_enabled"`
+	Username    string `json:"username"`
 }
 
 // UserSource defines model for User.Source.
@@ -4901,6 +4954,9 @@ type RoleConflict = Error
 
 // SetupRequired defines model for SetupRequired.
 type SetupRequired = Error
+
+// TOTPInvalid defines model for TOTPInvalid.
+type TOTPInvalid = Error
 
 // TargetPiholeFailed defines model for TargetPiholeFailed.
 type TargetPiholeFailed = Error
@@ -5238,6 +5294,15 @@ type LoginJSONRequestBody = LoginRequest
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = PasswordChange
 
+// ConfirmTOTPJSONRequestBody defines body for ConfirmTOTP for application/json ContentType.
+type ConfirmTOTPJSONRequestBody = TOTPCode
+
+// DisableTOTPJSONRequestBody defines body for DisableTOTP for application/json ContentType.
+type DisableTOTPJSONRequestBody = TOTPDisable
+
+// RegenerateRecoveryCodesJSONRequestBody defines body for RegenerateRecoveryCodes for application/json ContentType.
+type RegenerateRecoveryCodesJSONRequestBody = TOTPCode
+
 // SetClientResetRulesJSONRequestBody defines body for SetClientResetRules for application/json ContentType.
 type SetClientResetRulesJSONRequestBody = ClientResetRulesInput
 
@@ -5417,6 +5482,21 @@ type ServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(w http.ResponseWriter, r *http.Request)
+	// GetTOTP Your two-factor login
+	// (GET /api/v1/auth/totp)
+	GetTOTP(w http.ResponseWriter, r *http.Request)
+	// ConfirmTOTP Turn two-factor login on
+	// (POST /api/v1/auth/totp/confirm)
+	ConfirmTOTP(w http.ResponseWriter, r *http.Request)
+	// DisableTOTP Turn two-factor login off
+	// (POST /api/v1/auth/totp/disable)
+	DisableTOTP(w http.ResponseWriter, r *http.Request)
+	// RegenerateRecoveryCodes Get new recovery codes
+	// (POST /api/v1/auth/totp/recovery-codes)
+	RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request)
+	// SetupTOTP Start setting up two-factor login
+	// (POST /api/v1/auth/totp/setup)
+	SetupTOTP(w http.ResponseWriter, r *http.Request)
 	// GetClientResetRules The client reset rules
 	// (GET /api/v1/client-reset/rules)
 	GetClientResetRules(w http.ResponseWriter, r *http.Request)
@@ -5777,6 +5857,9 @@ type ServerInterface interface {
 	// SetUserRoles Replace a local user's roles
 	// (PUT /api/v1/users/{id}/roles)
 	SetUserRoles(w http.ResponseWriter, r *http.Request, id UserID, params SetUserRolesParams)
+	// RemoveUserTOTP Remove a user's two-factor login
+	// (DELETE /api/v1/users/{id}/totp)
+	RemoveUserTOTP(w http.ResponseWriter, r *http.Request, id UserID)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(w http.ResponseWriter, r *http.Request)
@@ -6114,6 +6197,76 @@ func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTOTP operation middleware
+func (siw *ServerInterfaceWrapper) GetTOTP(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTOTP(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmTOTP operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmTOTP(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableTOTP operation middleware
+func (siw *ServerInterfaceWrapper) DisableTOTP(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableTOTP(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateRecoveryCodes operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateRecoveryCodes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetupTOTP operation middleware
+func (siw *ServerInterfaceWrapper) SetupTOTP(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetupTOTP(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9645,6 +9798,32 @@ func (siw *ServerInterfaceWrapper) SetUserRoles(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// RemoveUserTOTP operation middleware
+func (siw *ServerInterfaceWrapper) RemoveUserTOTP(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveUserTOTP(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Healthz operation middleware
 func (siw *ServerInterfaceWrapper) Healthz(w http.ResponseWriter, r *http.Request) {
 
@@ -9788,6 +9967,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/password", wrapper.ChangePassword)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/totp", wrapper.GetTOTP)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/totp/setup", wrapper.SetupTOTP)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/totp/confirm", wrapper.ConfirmTOTP)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/totp/disable", wrapper.DisableTOTP)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/totp/recovery-codes", wrapper.RegenerateRecoveryCodes)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/secrets", wrapper.ListSecrets)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/system/reload", wrapper.ReloadSecrets)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/version", wrapper.GetVersion)
@@ -9830,6 +10014,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{id}/enable", wrapper.EnableUser)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{id}/disable", wrapper.DisableUser)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users/{id}/password", wrapper.SetUserPassword)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{id}/totp", wrapper.RemoveUserTOTP)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/users/{id}/roles", wrapper.SetUserRoles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.GetLoginMethods)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.SetLoginMethods)
@@ -9948,6 +10133,8 @@ type RateLimitedJSONResponse struct {
 type RoleConflictJSONResponse Error
 
 type SetupRequiredJSONResponse Error
+
+type TOTPInvalidJSONResponse Error
 
 type TargetPiholeFailedJSONResponse Error
 
@@ -10498,6 +10685,484 @@ func (response GetSession401JSONResponse) VisitGetSessionResponse(w http.Respons
 type GetSession503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response GetSession503JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTOTPRequestObject struct {
+}
+
+type GetTOTPResponseObject interface {
+	VisitGetTOTPResponse(w http.ResponseWriter) error
+}
+
+type GetTOTP200JSONResponse TOTPStatus
+
+func (response GetTOTP200JSONResponse) VisitGetTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTOTP401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetTOTP401JSONResponse) VisitGetTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTOTP503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetTOTP503JSONResponse) VisitGetTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmTOTPRequestObject struct {
+	Body *ConfirmTOTPJSONRequestBody
+}
+
+type ConfirmTOTPResponseObject interface {
+	VisitConfirmTOTPResponse(w http.ResponseWriter) error
+}
+
+type ConfirmTOTP200JSONResponse RecoveryCodes
+
+func (response ConfirmTOTP200JSONResponse) VisitConfirmTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmTOTP400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response ConfirmTOTP400JSONResponse) VisitConfirmTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmTOTP401JSONResponse struct{ TOTPInvalidJSONResponse }
+
+func (response ConfirmTOTP401JSONResponse) VisitConfirmTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmTOTP403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ConfirmTOTP403JSONResponse) VisitConfirmTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmTOTP409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ConfirmTOTP409JSONResponse) VisitConfirmTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmTOTP415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response ConfirmTOTP415JSONResponse) VisitConfirmTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmTOTP503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ConfirmTOTP503JSONResponse) VisitConfirmTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTOTPRequestObject struct {
+	Body *DisableTOTPJSONRequestBody
+}
+
+type DisableTOTPResponseObject interface {
+	VisitDisableTOTPResponse(w http.ResponseWriter) error
+}
+
+type DisableTOTP204Response struct {
+}
+
+func (response DisableTOTP204Response) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DisableTOTP400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response DisableTOTP400JSONResponse) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTOTP401JSONResponse struct{ TOTPInvalidJSONResponse }
+
+func (response DisableTOTP401JSONResponse) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTOTP403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DisableTOTP403JSONResponse) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTOTP409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DisableTOTP409JSONResponse) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTOTP415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response DisableTOTP415JSONResponse) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTOTP429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response DisableTOTP429JSONResponse) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTOTP503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DisableTOTP503JSONResponse) VisitDisableTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodesRequestObject struct {
+	Body *RegenerateRecoveryCodesJSONRequestBody
+}
+
+type RegenerateRecoveryCodesResponseObject interface {
+	VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error
+}
+
+type RegenerateRecoveryCodes200JSONResponse RecoveryCodes
+
+func (response RegenerateRecoveryCodes200JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response RegenerateRecoveryCodes400JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes401JSONResponse struct{ TOTPInvalidJSONResponse }
+
+func (response RegenerateRecoveryCodes401JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RegenerateRecoveryCodes403JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RegenerateRecoveryCodes409JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response RegenerateRecoveryCodes415JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response RegenerateRecoveryCodes429JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RegenerateRecoveryCodes503JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetupTOTPRequestObject struct {
+}
+
+type SetupTOTPResponseObject interface {
+	VisitSetupTOTPResponse(w http.ResponseWriter) error
+}
+
+type SetupTOTP200JSONResponse TOTPEnrolment
+
+func (response SetupTOTP200JSONResponse) VisitSetupTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetupTOTP401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetupTOTP401JSONResponse) VisitSetupTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetupTOTP403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetupTOTP403JSONResponse) VisitSetupTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetupTOTP409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SetupTOTP409JSONResponse) VisitSetupTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetupTOTP503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response SetupTOTP503JSONResponse) VisitSetupTOTPResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -23112,6 +23777,98 @@ func (response SetUserRoles503JSONResponse) VisitSetUserRolesResponse(w http.Res
 	return err
 }
 
+type RemoveUserTOTPRequestObject struct {
+	Id UserID `json:"id"`
+}
+
+type RemoveUserTOTPResponseObject interface {
+	VisitRemoveUserTOTPResponse(w http.ResponseWriter) error
+}
+
+type RemoveUserTOTP200JSONResponse User
+
+func (response RemoveUserTOTP200JSONResponse) VisitRemoveUserTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveUserTOTP400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response RemoveUserTOTP400JSONResponse) VisitRemoveUserTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveUserTOTP401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RemoveUserTOTP401JSONResponse) VisitRemoveUserTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveUserTOTP403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RemoveUserTOTP403JSONResponse) VisitRemoveUserTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveUserTOTP404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RemoveUserTOTP404JSONResponse) VisitRemoveUserTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveUserTOTP503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response RemoveUserTOTP503JSONResponse) VisitRemoveUserTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type HealthzRequestObject struct {
 }
 
@@ -23156,6 +23913,21 @@ type StrictServerInterface interface {
 	// GetSession The current session
 	// (GET /api/v1/auth/session)
 	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+	// GetTOTP Your two-factor login
+	// (GET /api/v1/auth/totp)
+	GetTOTP(ctx context.Context, request GetTOTPRequestObject) (GetTOTPResponseObject, error)
+	// ConfirmTOTP Turn two-factor login on
+	// (POST /api/v1/auth/totp/confirm)
+	ConfirmTOTP(ctx context.Context, request ConfirmTOTPRequestObject) (ConfirmTOTPResponseObject, error)
+	// DisableTOTP Turn two-factor login off
+	// (POST /api/v1/auth/totp/disable)
+	DisableTOTP(ctx context.Context, request DisableTOTPRequestObject) (DisableTOTPResponseObject, error)
+	// RegenerateRecoveryCodes Get new recovery codes
+	// (POST /api/v1/auth/totp/recovery-codes)
+	RegenerateRecoveryCodes(ctx context.Context, request RegenerateRecoveryCodesRequestObject) (RegenerateRecoveryCodesResponseObject, error)
+	// SetupTOTP Start setting up two-factor login
+	// (POST /api/v1/auth/totp/setup)
+	SetupTOTP(ctx context.Context, request SetupTOTPRequestObject) (SetupTOTPResponseObject, error)
 	// GetClientResetRules The client reset rules
 	// (GET /api/v1/client-reset/rules)
 	GetClientResetRules(ctx context.Context, request GetClientResetRulesRequestObject) (GetClientResetRulesResponseObject, error)
@@ -23516,6 +24288,9 @@ type StrictServerInterface interface {
 	// SetUserRoles Replace a local user's roles
 	// (PUT /api/v1/users/{id}/roles)
 	SetUserRoles(ctx context.Context, request SetUserRolesRequestObject) (SetUserRolesResponseObject, error)
+	// RemoveUserTOTP Remove a user's two-factor login
+	// (DELETE /api/v1/users/{id}/totp)
+	RemoveUserTOTP(ctx context.Context, request RemoveUserTOTPRequestObject) (RemoveUserTOTPResponseObject, error)
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(ctx context.Context, request HealthzRequestObject) (HealthzResponseObject, error)
@@ -23763,6 +24538,147 @@ func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSessionResponseObject); ok {
 		if err := validResponse.VisitGetSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTOTP operation middleware
+func (sh *strictHandler) GetTOTP(w http.ResponseWriter, r *http.Request) {
+	var request GetTOTPRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTOTP(ctx, request.(GetTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTOTPResponseObject); ok {
+		if err := validResponse.VisitGetTOTPResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConfirmTOTP operation middleware
+func (sh *strictHandler) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
+	var request ConfirmTOTPRequestObject
+
+	var body ConfirmTOTPJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConfirmTOTP(ctx, request.(ConfirmTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConfirmTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConfirmTOTPResponseObject); ok {
+		if err := validResponse.VisitConfirmTOTPResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DisableTOTP operation middleware
+func (sh *strictHandler) DisableTOTP(w http.ResponseWriter, r *http.Request) {
+	var request DisableTOTPRequestObject
+
+	var body DisableTOTPJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DisableTOTP(ctx, request.(DisableTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DisableTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DisableTOTPResponseObject); ok {
+		if err := validResponse.VisitDisableTOTPResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegenerateRecoveryCodes operation middleware
+func (sh *strictHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	var request RegenerateRecoveryCodesRequestObject
+
+	var body RegenerateRecoveryCodesJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegenerateRecoveryCodes(ctx, request.(RegenerateRecoveryCodesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegenerateRecoveryCodes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegenerateRecoveryCodesResponseObject); ok {
+		if err := validResponse.VisitRegenerateRecoveryCodesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetupTOTP operation middleware
+func (sh *strictHandler) SetupTOTP(w http.ResponseWriter, r *http.Request) {
+	var request SetupTOTPRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetupTOTP(ctx, request.(SetupTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetupTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetupTOTPResponseObject); ok {
+		if err := validResponse.VisitSetupTOTPResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -27209,6 +28125,32 @@ func (sh *strictHandler) SetUserRoles(w http.ResponseWriter, r *http.Request, id
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetUserRolesResponseObject); ok {
 		if err := validResponse.VisitSetUserRolesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveUserTOTP operation middleware
+func (sh *strictHandler) RemoveUserTOTP(w http.ResponseWriter, r *http.Request, id UserID) {
+	var request RemoveUserTOTPRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveUserTOTP(ctx, request.(RemoveUserTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveUserTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveUserTOTPResponseObject); ok {
+		if err := validResponse.VisitRemoveUserTOTPResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

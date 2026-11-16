@@ -184,6 +184,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your two-factor login
+         * @description Whether the caller has two-factor login (TOTP) on, whether they must use it, and how many recovery codes they have left. Never the secret.
+         */
+        get: operations["getTOTP"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start setting up two-factor login
+         * @description Makes a new secret for the caller and returns it, once, as a QR code, an otpauth:// URI and text to type in. Nothing changes at login until a code from it is confirmed. Asking again replaces a secret that was never confirmed. Refused with 409 conflict while two-factor login is on (turn it off first), or when the app has no master key to store the secret with (`details.reason`: `enabled` or `no_master_key`).
+         */
+        post: operations["setupTOTP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn two-factor login on
+         * @description Takes a six-digit code made from the secret that setup returned. A correct one turns two-factor login on, ends the caller's other sessions, and returns the recovery codes, once. A wrong one is 401 totp_invalid. With no secret waiting, or two-factor login already on, it is 409 conflict.
+         */
+        post: operations["confirmTOTP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn two-factor login off
+         * @description Needs the caller's password (checked in the directory for an LDAP user) and a six-digit code or a recovery code. A wrong password is 401 invalid_credentials and a wrong code 401 totp_invalid; both count against the same per-address and per-username limits as logging in, and while a limit applies the request is refused with 429 without checking either. On success the secret and recovery codes are removed, and the caller's other sessions end. With two-factor login off already, it is 409 conflict.
+         */
+        post: operations["disableTOTP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/totp/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get new recovery codes
+         * @description Replaces all of the caller's recovery codes with ten new ones, returned once. Needs a six-digit code or one of the current recovery codes; a wrong one is 401 totp_invalid and counts against the login limits, as for turning two-factor login off. With two-factor login off, it is 409 conflict.
+         */
+        post: operations["regenerateRecoveryCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/secrets": {
         parameters: {
             query?: never;
@@ -849,6 +949,29 @@ export interface paths {
          */
         post: operations["setUserPassword"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a user's two-factor login
+         * @description For someone who has lost their authenticator and their recovery codes: removes the user's secret and recovery codes and ends their sessions, so their next login asks for the password alone. Needs every grant of every role the user has, so nobody can weaken the login of an account more privileged than their own. Your own is refused (code validation_failed): turn it off from your account, which asks for your password and a code. A user without two-factor login is returned unchanged.
+         */
+        delete: operations["removeUserTOTP"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2629,6 +2752,43 @@ export interface components {
             /** @description At least 12 characters and at most 72 bytes, and not the current password. */
             new_password: string;
         };
+        TOTPStatus: {
+            /** @description Whether two-factor login can be set up. False when the app has no master key, which the secret is stored under. */
+            available: boolean;
+            enabled: boolean;
+            /**
+             * Format: date-time
+             * @description When it was turned on. Absent when it is off.
+             */
+            enabled_at?: string;
+            /** @description Whether a secret from setup is waiting for its first code. */
+            pending: boolean;
+            /** @description Whether the caller must use two-factor login, by their own setting or one of their roles'. */
+            required: boolean;
+            /** @description Unused recovery codes. 0 when two-factor login is off. */
+            recovery_codes_left: number;
+        };
+        TOTPEnrolment: {
+            /** @description The secret in base32, for typing into an authenticator app that can't scan the QR code. */
+            secret: string;
+            /** @description The otpauth:// URI the QR code holds. */
+            uri: string;
+            /** @description The QR code as a data:image/svg+xml URI, for an img element. */
+            qr: string;
+        };
+        TOTPCode: {
+            /** @description A six-digit code from the authenticator app, or where the operation says so a recovery code. Spaces, and a recovery code's hyphens and case, are ignored. */
+            code: string;
+        };
+        TOTPDisable: {
+            password: string;
+            /** @description A six-digit code from the authenticator app, or a recovery code. */
+            code: string;
+        };
+        RecoveryCodes: {
+            /** @description Ten single-use codes, each of which stands in for a six-digit code once. */
+            recovery_codes: string[];
+        };
         UserCreate: {
             /** @description 1 to 64 lowercase letters, digits, '.', '_' or '-', starting with a letter or digit. Uppercase is folded and surrounding spaces are ignored. Unique across local and LDAP users. */
             username: string;
@@ -2659,6 +2819,8 @@ export interface components {
             /** @description The user's DN in the directory, for LDAP users. */
             ldap_dn?: string;
             disabled: boolean;
+            /** @description Whether the user has two-factor login on. */
+            totp_enabled: boolean;
             /** Format: date-time */
             created_at: string;
             /**
@@ -4439,6 +4601,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The code is wrong, was used before or has expired (code totp_invalid); where the request carries a password, the password is wrong (code invalid_credentials); or there is no valid session (code unauthenticated). */
+        TOTPInvalid: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Too many failed attempts (code rate_limited). Retry after the given number of seconds. */
         RateLimited: {
             headers: {
@@ -4744,6 +4915,142 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getTOTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's two-factor login. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TOTPStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    setupTOTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new secret. It isn't shown again. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TOTPEnrolment"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    confirmTOTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TOTPCode"];
+            };
+        };
+        responses: {
+            /** @description Two-factor login is on. The recovery codes aren't shown again. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodes"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["TOTPInvalid"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    disableTOTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TOTPDisable"];
+            };
+        };
+        responses: {
+            /** @description Two-factor login is off. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["TOTPInvalid"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    regenerateRecoveryCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TOTPCode"];
+            };
+        };
+        responses: {
+            /** @description The new recovery codes. They aren't shown again, and the old ones no longer work. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodes"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["TOTPInvalid"];
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             415: components["responses"]["UnsupportedMediaType"];
@@ -5940,6 +6247,34 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    removeUserTOTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The user's ID. */
+                id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user, now without two-factor login. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             503: components["responses"]["SetupRequired"];
         };
     };

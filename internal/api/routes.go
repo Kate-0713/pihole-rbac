@@ -40,6 +40,12 @@ var routePermission = map[string]string{
 	"GET /api/v1/auth/session":   accessSession,
 	"POST /api/v1/auth/password": accessSession,
 
+	"GET /api/v1/auth/totp":                 accessSession,
+	"POST /api/v1/auth/totp/setup":          accessSession,
+	"POST /api/v1/auth/totp/confirm":        accessSession,
+	"POST /api/v1/auth/totp/disable":        accessSession,
+	"POST /api/v1/auth/totp/recovery-codes": accessSession,
+
 	"GET /api/v1/targets": accessSession,
 
 	"GET /api/v1/system/secrets":       string(rbac.ConfigReload),
@@ -118,6 +124,7 @@ var routePermission = map[string]string{
 	"POST /api/v1/users/{id}/disable":  string(rbac.UsersManage),
 	"POST /api/v1/users/{id}/password": string(rbac.UsersManage),
 	"PUT /api/v1/users/{id}/roles":     string(rbac.UsersManage),
+	"DELETE /api/v1/users/{id}/totp":   string(rbac.UsersManage),
 
 	"GET /api/v1/targets/{target}/summary":                       accessTargetAny,
 	"GET /api/v1/targets/{target}/blocking":                      accessTargetAny,
