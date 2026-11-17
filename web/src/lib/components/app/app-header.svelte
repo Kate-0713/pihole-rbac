@@ -21,6 +21,7 @@
 
 	// The nav only offers what the user can do on the selected target; the server checks again on every request.
 	// $derived.by takes a function, for values that need more than one expression to work out.
+	// A session held to setting up two-factor login can reach nothing else, so the nav offers nothing.
 	let pages = $derived.by(() =>
 		[
 			{ href: '/dashboard', label: 'Dashboard', show: canAny(target) },
@@ -35,7 +36,7 @@
 			{ href: '/querylog', label: 'Query log', show: can('querylog.view', target) },
 			// Only a mirrored group has drift.
 			{ href: '/drift', label: 'Drift', show: !!target?.startsWith('g-') && can('drift.view', target) }
-		].filter((p) => p.show)
+		].filter((p) => p.show && !session.held)
 	);
 
 	let adminPages = $derived(
@@ -51,7 +52,7 @@
 			{ href: '/admin/client-reset', label: 'Client reset', show: can('settings.manage') },
 			{ href: '/admin/settings', label: 'Settings', show: can('settings.manage') },
 			{ href: '/admin/system', label: 'System', show: canAnyGlobal('config.reload', 'app.update') }
-		].filter((p) => p.show)
+		].filter((p) => p.show && !session.held)
 	);
 
 	// `page` from $app/state is reactive, so the highlighted link follows navigation.
@@ -120,7 +121,7 @@
 
 		<div class="ml-auto flex items-center gap-2">
 			<!-- Admin pages don't act on an instance, so there's nothing to pick there. -->
-			{#if usesTarget(page.url.pathname)}
+			{#if usesTarget(page.url.pathname) && !session.held}
 				<TargetPicker current={target} />
 			{/if}
 
@@ -143,10 +144,17 @@
 					<!-- An LDAP user's password lives in the directory, so only local accounts can change it here. -->
 					<DropdownMenu.Item>
 						{#snippet child({ props })}
-							<a {...props} href="/account/sessions">Your sessions</a>
+							<a {...props} href="/account/two-factor">Two-factor login</a>
 						{/snippet}
 					</DropdownMenu.Item>
-					{#if session.user?.source === 'local'}
+					{#if !session.held}
+						<DropdownMenu.Item>
+							{#snippet child({ props })}
+								<a {...props} href="/account/sessions">Your sessions</a>
+							{/snippet}
+						</DropdownMenu.Item>
+					{/if}
+					{#if session.user?.source === 'local' && !session.held}
 						<DropdownMenu.Item onSelect={() => (passwordOpen = true)}>Change password</DropdownMenu.Item>
 					{/if}
 					<DropdownMenu.Item disabled={loggingOut} onSelect={logout}>Log out</DropdownMenu.Item>

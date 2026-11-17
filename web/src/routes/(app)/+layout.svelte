@@ -8,6 +8,7 @@
 	import NewVersionBanner from '#lib/components/app/new-version-banner.svelte';
 	import UpdateBanner from '#lib/components/app/update-banner.svelte';
 	import WriteResultsPanel from '#lib/components/app/write-results-panel.svelte';
+	import { session } from '#lib/stores/session.svelte.js';
 	import { writeResults } from '#lib/stores/write-results.svelte.js';
 	import type { LayoutProps } from './$types';
 
@@ -26,8 +27,11 @@
 
 <main class="mx-auto grid w-full max-w-6xl flex-1 content-start gap-4 p-4">
 	<ErrorBanner />
-	<NewVersionBanner />
-	<UpdateBanner />
-	<WriteResultsPanel />
+	<!-- A session held to setting up two-factor login can't read the version or update status, so these wait. -->
+	{#if !session.held}
+		<NewVersionBanner />
+		<UpdateBanner />
+		<WriteResultsPanel />
+	{/if}
 	{@render children()}
 </main>

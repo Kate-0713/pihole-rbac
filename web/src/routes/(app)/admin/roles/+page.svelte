@@ -92,6 +92,7 @@
 							<CellText>
 								<a href="/admin/roles/{r.id}" class="font-medium underline-offset-4 hover:underline">{r.name}</a>
 								{#if r.builtin}<Badge variant="secondary" class="ml-1">Builtin</Badge>{/if}
+								{#if r.totp_required}<Badge variant="outline" class="ml-1">Two-factor required</Badge>{/if}
 								{#if r.description}<p class="text-muted-foreground text-xs">{r.description}</p>{/if}
 							</CellText>
 						</Table.Cell>

@@ -5,6 +5,7 @@ import { redirect } from '@sveltejs/kit';
 import { notices } from '#lib/stores/notices.svelte.js';
 import { loginURL, session } from '#lib/stores/session.svelte.js';
 import { targets, usesTarget } from '#lib/stores/targets.svelte.js';
+import { setupPath } from '#lib/totp.js';
 import type { LayoutLoad } from './$types';
 
 // SvelteKit convention: a folder in (parentheses) is a route group. It adds a layout to the pages inside it without
@@ -15,6 +16,14 @@ import type { LayoutLoad } from './$types';
 export const load: LayoutLoad = async ({ parent, url, fetch }) => {
 	await parent(); // the root layout's load has asked the server about the session by now
 	if (session.status !== 'authenticated') redirect(307, loginURL(url.pathname + url.search));
+
+	// Someone who must set up two-factor login can reach nothing else until they have: the server refuses every other
+	// request with 403 totp_setup_required, so the pages would only show errors. Their targets aren't loaded either,
+	// for the same reason.
+	if (session.held) {
+		if (url.pathname !== setupPath) redirect(307, setupPath);
+		return { target: null };
+	}
 
 	try {
 		await targets.load(fetch);

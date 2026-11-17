@@ -11,6 +11,8 @@
 	import UserPasswordDialog from '#lib/components/app/user-password-dialog.svelte';
 	import UserRolesDialog from '#lib/components/app/user-roles-dialog.svelte';
 	import UserTable from '#lib/components/app/user-table.svelte';
+	import UserTOTPPolicyDialog from '#lib/components/app/user-totp-policy-dialog.svelte';
+	import UserTOTPRemoveDialog from '#lib/components/app/user-totp-remove-dialog.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
@@ -26,6 +28,8 @@
 	let rolesOpen = $state(false);
 	let passwordOpen = $state(false);
 	let confirmOpen = $state(false);
+	let totpPolicyOpen = $state(false);
+	let totpRemoveOpen = $state(false);
 	let confirmAction = $state<'disable' | 'delete'>('disable');
 	// The user the open dialog is about. One variable serves every dialog, since only one is open at a time.
 	let target = $state<User | null>(null);
@@ -34,10 +38,12 @@
 	let selfID = $derived(session.user?.id);
 	let targetIsSelf = $derived(target !== null && isSelf(target, selfID));
 
-	function open(u: User, which: 'roles' | 'password') {
+	function open(u: User, which: 'roles' | 'password' | 'totp-policy' | 'totp-remove') {
 		target = u;
 		if (which === 'roles') rolesOpen = true;
-		else passwordOpen = true;
+		else if (which === 'password') passwordOpen = true;
+		else if (which === 'totp-policy') totpPolicyOpen = true;
+		else totpRemoveOpen = true;
 	}
 	function ask(u: User, action: 'disable' | 'delete') {
 		target = u;
@@ -97,6 +103,8 @@
 		onenable={enable}
 		ondisable={(u) => ask(u, 'disable')}
 		ondelete={(u) => ask(u, 'delete')}
+		ontotppolicy={(u) => open(u, 'totp-policy')}
+		ontotpremove={(u) => open(u, 'totp-remove')}
 	/>
 	<p class="text-muted-foreground text-sm">
 		LDAP users get an account when they first log in, with roles from the LDAP group mappings; their roles show while
@@ -106,6 +114,9 @@
 	<UserCreateDialog bind:open={createOpen} roles={data.roles} onsaved={() => reload()} />
 	<UserRolesDialog bind:open={rolesOpen} user={target} roles={data.roles} onsaved={() => reload(targetIsSelf)} />
 	<UserPasswordDialog bind:open={passwordOpen} user={target} />
+	<!-- Your own setting can hold you to setting two-factor login up, so the session is read again after it. -->
+	<UserTOTPPolicyDialog bind:open={totpPolicyOpen} user={target} onsaved={() => reload(targetIsSelf)} />
+	<UserTOTPRemoveDialog bind:open={totpRemoveOpen} user={target} ondone={() => reload()} />
 	<UserConfirmDialog
 		bind:open={confirmOpen}
 		action={confirmAction}

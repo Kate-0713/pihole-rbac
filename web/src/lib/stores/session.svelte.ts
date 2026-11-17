@@ -11,6 +11,7 @@
 import { goto } from '$app/navigation';
 import { ApiError, api, onSessionResponses, setCSRFToken, unwrap, type Schemas } from '#lib/api/client.js';
 import { notices } from '#lib/stores/notices.svelte.js';
+import { setupPath } from '#lib/totp.js';
 import { targets } from '#lib/stores/targets.svelte.js';
 import { updates } from '#lib/stores/updates.svelte.js';
 import { writeResults } from '#lib/stores/write-results.svelte.js';
@@ -27,6 +28,9 @@ class SessionStore {
 
 	// $derived recomputes when the $state it reads changes, like a computed property.
 	user = $derived<SessionUser | null>(this.current?.user ?? null);
+	// The user must use two-factor login and hasn't turned it on: the server refuses everything but setting it up,
+	// and the app layout keeps them on that page.
+	held = $derived(this.current?.totp_setup_required ?? false);
 
 	#init: Promise<void> | null = null;
 
@@ -55,6 +59,9 @@ class SessionStore {
 	async refresh(): Promise<void> {
 		this.#init = null;
 		await this.init(globalThis.fetch);
+		// A change can hold the user (their own role made to require two-factor login, say). Navigating runs the app
+		// layout's load, which sends a held user to set it up.
+		if (this.held && window.location.pathname !== setupPath) await goto(setupPath);
 	}
 
 	// Asks again for the targets and for the permissions on them, together. The permissions are keyed by target, so a
@@ -132,6 +139,13 @@ class SessionStore {
 		void goto(loginURL(currentPath()));
 	}
 
+	// Called by the API client when a request is refused because the user must set up two-factor login first. The
+	// session is read again, which says so, and refresh() takes them to the page for it.
+	totpSetupRequired(): void {
+		if (this.status !== 'authenticated') return;
+		void this.refresh().catch(() => undefined);
+	}
+
 	setupRequired(): void {
 		// While init is still asking, #load handles the answer itself.
 		if (this.status === 'unknown' || this.status === 'setup') return;
@@ -144,7 +158,8 @@ export const session = new SessionStore();
 
 onSessionResponses({
 	unauthenticated: () => session.expired(),
-	setupRequired: () => session.setupRequired()
+	setupRequired: () => session.setupRequired(),
+	totpSetupRequired: () => session.totpSetupRequired()
 });
 
 function currentPath(): string {

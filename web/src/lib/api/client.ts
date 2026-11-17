@@ -36,10 +36,12 @@ const sendCSRFToken: Middleware = {
 export const api = createClient<paths>({ baseUrl: '', credentials: 'same-origin' });
 api.use(sendCSRFToken);
 
-// What to do when any call finds the session gone (401 unauthenticated) or setup not done (503 setup_required). The
-// server checks the session before the CSRF token, so a write whose session has ended gets the 401 too.
-// The session store registers these: client.ts can't import the store, because the store imports client.ts.
-type ResponseHandlers = { unauthenticated?: () => void; setupRequired?: () => void };
+// What to do when any call finds the session gone (401 unauthenticated), setup not done (503 setup_required), or the
+// session held to setting up two-factor login (403 totp_setup_required, which a role's new requirement can bring on
+// in the middle of a session). The server checks the session before the CSRF token, so a write whose session has
+// ended gets the 401 too. The session store registers these: client.ts can't import the store, because the store
+// imports client.ts.
+type ResponseHandlers = { unauthenticated?: () => void; setupRequired?: () => void; totpSetupRequired?: () => void };
 let handlers: ResponseHandlers = {};
 
 export function onSessionResponses(h: ResponseHandlers): void {
@@ -50,7 +52,7 @@ export function onSessionResponses(h: ResponseHandlers): void {
 // it must not send the login page to itself.
 const watchResponses: Middleware = {
 	async onResponse({ response }) {
-		if (response.status !== 401 && response.status !== 503) return undefined;
+		if (response.status !== 401 && response.status !== 403 && response.status !== 503) return undefined;
 		let code: string | undefined;
 		try {
 			const body: unknown = await response.clone().json();
@@ -60,6 +62,7 @@ const watchResponses: Middleware = {
 		}
 		if (code === 'unauthenticated') handlers.unauthenticated?.();
 		if (code === 'setup_required') handlers.setupRequired?.();
+		if (code === 'totp_setup_required') handlers.totpSetupRequired?.();
 		return undefined;
 	}
 };

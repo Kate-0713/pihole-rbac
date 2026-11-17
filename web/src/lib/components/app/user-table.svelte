@@ -11,6 +11,7 @@
 	import CellText from '#lib/components/app/cell-text.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { formatDateTime } from '#lib/format.js';
+	import { twoFactorSummary } from '#lib/totp.js';
 	import { isSelf, rolesSummary, sourceLabel, userActions, type User } from '#lib/users.js';
 
 	// A plain table sorted by username, which the server already does: an install has a handful of users.
@@ -22,7 +23,9 @@
 		onpassword,
 		onenable,
 		ondisable,
-		ondelete
+		ondelete,
+		ontotppolicy,
+		ontotpremove
 	}: {
 		users: User[];
 		selfID: number | undefined;
@@ -33,6 +36,8 @@
 		onenable: (u: User) => void;
 		ondisable: (u: User) => void;
 		ondelete: (u: User) => void;
+		ontotppolicy: (u: User) => void;
+		ontotpremove: (u: User) => void;
 	} = $props();
 
 	// The users whose full LDAP DN is shown. A DN is shortened to one line with an ellipsis, so it can't run into the
@@ -54,6 +59,7 @@
 				<Table.Head>Username</Table.Head>
 				<Table.Head>Account</Table.Head>
 				<Table.Head>Roles</Table.Head>
+				<Table.Head>Two-factor</Table.Head>
 				<Table.Head>Status</Table.Head>
 				<Table.Head>Last login</Table.Head>
 				<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>
@@ -94,6 +100,13 @@
 					<!-- class: directives only work on plain elements, so a component gets a class expression instead. -->
 					<Table.Cell class={u.roles.length === 0 ? 'text-muted-foreground' : ''}><CellText>{rolesSummary(u)}</CellText></Table.Cell>
 					<Table.Cell>
+						{@const tf = twoFactorSummary(u)}
+						<Badge variant={tf.tone === 'on' ? 'secondary' : tf.tone === 'missing' ? 'destructive' : 'outline'}>{tf.label}</Badge>
+						{#if u.totp_policy !== 'roles'}
+							<p class="text-muted-foreground text-xs">{u.totp_policy === 'required' ? 'Required for them' : 'Exempt'}</p>
+						{/if}
+					</Table.Cell>
+					<Table.Cell>
 						{#if u.disabled}
 							<Badge variant="destructive">Disabled</Badge>
 						{:else}
@@ -128,6 +141,11 @@
 										{#if !self}
 											<DropdownMenu.Item onSelect={() => onpassword(u)}>Set password</DropdownMenu.Item>
 										{/if}
+									{/if}
+									<DropdownMenu.Item onSelect={() => ontotppolicy(u)}>Two-factor setting</DropdownMenu.Item>
+									<!-- Your own is turned off from your account, which asks for your password and a code. -->
+									{#if u.totp_enabled && !self}
+										<DropdownMenu.Item onSelect={() => ontotpremove(u)}>Remove two-factor login</DropdownMenu.Item>
 									{/if}
 									{#if u.disabled}
 										<DropdownMenu.Item onSelect={() => onenable(u)}>Enable</DropdownMenu.Item>

@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
 	import RoleEditor from '#lib/components/app/role-editor.svelte';
+	import RoleTOTPCard from '#lib/components/app/role-totp-card.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import type { PageProps } from './$types';
 
@@ -29,4 +30,5 @@
 	{#key data.role.id}
 		<RoleEditor role={data.role} catalogue={data.catalogue} />
 	{/key}
+	<RoleTOTPCard role={data.role} />
 {/if}
