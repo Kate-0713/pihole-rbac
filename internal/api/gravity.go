@@ -32,7 +32,7 @@ func (s *Server) StartGravity(ctx context.Context, req gen.StartGravityRequestOb
 		names[i] = m.name
 	}
 	ri := info(ctx)
-	snap, err := s.Gravity.Start(ctx, tg.t.String(), ri.sess.Username, members, gravity.Hooks{
+	snap, err := s.Gravity.Start(ctx, tg.t.String(), ri.user.Username, members, gravity.Hooks{
 		Finished: func(ctx context.Context, runID string, r gravity.Result) {
 			detail := map[string]any{"run_id": runID, "outcome": r.Status, "duration_ms": r.Duration.Milliseconds()}
 			if r.Status == gravity.InstanceOK {

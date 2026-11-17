@@ -8,6 +8,28 @@ import (
 	"database/sql"
 )
 
+type ApiToken struct {
+	ID         int64
+	PublicID   string
+	UserID     int64
+	Name       string
+	SecretHash []byte
+	CreatedAt  int64
+	ExpiresAt  int64
+	LastUsedAt sql.NullInt64
+	LastUsedIp string
+	RevokedAt  sql.NullInt64
+}
+
+type ApiTokenGrant struct {
+	ID         int64
+	TokenID    int64
+	Permission string
+	ScopeType  string
+	InstanceID sql.NullInt64
+	GroupID    sql.NullInt64
+}
+
 type AuditLog struct {
 	ID           int64
 	At           int64

@@ -79,6 +79,8 @@ type Options struct {
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
 	Frontend       *spa.Handler       // the built SPA, served for every path outside /api/; nil serves a "not built" page
 	Logger         *slog.Logger
+	// Now returns the current time, for API token expiry and last use. nil means time.Now.
+	Now func() time.Time
 }
 
 // DefaultLoginLimits returns the v1 login throttles: 10 failures per address and 5 per username in a rolling 15
@@ -94,6 +96,16 @@ type Server struct {
 	pending   *pendingLogins // logins waiting for a two-factor code
 	csp       string         // Content-Security-Policy for every response
 	setupDone atomic.Bool    // once true, never false again; until then, the database is asked on each request
+
+	expiredUses  tokenClock // when each expired API token's use was last audited
+	tokenTouches tokenClock // when each API token's last use was last written
+}
+
+func (s *Server) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -154,12 +166,33 @@ func (s *Server) Handler() http.Handler {
 // reqInfo is what the gate learned about a request, for the handlers. Strict handlers only get a context, so it
 // travels there.
 type reqInfo struct {
-	w    http.ResponseWriter
-	r    *http.Request
-	sess *auth.Session // nil when there is no valid session
-	ip   string        // client address, from X-Forwarded-For only behind a trusted proxy
+	w     http.ResponseWriter
+	r     *http.Request
+	sess  *auth.Session // nil when there is no valid session, and always for a request made with an API token
+	token *tokenCaller  // the API token the request authenticated with, or nil
+	user  *caller       // who is making the request, by session or token; nil when neither
+	ip    string        // client address, from X-Forwarded-For only behind a trusted proxy
 
-	perms *rbac.Set // resolved on first use; see Server.permissions
+	perms *rbac.Set // resolved on first use; see Server.permissions. Set by the gate for a token
+
+	tokenRefusal *rbac.Error // a refusal the gate found for a token before it could audit it
+}
+
+// caller is who is making a request, whether they logged in or used an API token. Handlers for routes that accept a
+// token use this rather than sess, which a token request doesn't have.
+type caller struct {
+	UserID   int64
+	Username string
+	Source   auth.Method
+	RoleIDs  []int64 // a session's roles, or for a token the owner's roles now
+	PublicID string  // the session's public ID; empty for a token
+}
+
+func sessionCaller(sess *auth.Session) *caller {
+	if sess == nil {
+		return nil
+	}
+	return &caller{UserID: sess.UserID, Username: sess.Username, Source: sess.Source, RoleIDs: sess.RoleIDs, PublicID: sess.PublicID}
 }
 
 type reqInfoKey struct{}
@@ -178,10 +211,9 @@ func isSafeMethod(m string) bool {
 }
 
 // gate runs before every generated route (r.Pattern is set by then). For API routes it requires a JSON body on
-// state-changing requests, loads the session, refuses requests without a session unless the route is public, checks
-// the Origin and CSRF token on state-changing requests, holds a session whose user must set up two-factor login to
-// the routes for doing that, and refuses sessions that lack the global permission the route declares in
-// routePermission. A route missing from that table is refused: fail closed.
+// state-changing requests, authenticates the request by its API token (authenticateToken) when it has an
+// Authorization header and by its session (sessionGate) otherwise, and refuses callers that lack the global
+// permission the route declares in routePermission. A route missing from that table is refused: fail closed.
 func (s *Server) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -209,48 +241,35 @@ func (s *Server) gate(next http.Handler) http.Handler {
 			}
 		}
 
-		sess, err := s.Sessions.Get(r.Context(), r)
-		if err != nil && !errors.Is(err, auth.ErrNoSession) {
-			s.Logger.Error("loading session", "err", err)
-			writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
-			return
-		}
-
 		access, declared := routePermission[r.Pattern]
 		if !declared {
 			s.Logger.Error("route has no declared permission", "pattern", r.Pattern)
 			writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 			return
 		}
-		// Before the CSRF check, so a state-changing request whose session has ended (expired, revoked, or a new
-		// session key) is told to log in again rather than that its token didn't match. Nothing is changed either way.
-		if sess == nil && access != accessPublic {
-			writeError(w, http.StatusUnauthorized, "unauthenticated", "You need to log in.")
-			return
-		}
-		if unsafe && (!sameOrigin(r, s.TrustedProxies) || !s.Sessions.CheckCSRF(r, sess)) {
-			writeError(w, http.StatusForbidden, "csrf_failed", "The request was refused because its CSRF token or origin didn't match. Reload the page and try again.")
-			return
-		}
 
-		// Held to setting up two-factor login: checked here, for every route that needs a session, so nothing can be
-		// reached around it. After the CSRF check, so a forged request learns nothing from the answer.
-		if sess != nil && access != accessPublic && !totpSetupRoutes[r.Pattern] {
-			hold, err := s.totpSetupRequired(r.Context(), sess)
-			if err != nil {
-				s.Logger.Error("checking the two-factor requirement", "err", err)
-				writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+		var ri *reqInfo
+		if _, bearer := r.Header["Authorization"]; bearer {
+			// An API token, in place of a session. CSRF and Origin don't apply: a browser can't send this header to
+			// another origin without a CORS preflight, which the app never answers.
+			if ri = s.authenticateToken(w, r); ri == nil {
 				return
 			}
-			if hold {
-				writeError(w, http.StatusForbidden, "totp_setup_required", msgTOTPSetupRequired)
+		} else {
+			if ri = s.sessionGate(w, r, access); ri == nil {
 				return
 			}
 		}
-
-		ri := &reqInfo{w: w, sess: sess, ip: ratelimit.ClientIP(r, s.TrustedProxies)}
-		r = r.WithContext(context.WithValue(r.Context(), reqInfoKey{}, ri))
+		ctx := context.WithValue(r.Context(), reqInfoKey{}, ri)
+		if ri.token != nil {
+			ctx = audit.WithToken(ctx, ri.token.name, ri.token.publicID)
+		}
+		r = r.WithContext(ctx)
 		ri.r = r
+		if ri.token != nil && ri.tokenRefusal != nil {
+			s.refuse(w, r, ri.tokenRefusal)
+			return
+		}
 		if kind, perm, _ := parseAccess(access); kind == "global" {
 			if err := s.requireGlobal(r.Context(), globalPermissions(perm)...); err != nil {
 				s.responseError(w, r, err)
@@ -263,6 +282,45 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// sessionGate is the gate for a request without an Authorization header: it loads the session, refuses requests
+// without one unless the route is public, checks the Origin and CSRF token on state-changing requests, and holds a
+// session whose user must set up two-factor login to the routes for doing that. It answers the request itself and
+// returns nil when the request is refused.
+func (s *Server) sessionGate(w http.ResponseWriter, r *http.Request, access string) *reqInfo {
+	sess, err := s.Sessions.Get(r.Context(), r)
+	if err != nil && !errors.Is(err, auth.ErrNoSession) {
+		s.Logger.Error("loading session", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+		return nil
+	}
+	// Before the CSRF check, so a state-changing request whose session has ended (expired, revoked, or a new
+	// session key) is told to log in again rather than that its token didn't match. Nothing is changed either way.
+	if sess == nil && access != accessPublic {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "You need to log in.")
+		return nil
+	}
+	if !isSafeMethod(r.Method) && (!sameOrigin(r, s.TrustedProxies) || !s.Sessions.CheckCSRF(r, sess)) {
+		writeError(w, http.StatusForbidden, "csrf_failed", "The request was refused because its CSRF token or origin didn't match. Reload the page and try again.")
+		return nil
+	}
+
+	// Held to setting up two-factor login: checked here, for every route that needs a session, so nothing can be
+	// reached around it. After the CSRF check, so a forged request learns nothing from the answer.
+	if sess != nil && access != accessPublic && !totpSetupRoutes[r.Pattern] {
+		hold, err := s.totpSetupRequired(r.Context(), sess.UserID, sess.RoleIDs)
+		if err != nil {
+			s.Logger.Error("checking the two-factor requirement", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+			return nil
+		}
+		if hold {
+			writeError(w, http.StatusForbidden, "totp_setup_required", msgTOTPSetupRequired)
+			return nil
+		}
+	}
+	return &reqInfo{w: w, sess: sess, user: sessionCaller(sess), ip: ratelimit.ClientIP(r, s.TrustedProxies)}
 }
 
 func isJSON(contentType string) bool {

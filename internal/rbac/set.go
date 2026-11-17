@@ -13,6 +13,7 @@ import (
 type Set struct {
 	scopes map[Permission][]Scope
 	topo   *Topology
+	limit  *Set // when set, the set allows only what limit allows too; see Intersect
 }
 
 // NewSet builds a set from grants. Grants of permissions the catalogue doesn't know are dropped, so a stale row
@@ -28,13 +29,20 @@ func NewSet(grants []Grant, topo *Topology) *Set {
 	return s
 }
 
+// Intersect returns a set that allows only what both a and b allow, against a's topology. It is how an API token's
+// permissions are worked out: its own grants, limited on each request to what its owner holds at that moment. Every
+// check (CanGlobal, Can, CanAny, Holds, Missing, Global, ByTarget) applies both sets. Grants returns a's grants only.
+func Intersect(a, b *Set) *Set {
+	return &Set{scopes: a.scopes, topo: a.topo, limit: b}
+}
+
 // Topology returns the topology the set was built against.
 func (s *Set) Topology() *Topology { return s.topo }
 
 // CanGlobal reports whether the set holds a global permission. Only scope-all grants count, which is also the only
 // scope a global permission can be granted at.
 func (s *Set) CanGlobal(p Permission) bool {
-	return p.Class() == ClassGlobal && slices.Contains(s.scopes[p], AllScope())
+	return p.Class() == ClassGlobal && slices.Contains(s.scopes[p], AllScope()) && (s.limit == nil || s.limit.CanGlobal(p))
 }
 
 // Can reports whether the set allows an instance- or group-class permission on a target. The target has to suit the
@@ -53,6 +61,9 @@ func (s *Set) Can(p Permission, t Target) bool {
 		return false
 	}
 	if !s.topo.Exists(t) || (class == ClassGroup && t.Kind != TargetGroup) {
+		return false
+	}
+	if s.limit != nil && !s.limit.Can(p, t) {
 		return false
 	}
 	for _, sc := range s.scopes[p] {
@@ -94,7 +105,7 @@ func (s *Set) covers(sc Scope, t Target) bool {
 // grants for the same permission has a scope that contains the grant's scope. Scope all contains every scope; an
 // independent group contains itself and its current members; a mirrored group or an instance contains only itself.
 func (s *Set) Holds(g Grant) bool {
-	if !g.Permission.Known() {
+	if !g.Permission.Known() || (s.limit != nil && !s.limit.Holds(g)) {
 		return false
 	}
 	for _, sc := range s.scopes[g.Permission] {

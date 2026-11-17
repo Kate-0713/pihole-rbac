@@ -6,6 +6,7 @@ package rbac
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
@@ -69,6 +70,12 @@ func LoadTopology(ctx context.Context, q *db.Queries) (*Topology, error) {
 	}
 	return NewTopology(ids, groups, members), nil
 }
+
+// Instances returns every instance ID, sorted.
+func (t *Topology) Instances() []int64 { return slices.Clone(t.instances) }
+
+// Groups returns every group ID, sorted.
+func (t *Topology) Groups() []int64 { return slices.Sorted(maps.Keys(t.groups)) }
 
 // HasInstance reports whether the instance exists.
 func (t *Topology) HasInstance(id int64) bool {

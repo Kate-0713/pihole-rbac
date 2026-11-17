@@ -10,18 +10,22 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
 
 // specOp is one operation of api/openapi.yaml as far as access goes.
 type specOp struct {
 	permission string // the x-permission value, or "" if there is none
 	public     bool   // `security: []`
+	token      bool   // `x-token: allowed`
 }
 
 var (
 	specPathLine   = regexp.MustCompile(`^  (/\S*):\s*$`)
 	specMethodLine = regexp.MustCompile(`^    (get|post|put|patch|delete):\s*$`)
 	specPermLine   = regexp.MustCompile(`^      x-permission:\s*(\S+)\s*$`)
+	specTokenLine  = regexp.MustCompile(`^      x-token:\s*(\S+)\s*$`)
 )
 
 // readSpecOps reads the operations from the spec, keyed by mux pattern. The spec is regular enough (paths at two
@@ -51,6 +55,13 @@ func readSpecOps(t *testing.T) map[string]specOp {
 		case key != "" && specPermLine.MatchString(line):
 			op := ops[key]
 			op.permission = specPermLine.FindStringSubmatch(line)[1]
+			ops[key] = op
+		case key != "" && specTokenLine.MatchString(line):
+			if v := specTokenLine.FindStringSubmatch(line)[1]; v != "allowed" {
+				t.Errorf("%s: x-token is %q; the only value is allowed", key, v)
+			}
+			op := ops[key]
+			op.token = true
 			ops[key] = op
 		case key != "" && strings.TrimSpace(line) == "security: []" && strings.HasPrefix(line, "      security"):
 			op := ops[key]
@@ -94,6 +105,43 @@ func TestRoutePermissionsMatchSpec(t *testing.T) {
 	for pattern := range routePermission {
 		if _, ok := ops[pattern]; !ok {
 			t.Errorf("%s is in routePermission but not in the spec", pattern)
+		}
+	}
+}
+
+// TestTokenRoutesMatchSpec checks tokenRoutes against the spec's x-token markers in both directions, and that no
+// operation a token may reach is public or about accounts and security.
+func TestTokenRoutesMatchSpec(t *testing.T) {
+	ops := readSpecOps(t)
+	for pattern, op := range ops {
+		if op.token != tokenRoutes[pattern] {
+			t.Errorf("%s: x-token in the spec is %v, tokenRoutes has %v", pattern, op.token, tokenRoutes[pattern])
+		}
+	}
+	for pattern := range tokenRoutes {
+		if _, ok := ops[pattern]; !ok {
+			t.Errorf("%s is in tokenRoutes but not in the spec", pattern)
+		}
+	}
+	allowedGlobal := map[string]bool{string(rbac.AuditView): true}
+	for pattern := range tokenRoutes {
+		access := routePermission[pattern]
+		kind, perm, _ := parseAccess(access)
+		switch {
+		case access == accessPublic:
+			t.Errorf("%s accepts a token but is public", pattern)
+		case kind == "global" && !allowedGlobal[perm]:
+			t.Errorf("%s accepts a token but needs the global permission %s, which a token can't hold", pattern, perm)
+		}
+		_, path, _ := strings.Cut(pattern, " ")
+		for _, area := range []string{"auth", "account", "tokens", "sessions", "users", "roles", "settings",
+			"notifications", "system", "setup", "ldap", "client-reset", "instances", "about"} {
+			if strings.HasPrefix(path, "/api/v1/"+area) {
+				t.Errorf("%s accepts a token but is about accounts, security or management", pattern)
+			}
+		}
+		if strings.HasPrefix(path, "/api/v1/instance-groups") && !strings.HasSuffix(path, "/drift") && !strings.HasSuffix(path, "/drift/check") {
+			t.Errorf("%s accepts a token but manages instances", pattern)
 		}
 	}
 }

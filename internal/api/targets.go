@@ -152,7 +152,7 @@ func (s *Server) piholeEntry(ctx context.Context, ref instanceRef, action string
 		detail["mirrored_group"] = ref.mirroredOf
 	}
 	return audit.Entry{
-		UserID: ri.sess.UserID, Username: ri.sess.Username, Action: action, Target: ref.target.String(),
+		UserID: ri.user.UserID, Username: ri.user.Username, Action: action, Target: ref.target.String(),
 		InstanceID: ref.id, InstanceName: ref.name, Err: err, Detail: detail, IP: ri.ip,
 	}
 }

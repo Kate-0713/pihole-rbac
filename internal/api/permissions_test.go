@@ -189,7 +189,7 @@ func sessionContext(t *testing.T, e *testEnv, c *client) context.Context {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return context.WithValue(r.Context(), reqInfoKey{}, &reqInfo{r: r, sess: sess})
+	return context.WithValue(r.Context(), reqInfoKey{}, &reqInfo{r: r, sess: sess, user: sessionCaller(sess)})
 }
 
 // TestAuthorize covers authorize on the same topology: instance, mirrored group, and an independent group's members.

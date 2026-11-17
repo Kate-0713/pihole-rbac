@@ -13,18 +13,19 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 )
 
-// permissions returns what the request's session may do. It is resolved from the session's role IDs and the current
-// groups the first time it is asked for and kept for the rest of the request only, so a change to a role or a group
-// applies to the very next request.
+// permissions returns what the request's caller may do. For a session it is resolved from the session's role IDs and
+// the current groups the first time it is asked for, and kept for the rest of the request only, so a change to a role
+// or a group applies to the very next request. For an API token the gate has already set it: the token's grants
+// intersected with what its owner's roles hold now (see authenticateToken).
 func (s *Server) permissions(ctx context.Context) (*rbac.Set, error) {
 	ri := info(ctx)
 	if ri.perms != nil {
 		return ri.perms, nil
 	}
-	if ri.sess == nil {
+	if ri.user == nil {
 		return rbac.NewSet(nil, nil), nil // no session, no permissions
 	}
-	set, err := rbac.Resolve(ctx, s.Store.Read(), ri.sess.RoleIDs)
+	set, err := rbac.Resolve(ctx, s.Store.Read(), ri.user.RoleIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -103,9 +104,9 @@ func statusForCode(c rbac.Code) int {
 // refusals, in its transaction); a refused read is only logged, to keep the audit log useful.
 func (s *Server) refuse(w http.ResponseWriter, r *http.Request, e *rbac.Error) {
 	ri := info(r.Context())
-	if e.Code == rbac.CodeForbidden && ri.sess != nil {
+	if e.Code == rbac.CodeForbidden && ri.user != nil {
 		if isSafeMethod(r.Method) {
-			s.Logger.Info("permission denied", "user", ri.sess.Username, "request", r.Pattern, "details", e.Details)
+			s.Logger.Info("permission denied", "user", ri.user.Username, "request", r.Pattern, "details", e.Details)
 		} else {
 			detail := map[string]any{"attempted": r.Pattern}
 			for k, v := range e.Details {
@@ -113,7 +114,7 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, e *rbac.Error) {
 			}
 			target, _ := e.Details["target"].(string)
 			entry := audit.Entry{
-				UserID: ri.sess.UserID, Username: ri.sess.Username, Action: audit.ActionPermissionDenied,
+				UserID: ri.user.UserID, Username: ri.user.Username, Action: audit.ActionPermissionDenied,
 				Target: target, Err: e, Detail: detail, IP: ri.ip,
 			}
 			if err := s.Audit.Record(r.Context(), s.Store, entry); err != nil {

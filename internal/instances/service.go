@@ -694,8 +694,8 @@ func (s *Service) SetEnabled(ctx context.Context, a rbac.Actor, id int64, enable
 	return inst, nil
 }
 
-// Delete removes an instance. It is refused while a role grant, an instance group or a client-reset target refers
-// to it, with a message that lists them.
+// Delete removes an instance. It is refused while a role grant, a live API token's grant, an instance group, a
+// client-reset target or an active temporary client change refers to it, with a message that lists them.
 func (s *Service) Delete(ctx context.Context, a rbac.Actor, id int64) error {
 	err := s.do(ctx, a, audit.ActionInstanceDelete, func(t *txn) error {
 		inst, err := t.load(id)
@@ -706,6 +706,11 @@ func (s *Service) Delete(ctx context.Context, a rbac.Actor, id int64) error {
 			return err
 		}
 		if err := t.checkUnused(inst); err != nil {
+			return err
+		}
+		// Revoked and expired tokens don't hold the instance up: their grants on it go with it.
+		ref := sql.NullInt64{Int64: id, Valid: true}
+		if err := t.q.DeleteDeadAPITokenGrantsOnInstance(t.ctx, db.DeleteDeadAPITokenGrantsOnInstanceParams{InstanceID: ref, Now: store.Millis(t.now)}); err != nil {
 			return err
 		}
 		if err := t.q.DeleteInstance(t.ctx, id); err != nil {
@@ -744,9 +749,20 @@ func (t *txn) checkUnused(inst Instance) error {
 	if err != nil {
 		return err
 	}
+	toks, err := t.q.ListLiveAPITokensOnInstance(t.ctx, db.ListLiveAPITokensOnInstanceParams{InstanceID: ref, Now: store.Millis(t.now)})
+	if err != nil {
+		return err
+	}
+	tokenNames := make([]string, len(toks))
+	for i, tk := range toks {
+		tokenNames[i] = rbac.TokenName(tk.Username, tk.Name)
+	}
 	var uses []string
 	if len(roles) > 0 {
 		uses = append(uses, plural(len(roles), "role")+" "+quoteJoin(roles))
+	}
+	if len(toks) > 0 {
+		uses = append(uses, plural(len(toks), "API token")+" "+strings.Join(tokenNames, ", "))
 	}
 	if len(groups) > 0 {
 		uses = append(uses, plural(len(groups), "group")+" "+quoteJoin(groups))
@@ -768,7 +784,10 @@ func (t *txn) checkUnused(inst Instance) error {
 	return &rbac.Error{
 		Code:    rbac.CodeConflict,
 		Message: fmt.Sprintf("%s is still used by %s. Remove it from them first.", inst.Name, strings.Join(uses, "; ")),
-		Details: map[string]any{"roles": roles, "groups": groups, "client_reset_targets": resets, "client_overrides": overrideRefs(ids, names)},
+		Details: map[string]any{
+			"roles": roles, "api_tokens": tokenNames, "groups": groups, "client_reset_targets": resets,
+			"client_overrides": overrideRefs(ids, names),
+		},
 	}
 }
 

@@ -150,14 +150,19 @@ func (s *Server) roleJSON(ctx context.Context, id int64) (gen.Role, error) {
 func roleJSON(d rbac.RoleDetails, caller *rbac.Set) gen.Role {
 	out := gen.Role{
 		Id: d.Role.ID, Name: d.Role.Name, Description: d.Role.Description, Builtin: d.Role.Builtin, TotpRequired: d.TOTPRequired,
-		CreatedAt: store.FromMillis(d.Role.CreatedAt), Grants: make([]gen.Grant, len(d.Grants)),
+		CreatedAt: store.FromMillis(d.Role.CreatedAt), Grants: grantsJSON(d.Grants),
 		Users: d.Users, LdapGroups: d.LDAPGroups, Manageable: len(caller.Missing(d.Grants)) == 0,
 	}
-	for i, g := range d.Grants {
-		out.Grants[i] = gen.Grant{Permission: string(g.Permission), Scope: gen.GrantScope(g.Scope.Type)}
+	return out
+}
+
+func grantsJSON(gs []rbac.Grant) []gen.Grant {
+	out := make([]gen.Grant, len(gs))
+	for i, g := range gs {
+		out[i] = gen.Grant{Permission: string(g.Permission), Scope: gen.GrantScope(g.Scope.Type)}
 		if g.Scope.Type != rbac.ScopeAll {
 			id := g.Scope.ID
-			out.Grants[i].Id = &id
+			out[i].Id = &id
 		}
 	}
 	return out

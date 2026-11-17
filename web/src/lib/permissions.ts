@@ -16,7 +16,8 @@ export type GlobalPermission =
 	| 'sessions.manage'
 	| 'audit.view'
 	| 'config.reload'
-	| 'app.update';
+	| 'app.update'
+	| 'tokens.use';
 
 export type TargetPermission =
 	| 'domains.view'

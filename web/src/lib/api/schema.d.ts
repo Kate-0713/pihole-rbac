@@ -492,7 +492,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a Pi-hole instance
-         * @description Refused with 409 while a role grant, an instance group or a client-reset target refers to the instance; the message lists them, and `details` has `roles`, `groups` and `client_reset_targets`.
+         * @description Refused with 409 while a role grant, a live API token's grant, an instance group, a client-reset target or an active temporary client change refers to the instance; the message lists them, and `details` has `roles`, `api_tokens` (each as "name" (owner)), `groups`, `client_reset_targets` and `client_overrides`. Grants of revoked and expired tokens don't hold it up: they are deleted with it.
          */
         delete: operations["deleteInstance"];
         options?: never;
@@ -630,13 +630,13 @@ export interface paths {
         get: operations["getInstanceGroup"];
         /**
          * Change an instance group
-         * @description Replaces the group's name, mode, members and primary, under the same rules as adding one. A mirrored group can't become independent while a role holds a mirrored-group permission (drift.view, drift.reconcile) on it (code invariant_violated, with `details.roles`). Members added to an independent group are covered by its grants at once, and members removed lose them. Audited as group_update, with the fields that changed and the members added and removed.
+         * @description Replaces the group's name, mode, members and primary, under the same rules as adding one. A mirrored group can't become independent while a role or a live API token holds a mirrored-group permission (drift.view, drift.reconcile) on it (code invariant_violated, with `details.roles` and `details.api_tokens`). Members added to an independent group are covered by its grants at once, and members removed lose them. Audited as group_update, with the fields that changed and the members added and removed.
          */
         put: operations["updateInstanceGroup"];
         post?: never;
         /**
          * Delete an instance group
-         * @description Removes the group and its memberships; the instances themselves are untouched. Refused with 409 conflict while a role grant or a client-reset target refers to the group; the message lists them, and `details` has `roles` and `client_reset_targets`. Audited as group_delete.
+         * @description Removes the group and its memberships; the instances themselves are untouched. Refused with 409 conflict while a role grant, a live API token's grant, a client-reset target or an active temporary client change refers to the group; the message lists them, and `details` has `roles`, `api_tokens`, `client_reset_targets` and `client_overrides`. Grants of revoked and expired tokens don't hold it up: they are deleted with it. Audited as group_delete.
          */
         delete: operations["deleteInstanceGroup"];
         options?: never;
@@ -1192,6 +1192,116 @@ export interface paths {
          * @description Ends one of the caller's own sessions, or anyone's with sessions.manage. Ending the caller's current session logs them out. A session that doesn't exist, or that the caller may not end, is 404 either way, so the answer doesn't say whether another user's session exists. Audited as session_revoke.
          */
         delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your API tokens
+         * @description The caller's own API tokens, newest first, including revoked and expired ones for 30 days. Never a token's secret or its hash. Needs only a session, so someone who has lost tokens.use can still see and revoke theirs.
+         */
+        get: operations["listMyTokens"];
+        put?: never;
+        /**
+         * Make an API token
+         * @description Makes a token for the caller, for scripts and integrations, and returns it whole, once: only a hash of its secret is kept. Needs tokens.use, the caller's password and, if they have two-factor login on, a six-digit code or a recovery code. A wrong password is 401 invalid_credentials and a wrong code 401 totp_invalid; both count against the login limits, as for turning two-factor login off, and while a limit applies the request is 429. The code is only spent if the token is made. The token's grants must be ones the caller holds, and only target permissions and audit.view (400 otherwise; 403 forbidden with `details.missing` for grants the caller doesn't hold). On every request its permissions are its grants intersected with what the caller holds then. The expiry is required, at most a year away. A name is 1 to 64 characters and unique among the caller's tokens that aren't revoked (409 conflict, `details.reason` name_taken). A caller can have 50 tokens that are neither revoked nor expired (409, too_many_tokens). LDAP users can't have tokens yet (409, ldap_user). Audited as token_create, with the name, expiry and grants.
+         */
+        post: operations["createToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/tokens/grantable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What your API tokens can hold
+         * @description For the form that makes a token: the permissions a token can hold (Pi-hole permissions and audit.view) that the caller holds somewhere, each with whether they hold it at scope all and the instances and groups they could grant it on, in catalogue order; and the names of those instances and groups. A grant on an independent group also offers its members one by one. Needs tokens.use. It shows no instance or group the caller holds nothing on, unless they hold a permission at scope all.
+         */
+        get: operations["getTokenGrantable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/tokens/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The token's public ID. */
+                public_id: components["parameters"]["TokenPublicID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke one of your API tokens
+         * @description Revokes one of the caller's own tokens; it stops working at once. No password is needed, since it only takes access away. Another user's token is 404 here, whatever the caller holds (admins use DELETE /tokens/{public_id}). Revoking a revoked token changes nothing. Audited as token_revoke, by self.
+         */
+        delete: operations["revokeMyToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every user's API tokens
+         * @description Every user's API tokens, by owner and then newest first, including revoked and expired ones for 30 days. Never a token's secret or its hash. A token is effectively a long session, so this needs sessions.manage.
+         */
+        get: operations["listTokens"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The token's public ID. */
+                public_id: components["parameters"]["TokenPublicID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke any user's API token
+         * @description Revokes a token, whoever it belongs to; it stops working at once. Revoking a revoked token changes nothing. Audited as token_revoke, by admin with the owner, or by self for the caller's own.
+         */
+        delete: operations["revokeToken"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3073,6 +3183,80 @@ export interface components {
             /** @description Pass as `cursor` for the next page. Absent on the last page. */
             next_cursor?: string;
         };
+        /**
+         * @description active until it expires or is revoked. An active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login.
+         * @enum {string}
+         */
+        APITokenState: "active" | "expired" | "revoked";
+        /** @description An API token, never its secret. */
+        APIToken: {
+            /** @description The part of the token after prt_ and before the secret; safe to show and log. */
+            public_id: string;
+            name: string;
+            /** Format: int64 */
+            user_id: number;
+            /** @description The owner. */
+            username: string;
+            grants: components["schemas"]["Grant"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /**
+             * Format: date-time
+             * @description The last request made with it, to within a minute. Absent if it was never used.
+             */
+            last_used_at?: string;
+            /** @description Where that request came from; empty if it was never used. */
+            last_used_ip: string;
+            /**
+             * Format: date-time
+             * @description Absent unless revoked.
+             */
+            revoked_at?: string;
+            state: components["schemas"]["APITokenState"];
+        };
+        APITokenList: {
+            tokens: components["schemas"]["APIToken"][];
+        };
+        APITokenInput: {
+            /** @description 1 to 64 characters once trimmed, with no control characters. */
+            name: string;
+            /**
+             * Format: date-time
+             * @description In the future, and at most a year away.
+             */
+            expires_at: string;
+            grants: components["schemas"]["Grant"][];
+            /** @description The caller's password. */
+            password: string;
+            /** @description A six-digit code from the authenticator app, or a recovery code. Required when the caller has two-factor login on, and ignored otherwise. */
+            code?: string;
+        };
+        GrantablePermission: {
+            name: string;
+            /** @enum {string} */
+            class: "instance" | "group" | "global";
+            description: string;
+            /** @description Whether the caller holds it at scope all, so a token can too. */
+            all: boolean;
+            /** @description The instances it can be granted on, by ID. */
+            instances: number[];
+            /** @description The groups it can be granted on, by ID. */
+            groups: number[];
+        };
+        TokenGrantable: {
+            permissions: components["schemas"]["GrantablePermission"][];
+            /** @description The instances named in `permissions`, sorted by name. */
+            instances: components["schemas"]["ScopeName"][];
+            /** @description The groups named in `permissions`, sorted by name. */
+            groups: components["schemas"]["GroupScopeName"][];
+        };
+        NewAPIToken: {
+            /** @description The whole token, prt_<public_id>_<secret>. Shown this once; it can't be read again. */
+            token: string;
+            api_token: components["schemas"]["APIToken"];
+        };
         /** @enum {string} */
         ChannelKind: "discord" | "matrix";
         ChannelMatrix: {
@@ -4512,7 +4696,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description No valid session (code unauthenticated). */
+        /** @description No valid session (code unauthenticated), or, on an operation that accepts an API token, a token that isn't valid (code invalid_token) or has expired (code token_expired). */
         Unauthenticated: {
             headers: {
                 [name: string]: unknown;
@@ -4521,7 +4705,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Not allowed (code forbidden, with `details.permission` naming the missing permission), or the CSRF or Origin check failed on a state-changing request (code csrf_failed). Any operation that needs a session also answers 403 with code totp_setup_required while the user must use two-factor login and hasn't turned it on, except reading the session and the CSRF token, logging out, and GET /auth/totp, POST /auth/totp/setup and POST /auth/totp/confirm. */
+        /** @description Not allowed (code forbidden, with `details.permission` naming the missing permission), or the CSRF or Origin check failed on a state-changing request (code csrf_failed). Any operation that needs a session also answers 403 with code totp_setup_required while the user must use two-factor login and hasn't turned it on, except reading the session and the CSRF token, logging out, and GET /auth/totp, POST /auth/totp/setup and POST /auth/totp/confirm; a request made with an API token gets it too. An API token gets 403 with code token_not_allowed on an operation that doesn't accept one, and code forbidden with `details.permission` tokens.use when its owner no longer holds that permission. */
         Forbidden: {
             headers: {
                 [name: string]: unknown;
@@ -4584,7 +4768,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The change conflicts with existing data (code conflict): the name is taken, or an instance is already in another mirrored group (`details.field` members, `details.instance` and `details.group` name them); or a mirrored group would become independent while roles hold mirrored-group permissions on it (code invariant_violated, with `details.roles`). */
+        /** @description The change conflicts with existing data (code conflict): the name is taken, or an instance is already in another mirrored group (`details.field` members, `details.instance` and `details.group` name them); or a mirrored group would become independent while roles or live API tokens hold mirrored-group permissions on it (code invariant_violated, with `details.roles` and `details.api_tokens`). */
         InstanceGroupConflict: {
             headers: {
                 [name: string]: unknown;
@@ -4714,6 +4898,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description The token's public ID. */
+        TokenPublicID: string;
         /** @description Only output lines with a higher `seq`; the newest 200 of them. 0 or absent for the newest 200 of all. */
         GravityAfter: number;
         /** @description How many runs to return, 1 to 200. */
@@ -6741,6 +6927,156 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listMyTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's tokens. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APITokenList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    createToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["APITokenInput"];
+            };
+        };
+        responses: {
+            /** @description The token, shown this once, and its description. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewAPIToken"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["TOTPInvalid"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getTokenGrantable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What a token of the caller's can hold. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenGrantable"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    revokeMyToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The token's public ID. */
+                public_id: components["parameters"]["TokenPublicID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tokens. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APITokenList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    revokeToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The token's public ID. */
+                public_id: components["parameters"]["TokenPublicID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
             204: {
                 headers: {
                     [name: string]: unknown;

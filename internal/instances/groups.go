@@ -278,7 +278,7 @@ func (s *Service) UpdateGroup(ctx context.Context, a rbac.Actor, id int64, in Gr
 			return err
 		}
 		if before.Mode != in.Mode {
-			if err := rbac.CheckGroupModeChange(t.ctx, t.q, id, in.Mode); err != nil {
+			if err := rbac.CheckGroupModeChange(t.ctx, t.q, id, in.Mode, t.now); err != nil {
 				return err
 			}
 		}
@@ -348,8 +348,8 @@ func (s *Service) UpdateGroup(ctx context.Context, a rbac.Actor, id int64, in Gr
 	return g, nil
 }
 
-// DeleteGroup removes a group and its memberships. It is refused while a role grant or a client-reset target refers
-// to the group, with a message that lists them.
+// DeleteGroup removes a group and its memberships. It is refused while a role grant, a live API token's grant, a
+// client-reset target or an active temporary client change refers to the group, with a message that lists them.
 func (s *Service) DeleteGroup(ctx context.Context, a rbac.Actor, id int64) error {
 	return s.do(ctx, a, audit.ActionGroupDelete, func(t *txn) error {
 		g, err := t.loadGroup(id)
@@ -372,9 +372,20 @@ func (s *Service) DeleteGroup(ctx context.Context, a rbac.Actor, id int64) error
 		if err != nil {
 			return err
 		}
+		toks, err := t.q.ListLiveAPITokensOnGroup(t.ctx, db.ListLiveAPITokensOnGroupParams{GroupID: ref, Now: store.Millis(t.now)})
+		if err != nil {
+			return err
+		}
+		tokenNames := make([]string, len(toks))
+		for i, tk := range toks {
+			tokenNames[i] = rbac.TokenName(tk.Username, tk.Name)
+		}
 		var uses []string
 		if len(roles) > 0 {
 			uses = append(uses, plural(len(roles), "role")+" "+quoteJoin(roles))
+		}
+		if len(toks) > 0 {
+			uses = append(uses, plural(len(toks), "API token")+" "+strings.Join(tokenNames, ", "))
 		}
 		if resets > 0 {
 			uses = append(uses, plural(int(resets), "client reset target"))
@@ -391,8 +402,15 @@ func (s *Service) DeleteGroup(ctx context.Context, a rbac.Actor, id int64) error
 			return &rbac.Error{
 				Code:    rbac.CodeConflict,
 				Message: fmt.Sprintf("%s is still used by %s. Remove it from them first.", g.Name, strings.Join(uses, "; ")),
-				Details: map[string]any{"roles": roles, "client_reset_targets": resets, "client_overrides": overrideRefs(oids, onames)},
+				Details: map[string]any{
+					"roles": roles, "api_tokens": tokenNames, "client_reset_targets": resets,
+					"client_overrides": overrideRefs(oids, onames),
+				},
 			}
+		}
+		// Revoked and expired tokens don't hold the group up: their grants on it go with it.
+		if err := t.q.DeleteDeadAPITokenGrantsOnGroup(t.ctx, db.DeleteDeadAPITokenGrantsOnGroupParams{GroupID: ref, Now: store.Millis(t.now)}); err != nil {
+			return err
 		}
 		if err := t.q.DeleteInstanceGroup(t.ctx, id); err != nil {
 			if store.Constraint(err) == store.ForeignKey {

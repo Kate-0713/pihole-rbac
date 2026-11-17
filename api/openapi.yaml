@@ -12,6 +12,13 @@ info:
     DELETE) also needs the X-CSRF-Token header and an Origin (or Referer) matching the app's own origin, and a
     request body must be application/json. Failures use the Error envelope. Until first-run setup is complete, every
     /api/v1 endpoint except about, auth/csrf, setup/status and setup answers 503 with code setup_required.
+
+    An operation marked `x-token: allowed` also accepts a personal API token, `Authorization: Bearer prt_…`, in place
+    of a session. With an Authorization header, cookies are ignored and the CSRF and Origin checks don't apply. A
+    token's permissions are its own grants intersected with what its owner holds now, and its owner must still hold
+    tokens.use. Every other operation answers a token with 403 token_not_allowed. A token that isn't valid (unknown,
+    malformed, revoked, or its owner disabled) is 401 invalid_token, and counts against the per-address login limit
+    (429 rate_limited while it applies); an expired one is 401 token_expired.
   license:
     name: GNU Affero General Public License v3.0 or later
     identifier: AGPL-3.0-or-later
@@ -657,6 +664,10 @@ paths:
         a restart.
       operationId: listTargets
       x-permission: session
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The targets.
@@ -789,8 +800,10 @@ paths:
     delete:
       summary: Delete a Pi-hole instance
       description: >-
-        Refused with 409 while a role grant, an instance group or a client-reset target refers to the instance; the
-        message lists them, and `details` has `roles`, `groups` and `client_reset_targets`.
+        Refused with 409 while a role grant, a live API token's grant, an instance group, a client-reset target or an
+        active temporary client change refers to the instance; the message lists them, and `details` has `roles`,
+        `api_tokens` (each as "name" (owner)), `groups`, `client_reset_targets` and `client_overrides`. Grants of revoked
+        and expired tokens don't hold it up: they are deleted with it.
       operationId: deleteInstance
       x-permission: instances.manage
       responses:
@@ -1011,8 +1024,8 @@ paths:
       summary: Change an instance group
       description: >-
         Replaces the group's name, mode, members and primary, under the same rules as adding one. A mirrored group
-        can't become independent while a role holds a mirrored-group permission (drift.view, drift.reconcile) on it
-        (code invariant_violated, with `details.roles`). Members added to an independent group are covered by its
+        can't become independent while a role or a live API token holds a mirrored-group permission (drift.view,
+        drift.reconcile) on it (code invariant_violated, with `details.roles` and `details.api_tokens`). Members added to an independent group are covered by its
         grants at once, and members removed lose them. Audited as group_update, with the fields that changed and the
         members added and removed.
       operationId: updateInstanceGroup
@@ -1048,8 +1061,10 @@ paths:
       summary: Delete an instance group
       description: >-
         Removes the group and its memberships; the instances themselves are untouched. Refused with 409 conflict while
-        a role grant or a client-reset target refers to the group; the message lists them, and `details` has `roles`
-        and `client_reset_targets`. Audited as group_delete.
+        a role grant, a live API token's grant, a client-reset target or an active temporary client change refers to
+        the group; the message lists them, and `details` has `roles`, `api_tokens`, `client_reset_targets` and
+        `client_overrides`. Grants of revoked and expired tokens don't hold it up: they are deleted with it. Audited as
+        group_delete.
       operationId: deleteInstanceGroup
       x-permission: instances.manage
       responses:
@@ -1081,6 +1096,10 @@ paths:
         its differences are unknown rather than reported.
       operationId: getGroupDrift
       x-permission: target:drift.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The latest report.
@@ -1107,6 +1126,10 @@ paths:
         Needs drift.view on the group. It only reads, so it isn't audited.
       operationId: checkGroupDrift
       x-permission: target:drift.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The new report.
@@ -2072,6 +2095,163 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/account/tokens:
+    get:
+      summary: List your API tokens
+      description: >-
+        The caller's own API tokens, newest first, including revoked and expired ones for 30 days. Never a token's
+        secret or its hash. Needs only a session, so someone who has lost tokens.use can still see and revoke theirs.
+      operationId: listMyTokens
+      x-permission: session
+      responses:
+        "200":
+          description: The caller's tokens.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APITokenList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Make an API token
+      description: >-
+        Makes a token for the caller, for scripts and integrations, and returns it whole, once: only a hash of its
+        secret is kept. Needs tokens.use, the caller's password and, if they have two-factor login on, a six-digit code
+        or a recovery code. A wrong password is 401 invalid_credentials and a wrong code 401 totp_invalid; both count
+        against the login limits, as for turning two-factor login off, and while a limit applies the request is 429.
+        The code is only spent if the token is made. The token's grants must be ones the caller holds, and only target
+        permissions and audit.view (400 otherwise; 403 forbidden with `details.missing` for grants the caller doesn't
+        hold). On every request its permissions are its grants intersected with what the caller holds then. The expiry
+        is required, at most a year away. A name is 1 to 64 characters and unique among the caller's tokens that
+        aren't revoked (409 conflict, `details.reason` name_taken). A caller can have 50 tokens that are neither
+        revoked nor expired (409, too_many_tokens). LDAP users can't have tokens yet (409, ldap_user). Audited as
+        token_create, with the name, expiry and grants.
+      operationId: createToken
+      x-permission: tokens.use
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/APITokenInput"
+      responses:
+        "201":
+          description: The token, shown this once, and its description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewAPIToken"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/TOTPInvalid"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/account/tokens/grantable:
+    get:
+      summary: What your API tokens can hold
+      description: >-
+        For the form that makes a token: the permissions a token can hold (Pi-hole permissions and audit.view) that the
+        caller holds somewhere, each with whether they hold it at scope all and the instances and groups they could
+        grant it on, in catalogue order; and the names of those instances and groups. A grant on an independent group
+        also offers its members one by one. Needs tokens.use. It shows no instance or group the caller holds nothing on,
+        unless they hold a permission at scope all.
+      operationId: getTokenGrantable
+      x-permission: tokens.use
+      responses:
+        "200":
+          description: What a token of the caller's can hold.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenGrantable"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/account/tokens/{public_id}:
+    parameters:
+      - $ref: "#/components/parameters/TokenPublicID"
+    delete:
+      summary: Revoke one of your API tokens
+      description: >-
+        Revokes one of the caller's own tokens; it stops working at once. No password is needed, since it only takes
+        access away. Another user's token is 404 here, whatever the caller holds (admins use DELETE /tokens/{public_id}).
+        Revoking a revoked token changes nothing. Audited as token_revoke, by self.
+      operationId: revokeMyToken
+      x-permission: session
+      responses:
+        "204":
+          description: Revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/tokens:
+    get:
+      summary: List every user's API tokens
+      description: >-
+        Every user's API tokens, by owner and then newest first, including revoked and expired ones for 30 days. Never
+        a token's secret or its hash. A token is effectively a long session, so this needs sessions.manage.
+      operationId: listTokens
+      x-permission: sessions.manage
+      responses:
+        "200":
+          description: The tokens.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APITokenList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/tokens/{public_id}:
+    parameters:
+      - $ref: "#/components/parameters/TokenPublicID"
+    delete:
+      summary: Revoke any user's API token
+      description: >-
+        Revokes a token, whoever it belongs to; it stops working at once. Revoking a revoked token changes nothing.
+        Audited as token_revoke, by admin with the owner, or by self for the caller's own.
+      operationId: revokeToken
+      x-permission: sessions.manage
+      responses:
+        "204":
+          description: Revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/notifications/channels:
     get:
       summary: List the notification channels
@@ -2356,6 +2536,10 @@ paths:
         answer's `next_cursor` to get the next page; it is absent on the last page. Reading isn't audited.
       operationId: listAudit
       x-permission: audit.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/AuditUser"
         - $ref: "#/components/parameters/AuditAction"
@@ -2406,6 +2590,10 @@ paths:
         than running it as a formula. Reading isn't audited.
       operationId: exportAudit
       x-permission: audit.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/AuditUser"
         - $ref: "#/components/parameters/AuditAction"
@@ -2497,6 +2685,10 @@ paths:
         fails.
       operationId: getTargetSummary
       x-permission: target:any
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The figures.
@@ -2527,6 +2719,10 @@ paths:
       description: Needs any permission on the target.
       operationId: getBlocking
       x-permission: target:any
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The blocking status.
@@ -2558,6 +2754,10 @@ paths:
         blocking_set.
       operationId: setBlocking
       x-permission: target:blocking.toggle
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -2609,6 +2809,10 @@ paths:
         failure. Answers with a result per instance (see WriteResults under the schemas). Audited as dns_restart.
       operationId: restartDNS
       x-permission: target:dns.restart
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       responses:
@@ -2649,6 +2853,10 @@ paths:
       description: Every entry, unpaged, since Pi-hole returns the lists whole.
       operationId: listDomains
       x-permission: target:domains.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The entries.
@@ -2679,6 +2887,10 @@ paths:
         per instance (see WriteResults under the schemas). Audited as domain_add.
       operationId: addDomain
       x-permission: target:domains.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -2727,6 +2939,10 @@ paths:
         Audited as domain_update, with the groups before and after.
       operationId: updateDomain
       x-permission: target:domains.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -2774,6 +2990,10 @@ paths:
         with the entry's groups and comment.
       operationId: deleteDomain
       x-permission: target:domains.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -2822,6 +3042,10 @@ paths:
       description: Every client, unpaged, since Pi-hole returns the list whole.
       operationId: listClients
       x-permission: target:clients.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The clients.
@@ -2852,6 +3076,10 @@ paths:
         and after.
       operationId: updateClient
       x-permission: target:clients.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -2903,6 +3131,10 @@ paths:
         `via`. Also gives the limits a start is checked against. Since v2.6.0.
       operationId: listTemporaryClientChanges
       x-permission: target:clients.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The changes.
@@ -2929,6 +3161,10 @@ paths:
         `details.instance`). Audited as client_temp_set, one row per instance. Since v2.6.0.
       operationId: startTemporaryClientChange
       x-permission: target:clients.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -2976,6 +3212,10 @@ paths:
         is a 409. Changes only the app's database. Audited as client_temp_update. Since v2.6.0.
       operationId: updateTemporaryClientChange
       x-permission: target:clients.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -3016,6 +3256,10 @@ paths:
         client_temp_end, one row per instance. Since v2.6.0.
       operationId: endTemporaryClientChange
       x-permission: target:clients.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: Every instance was put back.
@@ -3054,6 +3298,10 @@ paths:
         client_temp_end. Since v2.6.0.
       operationId: retryTemporaryClientChange
       x-permission: target:clients.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: Every instance was put back.
@@ -3090,6 +3338,10 @@ paths:
         the Groups page. Needs any permission on the target.
       operationId: listPiholeGroups
       x-permission: target:any
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The groups.
@@ -3119,6 +3371,10 @@ paths:
         with a result per instance (see WriteResults under the schemas). Audited as piholegroup_add.
       operationId: addPiholeGroup
       x-permission: target:piholegroups.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -3171,6 +3427,10 @@ paths:
         piholegroup_disable when the enabled flag changes, otherwise piholegroup_update.
       operationId: updatePiholeGroup
       x-permission: target:piholegroups.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
         - $ref: "#/components/parameters/Confirm"
@@ -3222,6 +3482,10 @@ paths:
         piholegroup_delete.
       operationId: deletePiholeGroup
       x-permission: target:piholegroups.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
         - $ref: "#/components/parameters/Confirm"
@@ -3276,6 +3540,10 @@ paths:
         audited.
       operationId: getPiholeGroupUsage
       x-permission: target:piholegroups.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - name: name
           in: query
@@ -3319,6 +3587,10 @@ paths:
         name or password in it is shown with that part replaced by `xxxxx`. Reading isn't audited. Since v2.3.0.
       operationId: listLists
       x-permission: target:lists.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The lists.
@@ -3350,6 +3622,10 @@ paths:
         Answers with a result per instance (see WriteResults under the schemas). Audited as list_add.
       operationId: addList
       x-permission: target:lists.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -3399,6 +3675,10 @@ paths:
         waits for gravity. Answers with a result per instance. Audited as list_update.
       operationId: updateList
       x-permission: target:lists.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -3445,6 +3725,10 @@ paths:
         a result per instance. Audited as list_delete, with the list's comment, groups and enabled flag.
       operationId: deleteList
       x-permission: target:lists.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -3501,6 +3785,10 @@ paths:
         Since v2.3.0.
       operationId: startGravity
       x-permission: target:gravity.run
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "202":
           description: The run has started.
@@ -3525,6 +3813,10 @@ paths:
         lines after `after`. 404 if there hasn't been one. Since v2.3.0.
       operationId: getLatestGravity
       x-permission: target:lists.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/GravityAfter"
       responses:
@@ -3560,6 +3852,10 @@ paths:
         (an hour after it ends, unless it is the target's latest) or after a restart. Since v2.3.0.
       operationId: getGravityRun
       x-permission: target:lists.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/GravityAfter"
       responses:
@@ -3592,6 +3888,10 @@ paths:
         `instances`, and a primary that can't be read fails the request. Reading isn't audited. Since v2.4.0.
       operationId: listLocalDNS
       x-permission: target:localdns.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The records and CNAMEs.
@@ -3626,6 +3926,10 @@ paths:
         `localdns_reason_required` is on. Answers with a result per instance. Audited as dnsrecord_add.
       operationId: addDNSRecord
       x-permission: target:localdns.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
         - $ref: "#/components/parameters/Confirm"
@@ -3675,6 +3979,10 @@ paths:
         same key as `from` changes nothing. Audited as dnsrecord_update.
       operationId: updateDNSRecord
       x-permission: target:localdns.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
         - $ref: "#/components/parameters/Confirm"
@@ -3723,6 +4031,10 @@ paths:
         target doesn't have is a 404; a member of a mirrored group without it is ok. Audited as dnsrecord_delete.
       operationId: deleteDNSRecord
       x-permission: target:localdns.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -3775,6 +4087,10 @@ paths:
         write, and the rest are skipped with code stopped. Otherwise as for records. Audited as cname_add.
       operationId: addCNAME
       x-permission: target:localdns.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
         - $ref: "#/components/parameters/Confirm"
@@ -3823,6 +4139,10 @@ paths:
         and the result is failed with `added` true. Audited as cname_update.
       operationId: updateCNAME
       x-permission: target:localdns.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
         - $ref: "#/components/parameters/Confirm"
@@ -3869,6 +4189,10 @@ paths:
         As for records, one member at a time through a mirrored group. Audited as cname_delete.
       operationId: deleteCNAME
       x-permission: target:localdns.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Members"
       requestBody:
@@ -3920,6 +4244,10 @@ paths:
         `members` says how each answered, and a request fails only when none did. Reading isn't audited. Since v2.7.0.
       operationId: getDHCP
       x-permission: target:dhcp.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The settings per instance.
@@ -3953,6 +4281,10 @@ paths:
         `instances`). `*` in Pi-hole's name and client ID columns is read as absent. Reading isn't audited. Since v2.7.0.
       operationId: listDHCPLeases
       x-permission: target:dhcp.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The leases.
@@ -3983,6 +4315,10 @@ paths:
         busy a 409 (pihole_busy), which can be repeated. Audited as dhcp_lease_delete. Since v2.7.0.
       operationId: deleteDHCPLease
       x-permission: target:dhcp.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -4023,6 +4359,10 @@ paths:
         every enabled member is read and answered separately. Reading isn't audited. Since v2.7.0.
       operationId: listDHCPStaticLeases
       x-permission: target:dhcp.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The static leases per instance.
@@ -4053,6 +4393,10 @@ paths:
         `restart_pending`. Instance targets only. Audited as dhcp_static_add. Since v2.7.0.
       operationId: addDHCPStaticLease
       x-permission: target:dhcp.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -4092,6 +4436,10 @@ paths:
         isn't there is a 404. Instance targets only. Audited as dhcp_static_update. Since v2.7.0.
       operationId: updateDHCPStaticLease
       x-permission: target:dhcp.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -4129,6 +4477,10 @@ paths:
         dhcp_static_delete. Since v2.7.0.
       operationId: deleteDHCPStaticLease
       x-permission: target:dhcp.edit
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -4177,6 +4529,10 @@ paths:
         value. Since v2.7.0.
       operationId: updateDHCPSettings
       x-permission: target:dhcp.config
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/Confirm"
       requestBody:
@@ -4223,6 +4579,10 @@ paths:
         more match); `member` reads one member alone, with full paging.
       operationId: listQueries
       x-permission: target:querylog.view
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - name: page
           in: query
@@ -4403,6 +4763,10 @@ paths:
         it couldn't, without changing anything. An instance that can't be read is listed with its code.
       operationId: previewClientReset
       x-permission: target:clientreset.run
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The preview.
@@ -4435,6 +4799,10 @@ paths:
         client_reset, one row per instance it changed or failed on.
       operationId: runClientReset
       x-permission: target:clientreset.run
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The run.
@@ -4465,6 +4833,10 @@ paths:
         can tell whether there is anything to run.
       operationId: listTargetClientResetRuns
       x-permission: target:clientreset.run
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       parameters:
         - $ref: "#/components/parameters/RunLimit"
         - $ref: "#/components/parameters/RunCursor"
@@ -4495,6 +4867,10 @@ paths:
         reach it too, when the caller holds schedules.manage on that group. Reading isn't audited. Since v2.5.0.
       operationId: listSchedules
       x-permission: target:schedules.manage
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The schedules.
@@ -4523,6 +4899,10 @@ paths:
         Only the app's database changes. Audited as schedule_create. Since v2.5.0.
       operationId: createSchedule
       x-permission: target:schedules.manage
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -4562,6 +4942,10 @@ paths:
         Any permission on the target. Since v2.5.0.
       operationId: getScheduleStatus
       x-permission: target:any
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The schedules' state.
@@ -4593,6 +4977,10 @@ paths:
       description: One of the target's schedules. 404 for one set on another target. Since v2.5.0.
       operationId: getSchedule
       x-permission: target:schedules.manage
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "200":
           description: The schedule.
@@ -4620,6 +5008,10 @@ paths:
         Since v2.5.0.
       operationId: updateSchedule
       x-permission: target:schedules.manage
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       requestBody:
         required: true
         content:
@@ -4654,6 +5046,10 @@ paths:
         Pi-hole: a blocking window's timer runs on, and a group stays as it is. Audited as schedule_delete. Since v2.5.0.
       operationId: deleteSchedule
       x-permission: target:schedules.manage
+      x-token: allowed
+      security:
+        - session: []
+        - apiToken: []
       responses:
         "204":
           description: Deleted.
@@ -4670,6 +5066,14 @@ paths:
 
 components:
   parameters:
+    TokenPublicID:
+      name: public_id
+      in: path
+      required: true
+      description: The token's public ID.
+      schema:
+        type: string
+        pattern: "^[a-z2-7]{16}$"
     GravityAfter:
       name: after
       in: query
@@ -4878,10 +5282,16 @@ components:
       type: apiKey
       in: cookie
       name: pihole_rbac_session
+    apiToken:
+      type: http
+      scheme: bearer
+      description: A personal API token, prt_<public_id>_<secret>. Only operations marked x-token accept one.
 
   responses:
     Unauthenticated:
-      description: No valid session (code unauthenticated).
+      description: >-
+        No valid session (code unauthenticated), or, on an operation that accepts an API token, a token that isn't
+        valid (code invalid_token) or has expired (code token_expired).
       content:
         application/json:
           schema:
@@ -4892,7 +5302,9 @@ components:
         check failed on a state-changing request (code csrf_failed). Any operation that needs a session also answers
         403 with code totp_setup_required while the user must use two-factor login and hasn't turned it on, except
         reading the session and the CSRF token, logging out, and GET /auth/totp, POST /auth/totp/setup and
-        POST /auth/totp/confirm.
+        POST /auth/totp/confirm; a request made with an API token gets it too. An API token gets 403 with code
+        token_not_allowed on an operation that doesn't accept one, and code forbidden with `details.permission`
+        tokens.use when its owner no longer holds that permission.
       content:
         application/json:
           schema:
@@ -4940,8 +5352,8 @@ components:
       description: >-
         The change conflicts with existing data (code conflict): the name is taken, or an instance is already in
         another mirrored group (`details.field` members, `details.instance` and `details.group` name them); or a
-        mirrored group would become independent while roles hold mirrored-group permissions on it (code
-        invariant_violated, with `details.roles`).
+        mirrored group would become independent while roles or live API tokens hold mirrored-group permissions on it
+        (code invariant_violated, with `details.roles` and `details.api_tokens`).
       content:
         application/json:
           schema:
@@ -6843,6 +7255,155 @@ components:
         next_cursor:
           type: string
           description: Pass as `cursor` for the next page. Absent on the last page.
+
+    APITokenState:
+      type: string
+      enum: [active, expired, revoked]
+      description: >-
+        active until it expires or is revoked. An active token is still refused while its owner lacks tokens.use, is
+        disabled, or must set up two-factor login.
+
+    APIToken:
+      type: object
+      additionalProperties: false
+      required: [public_id, name, user_id, username, grants, created_at, expires_at, last_used_ip, state]
+      description: An API token, never its secret.
+      properties:
+        public_id:
+          type: string
+          description: The part of the token after prt_ and before the secret; safe to show and log.
+        name:
+          type: string
+        user_id:
+          type: integer
+          format: int64
+        username:
+          type: string
+          description: The owner.
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Grant"
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          description: The last request made with it, to within a minute. Absent if it was never used.
+        last_used_ip:
+          type: string
+          description: Where that request came from; empty if it was never used.
+        revoked_at:
+          type: string
+          format: date-time
+          description: Absent unless revoked.
+        state:
+          $ref: "#/components/schemas/APITokenState"
+
+    APITokenList:
+      type: object
+      additionalProperties: false
+      required: [tokens]
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIToken"
+
+    APITokenInput:
+      type: object
+      additionalProperties: false
+      required: [name, expires_at, grants, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: 1 to 64 characters once trimmed, with no control characters.
+        expires_at:
+          type: string
+          format: date-time
+          description: In the future, and at most a year away.
+        grants:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/Grant"
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: The caller's password.
+        code:
+          type: string
+          maxLength: 64
+          description: >-
+            A six-digit code from the authenticator app, or a recovery code. Required when the caller has two-factor
+            login on, and ignored otherwise.
+
+    GrantablePermission:
+      type: object
+      additionalProperties: false
+      required: [name, class, description, all, instances, groups]
+      properties:
+        name:
+          type: string
+        class:
+          type: string
+          enum: [instance, group, global]
+        description:
+          type: string
+        all:
+          type: boolean
+          description: Whether the caller holds it at scope all, so a token can too.
+        instances:
+          type: array
+          description: The instances it can be granted on, by ID.
+          items:
+            type: integer
+            format: int64
+        groups:
+          type: array
+          description: The groups it can be granted on, by ID.
+          items:
+            type: integer
+            format: int64
+
+    TokenGrantable:
+      type: object
+      additionalProperties: false
+      required: [permissions, instances, groups]
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantablePermission"
+        instances:
+          type: array
+          description: The instances named in `permissions`, sorted by name.
+          items:
+            $ref: "#/components/schemas/ScopeName"
+        groups:
+          type: array
+          description: The groups named in `permissions`, sorted by name.
+          items:
+            $ref: "#/components/schemas/GroupScopeName"
+
+    NewAPIToken:
+      type: object
+      additionalProperties: false
+      required: [token, api_token]
+      properties:
+        token:
+          type: string
+          description: The whole token, prt_<public_id>_<secret>. Shown this once; it can't be read again.
+        api_token:
+          $ref: "#/components/schemas/APIToken"
 
     ChannelKind:
       type: string

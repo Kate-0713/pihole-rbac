@@ -299,3 +299,71 @@ func TestResolve(t *testing.T) {
 		t.Errorf("no roles resolved to %v", none.Grants())
 	}
 }
+
+// An API token's set: its own grants, limited to what its owner holds. Each check needs both.
+func TestIntersect(t *testing.T) {
+	topo := fixture()
+	token := NewSet([]Grant{
+		g(DomainsEdit, AllScope()),        // wider than the owner's
+		g(DomainsView, InstanceScope(1)),  // narrower than the owner's
+		g(BlockingToggle, GroupScope(10)), // the owner has none
+		g(AuditView, AllScope()),          // the owner has it
+		g(DriftView, GroupScope(20)),      // the owner has it on another group
+		g(QueryLogView, InstanceScope(3)), // the owner has it on the mirrored group, not its members
+		g(ClientsView, GroupScope(10)),    // the owner has it on one member only
+	}, topo)
+	owner := NewSet([]Grant{
+		g(DomainsEdit, InstanceScope(2)),
+		g(DomainsView, AllScope()),
+		g(AuditView, AllScope()),
+		g(UsersManage, AllScope()),
+		g(DriftView, GroupScope(30)),
+		g(QueryLogView, GroupScope(20)),
+		g(ClientsView, InstanceScope(1)),
+	}, topo)
+	set := Intersect(token, owner)
+
+	for _, c := range []struct {
+		p    Permission
+		t    Target
+		want bool
+	}{
+		{DomainsEdit, InstanceTarget(2), true},
+		{DomainsEdit, InstanceTarget(1), false},
+		{DomainsView, InstanceTarget(1), true},
+		{DomainsView, InstanceTarget(2), false},
+		{BlockingToggle, InstanceTarget(1), false},
+		{DriftView, GroupTarget(20), false},
+		{DriftView, GroupTarget(30), false},
+		{QueryLogView, InstanceTarget(3), false},
+		{QueryLogView, GroupTarget(20), false},
+		{ClientsView, InstanceTarget(1), true},
+		{ClientsView, InstanceTarget(2), false},
+	} {
+		if got := set.Can(c.p, c.t); got != c.want {
+			t.Errorf("Can(%s, %s) = %v, want %v", c.p, c.t, got, c.want)
+		}
+	}
+	if !set.CanGlobal(AuditView) || set.CanGlobal(UsersManage) {
+		t.Errorf("global: audit.view %v (want true), users.manage %v (want false)", set.CanGlobal(AuditView), set.CanGlobal(UsersManage))
+	}
+	if got := set.Global(); !slices.Equal(got, []Permission{AuditView}) {
+		t.Errorf("Global() = %v", got)
+	}
+	if !set.CanAny(InstanceTarget(1)) || !set.CanAny(InstanceTarget(2)) || set.CanAny(InstanceTarget(6)) || set.CanAny(GroupTarget(20)) {
+		t.Errorf("CanAny: 1 %v, 2 %v, 6 %v, group 20 %v", set.CanAny(InstanceTarget(1)), set.CanAny(InstanceTarget(2)),
+			set.CanAny(InstanceTarget(6)), set.CanAny(GroupTarget(20)))
+	}
+	byTarget := set.ByTarget()
+	if len(byTarget) != 2 || !slices.Equal(byTarget[InstanceTarget(1)], []Permission{ClientsView, DomainsView}) ||
+		!slices.Equal(byTarget[InstanceTarget(2)], []Permission{DomainsEdit}) {
+		t.Errorf("ByTarget() = %v", byTarget)
+	}
+	if set.Holds(g(DomainsEdit, AllScope())) || !set.Holds(g(DomainsEdit, InstanceScope(2))) {
+		t.Error("Holds doesn't apply the owner's limit")
+	}
+	// Taking the owner's grants away leaves the token nothing.
+	if empty := Intersect(token, NewSet(nil, topo)); empty.CanAny(InstanceTarget(1)) || empty.CanGlobal(AuditView) {
+		t.Error("a token whose owner holds nothing can still do something")
+	}
+}

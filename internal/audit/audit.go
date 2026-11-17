@@ -156,6 +156,11 @@ const (
 	ActionLDAPRecheck   = "ldap_recheck"   // an LDAP user's session roles changed, or their sessions ended, at a recheck
 	ActionSessionRevoke = "session_revoke" // a session was ended from the sessions page, by its user or an admin
 
+	// API tokens. Rows never carry a token, its secret or its hash: a token is named by its name and public ID.
+	ActionTokenCreate     = "token_create"      // a user made an API token; the detail lists its expiry and grants
+	ActionTokenRevoke     = "token_revoke"      // a token was revoked by its owner or an admin (detail.by)
+	ActionTokenExpiredUse = "token_expired_use" // an expired token was used, at most once an hour per token
+
 	// Settings. The detail lists the fields that changed; a bind password shows as stored or confirmed, never its value.
 	ActionSettingsUpdate = "settings_update"
 
@@ -227,10 +232,31 @@ func (e Entry) detailJSON() (string, error) {
 	return string(b), nil
 }
 
-// Insert writes e to audit_log through q, normally the transaction that made the change.
+// tokenKey is the context key for the API token a request authenticated with.
+type tokenKey struct{}
+
+type tokenRef struct{ name, publicID string }
+
+// WithToken records on ctx that the request authenticated with an API token, so that every audit row Insert writes
+// for it says so (detail via_token and token_id), whichever code path writes the row.
+func WithToken(ctx context.Context, name, publicID string) context.Context {
+	return context.WithValue(ctx, tokenKey{}, tokenRef{name: name, publicID: publicID})
+}
+
+// Insert writes e to audit_log through q, normally the transaction that made the change. During a request made with
+// an API token (see WithToken) the row's detail also carries via_token and token_id. The AUDIT line and
+// notifications name the user as for any other request.
 func Insert(ctx context.Context, q *db.Queries, e Entry) (int64, error) {
 	if e.At.IsZero() {
 		e.At = time.Now()
+	}
+	if tok, ok := ctx.Value(tokenKey{}).(tokenRef); ok {
+		d := make(map[string]any, len(e.Detail)+2)
+		for k, v := range e.Detail {
+			d[k] = v
+		}
+		d["via_token"], d["token_id"] = tok.name, tok.publicID
+		e.Detail = d
 	}
 	detail, err := e.detailJSON()
 	if err != nil {

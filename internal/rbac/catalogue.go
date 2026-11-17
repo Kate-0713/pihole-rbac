@@ -47,6 +47,7 @@ const (
 	AuditView          Permission = "audit.view"
 	ConfigReload       Permission = "config.reload"
 	AppUpdate          Permission = "app.update"
+	TokensUse          Permission = "tokens.use"
 )
 
 // Class says which scopes a permission can be granted at, and which targets it applies to.
@@ -113,6 +114,7 @@ var catalogue = []Info{
 	{AuditView, ClassGlobal, "View the audit log"},
 	{ConfigReload, ClassGlobal, "Reload secrets from the environment and files"},
 	{AppUpdate, ClassGlobal, "Trigger updates and restart the app"},
+	{TokensUse, ClassGlobal, "Create and use personal API tokens"},
 }
 
 var byName = func() map[Permission]Info {
@@ -143,4 +145,12 @@ func (p Permission) Class() Class {
 func (p Permission) Known() bool {
 	_, ok := byName[p]
 	return ok
+}
+
+// TokenPermission reports whether an API token can hold p: the permissions the routes that accept a token check, which
+// are every instance and group permission, and audit.view. Any other global permission would do nothing on a token.
+// tokens.use isn't one: it is checked on the token's owner, never granted to a token.
+func TokenPermission(p Permission) bool {
+	c := p.Class()
+	return c == ClassInstance || c == ClassGroup || p == AuditView
 }

@@ -279,15 +279,15 @@ var totpSetupRoutes = map[string]bool{
 
 const msgTOTPSetupRequired = "You need to set up two-factor login before you can use the app."
 
-// totpSetupRequired reports whether a session's user must use two-factor login and hasn't turned it on. It is
-// worked out from the database on each request, like permissions, so a requirement set on a role or a user applies
-// to their open sessions at once, and setting it up lifts it at once.
-func (s *Server) totpSetupRequired(ctx context.Context, sess *auth.Session) (bool, error) {
+// totpSetupRequired reports whether a user must use two-factor login and hasn't turned it on, for the roles their
+// session or API token holds. It is worked out from the database on each request, like permissions, so a requirement
+// set on a role or a user applies to their open sessions and tokens at once, and setting it up lifts it at once.
+func (s *Server) totpSetupRequired(ctx context.Context, userID int64, roleIDs []int64) (bool, error) {
 	q := s.Store.Read()
-	required, err := totp.RequiredFor(ctx, q, sess.UserID, sess.RoleIDs)
+	required, err := totp.RequiredFor(ctx, q, userID, roleIDs)
 	if err != nil || !required {
 		return false, err
 	}
-	on, err := totp.Enabled(ctx, q, sess.UserID)
+	on, err := totp.Enabled(ctx, q, userID)
 	return !on, err
 }

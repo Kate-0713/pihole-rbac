@@ -9,6 +9,7 @@
 	import { Button, buttonVariants } from '#lib/components/ui/button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { can, canAny, canAnyGlobal } from '#lib/permissions.js';
+	import { canMakeTokens } from '#lib/tokens.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
 	import { session } from '#lib/stores/session.svelte.js';
 	import { usesTarget, withTarget } from '#lib/stores/targets.svelte.js';
@@ -151,6 +152,15 @@
 						<DropdownMenu.Item>
 							{#snippet child({ props })}
 								<a {...props} href="/account/sessions">Your sessions</a>
+							{/snippet}
+						</DropdownMenu.Item>
+					{/if}
+					<!-- Shown to those who can make tokens (tokens.use, a local account); the page itself lists and revokes for
+					     anyone who goes there. -->
+					{#if canMakeTokens(can('tokens.use'), session.user?.source) && !session.held}
+						<DropdownMenu.Item>
+							{#snippet child({ props })}
+								<a {...props} href="/account/tokens">API tokens</a>
 							{/snippet}
 						</DropdownMenu.Item>
 					{/if}

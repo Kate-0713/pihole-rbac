@@ -21,12 +21,13 @@ import (
 var errNoInstances = errors.New("api: no instance service configured")
 
 // actor describes the request's user to the service layers, which check permissions again inside their own
-// transactions.
+// transactions. For an API token, RoleIDs are the owner's roles: the services that check again are all on routes a
+// token can't reach, so the token's own limit is applied once, in the gate's permission set.
 func actor(ctx context.Context) rbac.Actor {
 	ri := info(ctx)
 	return rbac.Actor{
-		UserID: ri.sess.UserID, Username: ri.sess.Username, Source: ri.sess.Source, RoleIDs: ri.sess.RoleIDs,
-		PublicID: ri.sess.PublicID, IP: ri.ip,
+		UserID: ri.user.UserID, Username: ri.user.Username, Source: ri.user.Source, RoleIDs: ri.user.RoleIDs,
+		PublicID: ri.user.PublicID, IP: ri.ip,
 	}
 }
 

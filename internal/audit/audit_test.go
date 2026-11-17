@@ -156,6 +156,36 @@ func TestInsert(t *testing.T) {
 	}
 }
 
+// A row written during a request made with an API token says so, whichever code path wrote it, and the caller's own
+// detail map is left as it was.
+func TestInsertWithToken(t *testing.T) {
+	st := openStore(t)
+	ctx := WithToken(context.Background(), "home assistant", "abcdefghijklmnop")
+	own := map[string]any{"method": "local"}
+	var id int64
+	if err := st.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		id, err = Insert(ctx, q, Entry{Username: "alice", Action: ActionBlockingSet, Detail: own})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := st.Read().GetAudit(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(row.Detail), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail["via_token"] != "home assistant" || detail["token_id"] != "abcdefghijklmnop" || detail["method"] != "local" {
+		t.Errorf("detail = %v", detail)
+	}
+	if len(own) != 1 {
+		t.Errorf("the caller's detail map was changed: %v", own)
+	}
+}
+
 func TestInsertRollsBackWithItsTransaction(t *testing.T) {
 	st := openStore(t)
 	ctx := context.Background()

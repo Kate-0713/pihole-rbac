@@ -33,6 +33,7 @@ var releasedMigrations = map[string]string{
 	"00007_schedules.sql":                    "319fb6d3405008ce0dc8f5526639e6af374ca5f5ca64a8978901887c094c71e0", // v2.5.0
 	"00008_client_overrides.sql":             "5d25b3286763bd1f845cc6528a703a3277a8d219a6405805d0af4d7e661553de", // v2.6.0
 	"00009_dhcp.sql":                         "9cc6d2d1141ecec2065dcc95f5283a75a080ccb5e749dba01caac7167cc26769", // v2.7.0
+	"00010_totp.sql":                         "442ecf854f8c9b742d1567b37ba6b5b6081c7fff82e49ce6d2d0921ead89aeb9", // v2.8.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
@@ -439,7 +440,7 @@ func TestUpgradeFromV2_6_0(t *testing.T) {
 }
 
 // TestUpgradeFromV2_5_0: a database as v2.5.0 left it (version 7) gets the two temporary client change tables and no
-// permission changes of its own (the DHCP grants a later migration adds aren't counted). The checks refuse an override with no target, two targets, an end before its start, or an
+// permission changes of its own (the DHCP and tokens.use grants later migrations add aren't counted). The checks refuse an override with no target, two targets, an end before its start, or an
 // unfinished status with a finish time. A client can have one active member row per instance, whatever the override,
 // and a settled row frees it. A member can't be pending while inactive or settled as ok while active. Deleting an
 // instance deletes its overrides, and an override's members go with it. Migrating down to 7 removes both tables, and
@@ -452,7 +453,7 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 		t.Fatal(err)
 	}
 	var grantsBefore int
-	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%'`).Scan(&grantsBefore); err != nil {
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%' AND permission <> 'tokens.use'`).Scan(&grantsBefore); err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
@@ -470,7 +471,7 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 		t.Fatalf("upgrade: %v", err)
 	}
 	var grantsAfter int
-	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%'`).Scan(&grantsAfter); err != nil || grantsAfter != grantsBefore {
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%' AND permission <> 'tokens.use'`).Scan(&grantsAfter); err != nil || grantsAfter != grantsBefore {
 		t.Errorf("the upgrade changed grants: %d before, %d after, %v", grantsBefore, grantsAfter, err)
 	}
 
@@ -583,10 +584,10 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 }
 
 // TestUpgradeFromV2_7_0: a database as v2.7.0 left it (version 9) gets the four two-factor tables and no change to
-// its users, roles, grants or sessions. A secret needs its nonce and key ID, a user has one secret, recovery codes
-// need a secret and go with it, the builtin admin role can be made to require TOTP, a user's own setting is required
-// or exempt, and deleting a user removes all of theirs. Migrating down to 9 removes the tables, and up again restores
-// them empty.
+// its users, roles, grants or sessions (the tokens.use grant a later migration adds isn't counted). A secret needs its
+// nonce and key ID, a user has one secret, recovery codes need a secret and go with it, the builtin admin role can be
+// made to require TOTP, a user's own setting is required or exempt, and deleting a user removes all of theirs.
+// Migrating down to 9 removes the tables, and up again restores them empty.
 func TestUpgradeFromV2_7_0(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -612,8 +613,12 @@ func TestUpgradeFromV2_7_0(t *testing.T) {
 		t.Helper()
 		var out []string
 		for _, table := range []string{"users", "roles", "role_grants", "user_roles", "sessions", "session_roles"} {
+			q := `SELECT count(*) FROM ` + table
+			if table == "role_grants" {
+				q += ` WHERE permission <> 'tokens.use'` // added to the builtin admin by a later migration
+			}
 			var n int
-			if err := st.r.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil {
+			if err := st.r.QueryRow(q).Scan(&n); err != nil {
 				t.Fatal(err)
 			}
 			out = append(out, fmt.Sprintf("%s=%d", table, n))
@@ -750,4 +755,182 @@ func TestUpgradeFromV2_7_0(t *testing.T) {
 		t.Fatalf("up again: %v", err)
 	}
 	empty("after migrating up again")
+}
+
+// TestUpgradeFromV2_8_0: a database as v2.8.0 left it (version 10) gets tokens.use on the builtin admin role only, and
+// the two API token tables, with no other change to its users, roles, grants or sessions. A token needs a 16-character
+// public ID, a 32-byte hash, a name, an owner and an expiry after its creation. A name is unique per user among tokens
+// that aren't revoked. A token's grants have role_grants' scope checks, can't be repeated, and go with the token, and
+// deleting an instance or group a grant names is refused. Deleting a user removes their tokens. Migrating down to 10
+// removes the tables and tokens.use everywhere and leaves the builtin admin's grants protected, and up again restores
+// them.
+func TestUpgradeFromV2_8_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO users (id, username, source, password_hash, created_at) VALUES (5, 'alice', 'local', 'x', 1)`,
+		`INSERT INTO users (id, username, source, ldap_dn, created_at) VALUES (6, 'bob', 'ldap', 'cn=bob,dc=lab', 1)`,
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'domains.edit', 'all')`,
+		`INSERT INTO user_roles (user_id, role_id) VALUES (5, 1), (5, 10)`,
+		`INSERT INTO instances (id, name, base_url, created_at) VALUES (7, 'pihole1', 'https://pihole1', 1), (8, 'pihole2', 'https://pihole2', 1)`,
+		`INSERT INTO instance_groups (id, name, mode, primary_instance_id, created_at) VALUES (9, 'site', 'mirrored', 7, 1)`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	counts := func() string {
+		t.Helper()
+		var out []string
+		for _, table := range []string{"users", "roles", "role_grants", "user_roles", "sessions", "user_totp"} {
+			q := `SELECT count(*) FROM ` + table
+			if table == "role_grants" {
+				q += ` WHERE permission <> 'tokens.use'`
+			}
+			var n int
+			if err := s.r.QueryRow(q).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, fmt.Sprintf("%s=%d", table, n))
+		}
+		return strings.Join(out, " ")
+	}
+	before := counts()
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	if after := counts(); after != before {
+		t.Errorf("the upgrade changed existing rows: %s before, %s after", before, after)
+	}
+	tokensUse := func(when string, want map[int]int) {
+		t.Helper()
+		for role, n := range want {
+			var got int
+			q := `SELECT count(*) FROM role_grants WHERE role_id = ? AND permission = 'tokens.use' AND scope_type = 'all'`
+			if err := s.r.QueryRow(q, role).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != n {
+				t.Errorf("%s: role %d has %d tokens.use grants, want %d", when, role, got, n)
+			}
+		}
+	}
+	tokensUse("after upgrading", map[int]int{1: 1, 10: 0})
+
+	exec := func(q string, args ...any) error {
+		_, err := s.w.Exec(q, args...)
+		return err
+	}
+	const token = `INSERT INTO api_tokens (id, public_id, user_id, name, secret_hash, created_at, expires_at, revoked_at) VALUES `
+	if err := exec(token + `(1, 'aaaaaaaaaaaaaaaa', 5, 'home assistant', zeroblob(32), 1, 2, NULL)`); err != nil {
+		t.Fatalf("a token: %v", err)
+	}
+	if err := exec(token + `(2, 'bbbbbbbbbbbbbbbb', 6, 'home assistant', zeroblob(32), 1, 2, NULL)`); err != nil {
+		t.Fatalf("another user's token with the same name: %v", err)
+	}
+	if err := exec(token + `(3, 'cccccccccccccccc', 5, 'cron', zeroblob(32), 1, 2, 5)`); err != nil {
+		t.Fatalf("a revoked token: %v", err)
+	}
+	if err := exec(token + `(4, 'dddddddddddddddd', 5, 'cron', zeroblob(32), 1, 2, NULL)`); err != nil {
+		t.Fatalf("the name of a revoked token used again: %v", err)
+	}
+	for name, values := range map[string]string{
+		"a name used twice":      `(10, 'eeeeeeeeeeeeeeee', 5, 'home assistant', zeroblob(32), 1, 2, NULL)`,
+		"a public ID used twice": `(10, 'aaaaaaaaaaaaaaaa', 6, 'other', zeroblob(32), 1, 2, NULL)`,
+		"a short public ID":      `(10, 'eeee', 5, 'other', zeroblob(32), 1, 2, NULL)`,
+		"a short hash":           `(10, 'eeeeeeeeeeeeeeee', 5, 'other', zeroblob(20), 1, 2, NULL)`,
+		"no hash":                `(10, 'eeeeeeeeeeeeeeee', 5, 'other', NULL, 1, 2, NULL)`,
+		"an empty name":          `(10, 'eeeeeeeeeeeeeeee', 5, '', zeroblob(32), 1, 2, NULL)`,
+		"no owner":               `(10, 'eeeeeeeeeeeeeeee', 99, 'other', zeroblob(32), 1, 2, NULL)`,
+		"no expiry":              `(10, 'eeeeeeeeeeeeeeee', 5, 'other', zeroblob(32), 1, NULL, NULL)`,
+		"expiring as it's made":  `(10, 'eeeeeeeeeeeeeeee', 5, 'other', zeroblob(32), 2, 2, NULL)`,
+	} {
+		if err := exec(token + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+
+	const grant = `INSERT INTO api_token_grants (token_id, permission, scope_type, instance_id, group_id) VALUES `
+	if err := exec(grant + `(1, 'blocking.toggle', 'all', NULL, NULL), (1, 'domains.view', 'instance', 8, NULL), (1, 'drift.view', 'group', NULL, 9)`); err != nil {
+		t.Fatalf("grants at each scope: %v", err)
+	}
+	for name, values := range map[string]string{
+		"the same grant twice":         `(1, 'domains.view', 'instance', 8, NULL)`,
+		"scope all with an instance":   `(1, 'domains.edit', 'all', 7, NULL)`,
+		"an instance scope without ID": `(1, 'domains.edit', 'instance', NULL, NULL)`,
+		"a group scope with both":      `(1, 'domains.edit', 'group', 7, 9)`,
+		"an unknown scope":             `(1, 'domains.edit', 'everywhere', NULL, NULL)`,
+		"an empty permission":          `(1, '', 'all', NULL, NULL)`,
+		"no token":                     `(99, 'domains.edit', 'all', NULL, NULL)`,
+		"no such instance":             `(1, 'domains.edit', 'instance', 99, NULL)`,
+	} {
+		if err := exec(grant + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if err := exec(`DELETE FROM instance_groups WHERE id = 9`); err == nil {
+		t.Error("deleting a group a token's grant names: accepted")
+	}
+	if err := exec(`DELETE FROM instances WHERE id = 8`); err == nil {
+		t.Error("deleting an instance a token's grant names: accepted")
+	}
+
+	// Deleting a token removes its grants. Deleting a user removes their tokens.
+	if err := exec(`DELETE FROM api_tokens WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	var grants int
+	if err := s.r.QueryRow(`SELECT count(*) FROM api_token_grants`).Scan(&grants); err != nil || grants != 0 {
+		t.Errorf("grants after deleting their token: %d, %v", grants, err)
+	}
+	if err := exec(`DELETE FROM users WHERE id = 5`); err != nil {
+		t.Fatalf("deleting a user with tokens: %v", err)
+	}
+	var left int
+	if err := s.r.QueryRow(`SELECT count(*) FROM api_tokens`).Scan(&left); err != nil || left != 1 {
+		t.Errorf("tokens after deleting their owner: %d, %v, want bob's 1", left, err)
+	}
+
+	// A grant on another role, so the Down section's first DELETE has something to remove.
+	if err := exec(`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'tokens.use', 'all')`); err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 10); err != nil {
+		t.Fatalf("down to 10: %v", err)
+	}
+	for _, table := range []string{"api_tokens", "api_token_grants"} {
+		if ok, err := s.tableExists(ctx, table); err != nil || ok {
+			t.Errorf("after migrating down: %s still exists (%v)", table, err)
+		}
+	}
+	tokensUse("after migrating down", map[int]int{1: 0, 10: 0})
+	var edits int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE role_id = 10 AND permission = 'domains.edit'`).Scan(&edits); err != nil || edits != 1 {
+		t.Errorf("migrating down touched other grants: %d domains.edit grants on role 10, %v", edits, err)
+	}
+	if err := exec(`DELETE FROM role_grants WHERE role_id = 1 AND permission = 'domains.view'`); err == nil {
+		t.Error("the builtin admin's grants can be deleted after migrating down: the trigger wasn't recreated")
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	tokensUse("after migrating up again", map[int]int{1: 1, 10: 0})
+	for _, table := range []string{"api_tokens", "api_token_grants"} {
+		var n int
+		if err := s.r.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil || n != 0 {
+			t.Errorf("after migrating up again: %s has %d rows, %v", table, n, err)
+		}
+	}
 }

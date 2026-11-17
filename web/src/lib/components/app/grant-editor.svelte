@@ -5,7 +5,14 @@
 <script lang="ts">
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { classLabel, scopeOptions, type Catalogue, type EditorState, type PermissionClass } from '#lib/roles.js';
+	import {
+		classLabel,
+		scopeOptions,
+		type Catalogue,
+		type EditorState,
+		type PermissionClass,
+		type PermissionInfo
+	} from '#lib/roles.js';
 
 	// The grant editor: one row per permission in the catalogue, grouped by class. A row's "All instances" covers
 	// every scope; otherwise the instances and groups ticked are granted one by one.
@@ -13,11 +20,18 @@
 	// The parent passes its editor state with bind:state. Svelte 5's $state is deeply reactive, so ticking a box
 	// changes the parent's object in place and whatever reads it (the Save button, say) updates. $bindable marks the
 	// prop as one this component may change: Svelte 5 expects that to be declared, even for changes inside an object.
+	//
+	// scopes, if given, limits where each permission is offered: the token form passes the scopes its user holds, so
+	// it never offers a grant the server would refuse. Without it every scope the permission's class allows is offered.
+	type Scopes = { all: boolean; instances: Catalogue['instances']; groups: Catalogue['groups'] };
 	let {
 		state = $bindable(),
 		catalogue,
-		disabled = false
-	}: { state: EditorState; catalogue: Catalogue; disabled?: boolean } = $props();
+		disabled = false,
+		scopes
+	}: { state: EditorState; catalogue: Catalogue; disabled?: boolean; scopes?: (p: PermissionInfo) => Scopes } = $props();
+
+	const optionsFor = (p: PermissionInfo): Scopes => scopes?.(p) ?? { all: true, ...scopeOptions(p, catalogue) };
 
 	const classes: PermissionClass[] = ['instance', 'group', 'global'];
 
@@ -37,7 +51,7 @@
 		{#if perms.length > 0}
 			<section class="grid gap-2" aria-labelledby="grants-{cls}">
 				<h3 id="grants-{cls}" class="text-sm font-semibold">{classLabel[cls]}</h3>
-				{#if cls === 'group' && catalogue.groups.every((g) => g.mode !== 'mirrored')}
+				{#if cls === 'group' && !scopes && catalogue.groups.every((g) => g.mode !== 'mirrored')}
 					<p class="text-muted-foreground text-sm">
 						There are no mirrored groups yet, so these can only be granted on all of them, including any added later.
 					</p>
@@ -45,7 +59,7 @@
 				<div class="divide-y rounded-md border">
 					{#each perms as p (p.name)}
 						{@const row = state[p.name]}
-						{@const options = scopeOptions(p, catalogue)}
+						{@const options = optionsFor(p)}
 						<div class="grid gap-2 p-3 sm:grid-cols-[minmax(0,14rem)_1fr]">
 							<div>
 								<p class="font-mono text-sm">{p.name}</p>
@@ -53,12 +67,14 @@
 							</div>
 							<!-- role="group" with a label lets a screen reader say which permission each box belongs to. -->
 							<div class="flex flex-wrap items-center gap-x-4 gap-y-2" role="group" aria-label={p.name}>
-								<div class="flex items-center gap-2">
-									<Checkbox id={idFor(p.name, 'all')} bind:checked={row.all} {disabled} />
-									<Label for={idFor(p.name, 'all')} class="font-normal">
-										{cls === 'global' ? 'Granted' : cls === 'group' ? 'All mirrored groups' : 'All instances'}
-									</Label>
-								</div>
+								{#if options.all}
+									<div class="flex items-center gap-2">
+										<Checkbox id={idFor(p.name, 'all')} bind:checked={row.all} {disabled} />
+										<Label for={idFor(p.name, 'all')} class="font-normal">
+											{cls === 'global' ? 'Granted' : cls === 'group' ? 'All mirrored groups' : 'All instances'}
+										</Label>
+									</div>
+								{/if}
 								{#each options.instances as inst (inst.id)}
 									<div class="flex items-center gap-2" class:opacity-50={row.all}>
 										<Checkbox

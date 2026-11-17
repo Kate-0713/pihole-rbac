@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
@@ -276,9 +277,9 @@ func (t *txn) endSessions(userID int64, keepPublicID string) error {
 }
 
 // CheckGroupModeChange enforces the second half of invariant 6 for a change of an instance group's mode: a mirrored
-// group can't become independent while any role holds a group-scope permission on it. Call it in the transaction
-// that changes the mode.
-func CheckGroupModeChange(ctx context.Context, q *db.Queries, groupID int64, newMode GroupMode) error {
+// group can't become independent while any role or live API token holds a group-scope permission on it. Call it in
+// the transaction that changes the mode.
+func CheckGroupModeChange(ctx context.Context, q *db.Queries, groupID int64, newMode GroupMode, now time.Time) error {
 	if newMode != Independent {
 		return nil
 	}
@@ -288,16 +289,32 @@ func CheckGroupModeChange(ctx context.Context, q *db.Queries, groupID int64, new
 			perms = append(perms, string(p.Name))
 		}
 	}
-	roles, err := q.ListRolesWithGrantsOnGroup(ctx, db.ListRolesWithGrantsOnGroupParams{
-		GroupID: sql.NullInt64{Int64: groupID, Valid: true}, Permissions: perms,
+	ref := sql.NullInt64{Int64: groupID, Valid: true}
+	roles, err := q.ListRolesWithGrantsOnGroup(ctx, db.ListRolesWithGrantsOnGroupParams{GroupID: ref, Permissions: perms})
+	if err != nil {
+		return err
+	}
+	toks, err := q.ListLiveAPITokensWithGrantsOnGroup(ctx, db.ListLiveAPITokensWithGrantsOnGroupParams{
+		GroupID: ref, Permissions: perms, Now: store.Millis(now),
 	})
 	if err != nil {
 		return err
 	}
-	if len(roles) > 0 {
-		return newError(CodeInvariant, map[string]any{"roles": roles},
-			"The group can't become independent while roles hold mirrored-group permissions on it. Remove them first from: %s.",
-			joinStrings(roles))
+	if len(roles) == 0 && len(toks) == 0 {
+		return nil
 	}
-	return nil
+	var holders []string
+	if len(roles) > 0 {
+		holders = append(holders, "roles "+joinStrings(roles))
+	}
+	names := make([]string, len(toks))
+	for i, tk := range toks {
+		names[i] = TokenName(tk.Username, tk.Name)
+	}
+	if len(names) > 0 {
+		holders = append(holders, "API tokens "+joinStrings(names))
+	}
+	return newError(CodeInvariant, map[string]any{"roles": roles, "api_tokens": names},
+		"The group can't become independent while roles or API tokens hold mirrored-group permissions on it. Remove them first from: %s.",
+		strings.Join(holders, "; "))
 }

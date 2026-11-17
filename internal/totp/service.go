@@ -308,6 +308,20 @@ func (s *Service) CheckLogin(ctx context.Context, q *db.Queries, a Actor, code s
 	return s.checkAudited(ctx, q, a, code, s.now())
 }
 
+// CheckInTx verifies and spends a code inside the caller's transaction, as CheckLogin does, for a change that needs a
+// code (making an API token). The same row is written, and returned, when a recovery code was used.
+func (s *Service) CheckInTx(ctx context.Context, q *db.Queries, a Actor, code string) (*audit.Entry, error) {
+	return s.checkAudited(ctx, q, a, code, s.now())
+}
+
+// LogUsed writes the AUDIT line of a recovery_code_used row that CheckLogin or CheckInTx returned, once its
+// transaction has committed. nil does nothing.
+func (s *Service) LogUsed(used *audit.Entry) {
+	if used != nil {
+		s.Audit.Log(*used)
+	}
+}
+
 // checkAudited is Check, with the recovery_code_used row written when a recovery code was used. The row is returned
 // for its log line once the transaction has committed.
 func (s *Service) checkAudited(ctx context.Context, q *db.Queries, a Actor, code string, now time.Time) (*audit.Entry, error) {

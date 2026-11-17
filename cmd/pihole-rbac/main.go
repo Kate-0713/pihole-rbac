@@ -274,7 +274,7 @@ func serve() error {
 		Logger:          logger,
 		Restart:         stop, // the same clean shutdown as SIGTERM; systemd or Docker starts the app again
 	})
-	go pruneSessions(ctx, sessions, logger)
+	go pruneSessions(ctx, sessions, st, logger)
 	// Audit rows older than the retention go at startup, daily, and soon after the retention is changed.
 	auditPruner := &audit.Pruner{Store: st, Audit: auditLog, Retention: login.AuditRetentionDays, Logger: logger}
 	login.RetentionChanged = auditPruner.Poke
@@ -327,8 +327,9 @@ func serve() error {
 	}
 }
 
-// pruneSessions deletes expired and idle sessions every 15 minutes until ctx ends.
-func pruneSessions(ctx context.Context, sessions *auth.Sessions, logger *slog.Logger) {
+// pruneSessions deletes expired and idle sessions, and API tokens revoked or expired more than 30 days ago, every 15
+// minutes until ctx ends.
+func pruneSessions(ctx context.Context, sessions *auth.Sessions, st *store.Store, logger *slog.Logger) {
 	t := time.NewTicker(15 * time.Minute)
 	defer t.Stop()
 	for {
@@ -340,6 +341,11 @@ func pruneSessions(ctx context.Context, sessions *auth.Sessions, logger *slog.Lo
 				logger.Warn("pruning sessions failed", "err", err)
 			} else if n > 0 {
 				logger.Debug("pruned sessions", "count", n)
+			}
+			if n, err := rbac.PruneTokens(ctx, st, time.Now()); err != nil {
+				logger.Warn("pruning API tokens failed", "err", err)
+			} else if n > 0 {
+				logger.Debug("pruned API tokens", "count", n)
 			}
 		}
 	}

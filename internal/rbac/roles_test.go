@@ -290,11 +290,11 @@ func TestCheckGroupModeChange(t *testing.T) {
 	e.role("editors", g(DomainsEdit, GroupScope(e.mirror)))
 	q := e.st.Read()
 
-	err := CheckGroupModeChange(e.ctx, q, e.mirror, Independent)
+	err := CheckGroupModeChange(e.ctx, q, e.mirror, Independent, time.Now())
 	wantCode(t, err, CodeInvariant)
 	if ee, _ := AsError(err); !slices.Equal(ee.Details["roles"].([]string), []string{"drifters"}) {
 		t.Errorf("details = %v", ee.Details)
 	}
-	wantCode(t, CheckGroupModeChange(e.ctx, q, e.mirror, Mirrored), "")
-	wantCode(t, CheckGroupModeChange(e.ctx, q, e.indep, Independent), "")
+	wantCode(t, CheckGroupModeChange(e.ctx, q, e.mirror, Mirrored, time.Now()), "")
+	wantCode(t, CheckGroupModeChange(e.ctx, q, e.indep, Independent, time.Now()), "")
 }
