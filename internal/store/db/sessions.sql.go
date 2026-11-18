@@ -292,12 +292,21 @@ func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessions
 }
 
 const listLDAPUsersDueForRecheck = `-- name: ListLDAPUsersDueForRecheck :many
-SELECT DISTINCT u.id, u.username, u.disabled, u.ldap_dn
+SELECT u.id, u.username, u.disabled, u.ldap_dn
 FROM users u
-JOIN sessions s ON s.user_id = u.id
-WHERE u.source = 'ldap' AND s.roles_checked_at <= ?1
+WHERE u.source = 'ldap' AND (
+    EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.roles_checked_at <= ?1)
+    OR (u.disabled = 0 AND EXISTS (
+        SELECT 1 FROM api_tokens t
+        WHERE t.user_id = u.id AND t.revoked_at IS NULL AND t.expires_at > ?2
+          AND t.roles_checked_at <= ?1)))
 ORDER BY u.id
 `
+
+type ListLDAPUsersDueForRecheckParams struct {
+	Cutoff int64
+	Now    int64
+}
 
 type ListLDAPUsersDueForRecheckRow struct {
 	ID       int64
@@ -306,9 +315,11 @@ type ListLDAPUsersDueForRecheckRow struct {
 	LdapDn   sql.NullString
 }
 
-// The LDAP users with at least one session whose roles were last checked at or before cutoff.
-func (q *Queries) ListLDAPUsersDueForRecheck(ctx context.Context, cutoff int64) ([]ListLDAPUsersDueForRecheckRow, error) {
-	rows, err := q.db.QueryContext(ctx, listLDAPUsersDueForRecheck, cutoff)
+// The LDAP users due for a recheck: those with a session whose roles were last checked at or before cutoff, and
+// enabled ones with a live API token whose roles were. A disabled user's tokens are left alone (they are refused while
+// the account is disabled, and come back when it is enabled), so only their sessions make them due.
+func (q *Queries) ListLDAPUsersDueForRecheck(ctx context.Context, arg ListLDAPUsersDueForRecheckParams) ([]ListLDAPUsersDueForRecheckRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLDAPUsersDueForRecheck, arg.Cutoff, arg.Now)
 	if err != nil {
 		return nil, err
 	}

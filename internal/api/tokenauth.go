@@ -31,6 +31,7 @@ const (
 
 	msgInvalidToken    = "The API token is missing, malformed, revoked or not valid."
 	msgTokenExpired    = "The API token has expired. Make a new one."
+	msgTokenSuspended  = "The API token is suspended: its owner's directory roles couldn't be confirmed recently. It works again once they are."
 	msgTokenNotAllowed = "This can't be done with an API token. Log in to the app instead."
 
 	msgTokenRateLimited = "Too many failed attempts from this address. Try again later."
@@ -83,20 +84,27 @@ func parseBearer(h string) (string, bool) {
 // checks. Cookies are ignored completely, and a request that fails here never falls back to a session. It answers
 // the request itself and returns nil when the request is refused. In order:
 //   - while the per-address login limit applies, 429, and the token isn't looked at;
-//   - an unknown, malformed or revoked token, a wrong secret, or a disabled or missing owner is 401 invalid_token
-//     and counts against the per-address limit;
+//   - an unknown, malformed or revoked token, a wrong secret, or a disabled or missing owner is 401 invalid_token;
+//     only an unknown or malformed token or a wrong secret counts against the per-address limit;
 //   - a correct secret on an expired token is 401 token_expired, audited at most once an hour per token, and doesn't
 //     count;
+//   - an LDAP user's token whose roles haven't been confirmed for longer than the recheck interval plus the grace
+//     period is 401 token_suspended, and doesn't count;
 //   - a route that doesn't accept tokens (x-token in the spec) is 403 token_not_allowed;
 //   - an owner who must set up two-factor login and hasn't is 403 totp_setup_required;
 //   - an owner who no longer holds tokens.use is 403 forbidden.
 //
-// The request's permissions are then the token's grants intersected with what its owner's roles hold now.
+// The request's permissions are then the token's grants intersected with what its owner's roles hold now: a local
+// user's user_roles, or the roles an LDAP user's token holds.
 func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqInfo {
 	ctx := r.Context()
 	ip := ratelimit.ClientIP(r, s.TrustedProxies)
-	invalid := func() *reqInfo {
-		if s.LoginByIP.Fail(ip) {
+	// guessed is for a token that doesn't check out: unknown, malformed, or the wrong secret. Only those count against
+	// the login limit, since only they could be someone guessing. A revoked token, or one whose owner is disabled, has
+	// the right secret, so it is refused with the same answer but not counted: a script left running with it would
+	// otherwise lock out everyone behind the same address, logins included.
+	reject := func(guessed bool) *reqInfo {
+		if guessed && s.LoginByIP.Fail(ip) {
 			s.Logger.Warn("API token attempts from one address reached the login limit", "ip", ip)
 		}
 		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
@@ -111,25 +119,31 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 
 	raw, ok := parseBearer(r.Header.Get("Authorization"))
 	if !ok {
-		return invalid()
+		return reject(true)
 	}
 	publicID, hash, ok := tokens.Parse(raw)
 	if !ok {
-		return invalid()
+		return reject(true)
 	}
 	q := s.Store.Read()
 	row, err := q.GetAPITokenForAuth(ctx, publicID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return invalid()
+		return reject(true)
 	}
 	if err != nil {
 		s.Logger.Error("loading an API token", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
 		return nil
 	}
-	// Phase 1 has tokens for local users only; an LDAP user's token can't have been made, but refuse one anyway.
-	if !tokens.Equal(row.SecretHash, hash) || row.RevokedAt.Valid || row.Disabled || auth.Method(row.Source) != auth.MethodLocal {
-		return invalid()
+	// An LDAP user's token holds its roles and when they were confirmed; one without a check time can't have been made
+	// by CreateToken, so it is refused like any token that isn't valid.
+	source := auth.Method(row.Source)
+	ldap := source == auth.MethodLDAP
+	if !tokens.Equal(row.SecretHash, hash) {
+		return reject(true)
+	}
+	if row.RevokedAt.Valid || row.Disabled || (ldap && !row.RolesCheckedAt.Valid) {
+		return reject(false)
 	}
 
 	now := s.now()
@@ -150,12 +164,31 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 		return nil
 	}
 
+	// An LDAP user's token whose roles the directory hasn't confirmed for too long is suspended, not ended: a script
+	// can't log in again, and the next successful recheck resumes it. Sessions end at the same point. It doesn't count
+	// as a failure, since the secret was right.
+	var checked time.Time
+	if ldap {
+		checked = store.FromMillis(row.RolesCheckedAt.Int64)
+		if rbac.RolesStale(checked, now, s.Sessions.RolesValidFor()) {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+			writeError(w, http.StatusUnauthorized, "token_suspended", msgTokenSuspended)
+			return nil
+		}
+	}
+
 	if !tokenRoutes[r.Pattern] {
 		writeError(w, http.StatusForbidden, "token_not_allowed", msgTokenNotAllowed)
 		return nil
 	}
 
-	roleIDs, err := q.ListUserRoleIDs(ctx, row.UserID)
+	// A local user's roles are user_roles; an LDAP user's token holds its own, kept by the recheck.
+	var roleIDs []int64
+	if ldap {
+		roleIDs, err = q.ListAPITokenRoleIDs(ctx, row.ID)
+	} else {
+		roleIDs, err = q.ListUserRoleIDs(ctx, row.UserID)
+	}
 	if err != nil {
 		s.Logger.Error("loading a token owner's roles", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
@@ -180,7 +213,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 	}
 	ri := &reqInfo{
 		w: w, ip: ip, token: tc,
-		user: &caller{UserID: row.UserID, Username: row.Username, Source: auth.MethodLocal, RoleIDs: roleIDs},
+		user: &caller{UserID: row.UserID, Username: row.Username, Source: source, RoleIDs: roleIDs, RolesCheckedAt: checked},
 	}
 	if !owner.CanGlobal(rbac.TokensUse) {
 		// Answered by the gate once the request carries ri, so a refused write is audited like any other.

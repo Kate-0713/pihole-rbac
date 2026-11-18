@@ -9,16 +9,19 @@ import (
 )
 
 type ApiToken struct {
-	ID         int64
-	PublicID   string
-	UserID     int64
-	Name       string
-	SecretHash []byte
-	CreatedAt  int64
-	ExpiresAt  int64
-	LastUsedAt sql.NullInt64
-	LastUsedIp string
-	RevokedAt  sql.NullInt64
+	ID             int64
+	PublicID       string
+	UserID         int64
+	Name           string
+	SecretHash     []byte
+	CreatedAt      int64
+	ExpiresAt      int64
+	LastUsedAt     sql.NullInt64
+	LastUsedIp     string
+	RevokedAt      sql.NullInt64
+	RolesCheckedAt sql.NullInt64
+	RevokedBy      sql.NullString
+	RevokedReason  sql.NullString
 }
 
 type ApiTokenGrant struct {
@@ -28,6 +31,11 @@ type ApiTokenGrant struct {
 	ScopeType  string
 	InstanceID sql.NullInt64
 	GroupID    sql.NullInt64
+}
+
+type ApiTokenRole struct {
+	TokenID int64
+	RoleID  int64
 }
 
 type AuditLog struct {

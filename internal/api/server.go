@@ -186,13 +186,19 @@ type caller struct {
 	Source   auth.Method
 	RoleIDs  []int64 // a session's roles, or for a token the owner's roles now
 	PublicID string  // the session's public ID; empty for a token
+	// RolesCheckedAt is when an LDAP user's roles were last confirmed against the directory. Zero for a local user.
+	RolesCheckedAt time.Time
 }
 
 func sessionCaller(sess *auth.Session) *caller {
 	if sess == nil {
 		return nil
 	}
-	return &caller{UserID: sess.UserID, Username: sess.Username, Source: sess.Source, RoleIDs: sess.RoleIDs, PublicID: sess.PublicID}
+	c := &caller{UserID: sess.UserID, Username: sess.Username, Source: sess.Source, RoleIDs: sess.RoleIDs, PublicID: sess.PublicID}
+	if sess.Source == auth.MethodLDAP {
+		c.RolesCheckedAt = sess.RolesCheckedAt
+	}
+	return c
 }
 
 type reqInfoKey struct{}

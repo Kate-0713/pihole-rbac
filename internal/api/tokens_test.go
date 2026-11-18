@@ -233,8 +233,13 @@ func TestRevokeTokenEndpoints(t *testing.T) {
 	mustStatus(t, tk.bearer("Bearer "+mine.Token, http.MethodGet, tk.path("/domains"), nil), http.StatusOK)
 	mustStatus(t, tk.admin.do(http.MethodDelete, "/api/v1/tokens/"+mine.ApiToken.PublicId, nil), http.StatusNoContent)
 	wantError(t, tk.bearer("Bearer "+mine.Token, http.MethodGet, tk.path("/domains"), nil), http.StatusUnauthorized, "invalid_token")
-	if list := decode[gen.APITokenList](t, tk.admin.do(http.MethodGet, accountTokens, nil)).Tokens; list[0].State != gen.APITokenStateRevoked || list[0].RevokedAt == nil {
+	if list := decode[gen.APITokenList](t, tk.admin.do(http.MethodGet, accountTokens, nil)).Tokens; list[0].State != gen.APITokenStateRevoked ||
+		list[0].RevokedAt == nil || list[0].RevokedBy == nil || *list[0].RevokedBy != gen.APITokenRevokedBy("self") || list[0].RevokedReason != nil {
 		t.Errorf("after revoking: %+v", list[0])
+	}
+	// Vic's was revoked by vic, on the account page.
+	if list := decode[gen.APITokenList](t, vic.do(http.MethodGet, accountTokens, nil)).Tokens; list[0].RevokedBy == nil || *list[0].RevokedBy != gen.APITokenRevokedBy("self") {
+		t.Errorf("vic's token: %+v", list[0])
 	}
 	if n := auditCount(tk.testEnv, audit.ActionTokenRevoke, audit.ResultSuccess); n != 2 {
 		t.Errorf("%d token_revoke rows, want 2", n)
@@ -269,4 +274,34 @@ func TestTokenGrantableEndpoint(t *testing.T) {
 	// Without tokens.use it is refused.
 	e.addGrantUser("pat", "pat-password-1", grant(rbac.DomainsView, "all", 0))
 	wantError(t, e.loggedIn("pat", "pat-password-1").do(http.MethodGet, accountTokens+"/grantable", nil), http.StatusForbidden, "forbidden")
+}
+
+// An LDAP user makes a token with their directory password, and it holds the roles of their session.
+func TestCreateTokenLDAP(t *testing.T) {
+	dir := &stubLDAP{users: map[string]stubLDAPUser{
+		"dana": {password: "dana-password", dn: "CN=Dana,DC=example,DC=local", groups: []string{adminGroupDN}},
+	}}
+	e := newLDAPEnv(t, dir)
+	e.addUser("admin", "admin-password-1", true)
+	c := e.loggedIn("dana", "dana-password")
+	in := gen.APITokenInput{
+		Name: "dana's cron", ExpiresAt: time.Now().Add(24 * time.Hour), Grants: []gen.Grant{allGrant(rbac.DomainsView)},
+		Password: "not-danas-password",
+	}
+	wantError(t, c.do(http.MethodPost, accountTokens, in), http.StatusUnauthorized, "invalid_credentials")
+	in.Password = "admin-password-1" // another account's password doesn't do either
+	wantError(t, c.do(http.MethodPost, accountTokens, in), http.StatusUnauthorized, "invalid_credentials")
+	in.Password = "dana-password"
+	res := c.do(http.MethodPost, accountTokens, in)
+	mustStatus(t, res, http.StatusCreated)
+
+	q := e.st.Read()
+	row, err := q.GetAPITokenForAuth(t.Context(), decode[gen.NewAPIToken](t, res).ApiToken.PublicId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles, err := q.ListAPITokenRoleIDs(t.Context(), row.ID)
+	if err != nil || len(roles) != 1 || roles[0] != adminRoleID || !row.RolesCheckedAt.Valid {
+		t.Errorf("token roles %v (%v), checked %v; want the admin role and a check time", roles, err, row.RolesCheckedAt)
+	}
 }

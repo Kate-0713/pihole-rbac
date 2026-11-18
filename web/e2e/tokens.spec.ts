@@ -5,9 +5,10 @@
 // what the form offers, revoking it, the admin tab, and a code asked for with two-factor login on. Each test makes the
 // users and roles it needs and deletes them; a token goes with its user.
 //
-// No test here sends a wrong password, a wrong code or a revoked token. Each counts against the per-address login
+// No test here sends a wrong password, a wrong code or a wrong token secret. Each counts against the per-address login
 // limit, which every test in the suite shares (they all come from 127.0.0.1), so a few here would lock later specs out
-// of logging in. The Go tests cover those refusals.
+// of logging in. The Go tests cover those refusals. A revoked token is sent: it has the right secret, so it is refused
+// without counting.
 import type { APIRequestContext, Browser, Page } from '@playwright/test';
 import { apiWrite, expect, logIn, openAs, test, type State, type User } from './fixtures.js';
 
@@ -148,8 +149,11 @@ test('making a token from the account page, using it, and revoking it', async ({
 			await expect(confirm).toContainText('Revoke the token "home assistant"?');
 			await confirm.getByRole('button', { name: 'Revoke' }).click();
 			await expect(page.getByText('Token "home assistant" revoked.')).toBeVisible();
-			await expect(listed).toContainText('Revoked');
+			await expect(listed).toContainText('Revoked by you');
 			await expect(listed.getByRole('button', { name: /Revoke/ })).toHaveCount(0);
+			const after = await api.get(`/api/v1/targets/i-${inst.id}/domains`);
+			expect(after.status()).toBe(401);
+			expect((await after.json()).error.code).toBe('invalid_token');
 		}
 	);
 	await admin.context().close();
@@ -193,12 +197,43 @@ test('without tokens.use there is no menu item and no New token, and an admin se
 			await admin.getByRole('tab', { name: /API tokens/ }).click();
 			const row = admin.getByRole('listitem').filter({ hasText: 'ursula · cron' });
 			await expect(row).toContainText('domains.view: all instances');
+			await expect(row.getByText('Active', { exact: true })).toBeVisible();
+			// Where Revoke sits in its row, which a note under the token mustn't change.
+			const revokeAt = async () => {
+				const [r, b] = await Promise.all([row.boundingBox(), row.getByRole('button', { name: /^Revoke/ }).boundingBox()]);
+				return { right: Math.round(r!.x + r!.width - b!.x), top: Math.round(b!.y - r!.y) };
+			};
+			const activeAt = await revokeAt();
+
+			// Without tokens.use the token is refused but not revoked, and the list says so; given back, it is active.
+			const roleID = await idOf(admin, 'roles', 'e2e-ursula');
+			const setGrants = (grants: { permission: string; scope: string }[]) =>
+				apiWrite(admin, 'PUT', `/api/v1/roles/${roleID}/grants`, { grants });
+			await setGrants([{ permission: 'domains.view', scope: 'all' }]);
+			expect((await bearer(request, token).get(`/api/v1/targets/i-${inst.id}/domains`)).status()).toBe(403);
+			await admin.reload();
+			await admin.getByRole('tab', { name: /API tokens/ }).click();
+			await expect(row.getByText('Refused', { exact: true })).toBeVisible();
+			await expect(row).toContainText("Refused: ursula's roles no longer allow using API tokens.");
+			expect(await revokeAt()).toEqual(activeAt);
+			await setGrants([
+				{ permission: 'tokens.use', scope: 'all' },
+				{ permission: 'domains.view', scope: 'all' }
+			]);
+			await admin.reload();
+			await admin.getByRole('tab', { name: /API tokens/ }).click();
+			await expect(row.getByText('Active', { exact: true })).toBeVisible();
+			await expect(row).not.toContainText('Refused');
+
 			await row.getByRole('button', { name: "Revoke ursula's token cron" }).click();
 			const confirm = admin.getByRole('alertdialog');
 			await expect(confirm).toContainText(`Revoke ursula's token "cron"?`);
 			await confirm.getByRole('button', { name: 'Revoke' }).click();
 			await expect(admin.getByText(`ursula's token "cron" revoked.`)).toBeVisible();
-			await expect(row).toContainText('Revoked');
+			await expect(row).toContainText('Revoked by an admin');
+			// And ursula sees who did it.
+			await page.reload();
+			await expect(page.getByRole('list', { name: 'API tokens' })).toContainText('Revoked by an admin');
 		}
 	);
 	await admin.context().close();
@@ -259,4 +294,47 @@ test('with two-factor login on, making a token asks for a code', async ({ page, 
 		}
 	);
 	await admin.context().close();
+});
+
+test('an LDAP user makes and uses a token, and an admin sees and revokes it', async ({ page, browser, state, request }) => {
+	const admin = await adminPage(browser, state);
+	const d = state.seeded.fixture.ldap;
+	const inst = state.seeded.fixture.instances[0];
+	// LDAP login on, and the staff group (mark is in it) mapped to a role with tokens.use. Put back afterwards.
+	await apiWrite(admin, 'PUT', '/api/v1/settings/ldap', {
+		url: d.url, bind_dn: d.bind_dn, base_dn: d.base_dn, user_filter: d.user_filter, bind_password: d.bind_password
+	});
+	await apiWrite(admin, 'PUT', '/api/v1/settings/auth', { methods: ['local', 'ldap'] });
+	await apiWrite(admin, 'POST', '/api/v1/roles', {
+		name: 'e2e-ldap-tokens', description: '', grants: [{ permission: 'tokens.use', scope: 'all' }, { permission: 'domains.view', scope: 'all' }]
+	});
+	const roleID = await idOf(admin, 'roles', 'e2e-ldap-tokens');
+	const mapped = await apiWrite(admin, 'POST', `/api/v1/roles/${roleID}/ldap-groups`, { group_dn: d.staff_group });
+	const mappingID = ((await mapped.json()) as { mapping: { id: number } }).mapping.id;
+	const mark: User = { username: 'mark', password: 'mark-ldap-password', about: '' };
+	try {
+		await openAs(page, mark, '/');
+		await page.getByRole('button', { name: 'Account: mark' }).click();
+		await page.getByRole('menuitem', { name: 'API tokens' }).click();
+		await expect(page).toHaveURL('/account/tokens');
+		await openNewToken(page);
+		// His directory password, checked with a bind.
+		const token = await makeToken(page, mark, 'directory cron', [['domains.view', 'All instances']]);
+		const listed = page.getByRole('list', { name: 'API tokens' }).getByRole('listitem').first();
+		await expect(listed).toContainText('Active');
+		expect((await bearer(request, token).get(`/api/v1/targets/i-${inst.id}/domains`)).status()).toBe(200);
+
+		await admin.goto('/admin/sessions');
+		await admin.getByRole('tab', { name: /API tokens/ }).click();
+		const row = admin.getByRole('listitem').filter({ hasText: 'mark · directory cron' });
+		await expect(row).toContainText('Active');
+		await row.getByRole('button', { name: "Revoke mark's token directory cron" }).click();
+		await admin.getByRole('alertdialog').getByRole('button', { name: 'Revoke' }).click();
+		await expect(row).toContainText('Revoked');
+	} finally {
+		await apiWrite(admin, 'DELETE', `/api/v1/roles/${roleID}/ldap-groups/${mappingID}`);
+		await apiWrite(admin, 'PUT', '/api/v1/settings/auth', { methods: ['local'] });
+		await apiWrite(admin, 'DELETE', `/api/v1/roles/${roleID}`);
+		await admin.context().close();
+	}
 });

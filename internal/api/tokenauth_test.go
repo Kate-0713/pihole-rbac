@@ -6,6 +6,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
+	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
 	"github.com/Kate-0713/pihole-rbac/internal/tokens"
 )
@@ -267,9 +269,27 @@ func TestTokenFollowsOwner(t *testing.T) {
 	tk := newTokenEnv(t)
 	tk.addGrantUser("vic", "vic-password-1", grant(rbac.TokensUse, "all", 0), grant(rbac.DomainsView, "all", 0),
 		grant(rbac.BlockingToggle, "all", 0))
-	secret, _ := tk.makeToken("vic", "cron",
+	secret, publicID := tk.makeToken("vic", "cron",
 		rbac.Grant{Permission: rbac.DomainsView, Scope: rbac.AllScope()}, rbac.Grant{Permission: rbac.BlockingToggle, Scope: rbac.AllScope()})
 	auth := "Bearer " + secret
+	// The admin list says the same as the gate: why a live token is refused, while it stays active.
+	listed := func(want string) {
+		t.Helper()
+		for _, lt := range decode[gen.APITokenList](t, tk.admin.do(http.MethodGet, "/api/v1/tokens", nil)).Tokens {
+			if lt.PublicId != publicID {
+				continue
+			}
+			got := ""
+			if lt.Refused != nil {
+				got = string(*lt.Refused)
+			}
+			if got != want || lt.State != gen.APITokenStateActive {
+				t.Errorf("listed as %s, refused %q, want active, refused %q", lt.State, got, want)
+			}
+			return
+		}
+		t.Errorf("token %s not listed", publicID)
+	}
 	vic := tk.userID("vic")
 	ctx := context.Background()
 	role, err := tk.st.Read().ListUserRoleIDs(ctx, vic)
@@ -277,6 +297,7 @@ func TestTokenFollowsOwner(t *testing.T) {
 		t.Fatal(role, err)
 	}
 	mustStatus(t, tk.bearer(auth, http.MethodGet, tk.path("/domains"), nil), http.StatusOK)
+	listed("")
 	setGrants := func(ps ...rbac.Permission) {
 		t.Helper()
 		tk.tx(func(q *db.Queries) error {
@@ -304,6 +325,7 @@ func TestTokenFollowsOwner(t *testing.T) {
 	if d := errorDetails(t, res); d["permission"] != string(rbac.TokensUse) {
 		t.Errorf("details %v", d)
 	}
+	listed("lacks_tokens_use")
 	before := tk.auditCount()
 	wantError(t, tk.bearer(auth, http.MethodPut, tk.path("/blocking"), gen.BlockingInput{Enabled: true}), http.StatusForbidden, "forbidden")
 	if row, detail := tk.lastAudit(); tk.auditCount() != before+1 || row.Action != audit.ActionPermissionDenied || detail["via_token"] != "cron" {
@@ -313,16 +335,32 @@ func TestTokenFollowsOwner(t *testing.T) {
 	// Given back, the token works again.
 	setGrants(rbac.TokensUse, rbac.BlockingToggle)
 	mustStatus(t, tk.bearer(auth, http.MethodGet, tk.path("/blocking"), nil), http.StatusOK)
+	listed("")
 
 	// An owner who must set up two-factor login is held, as their sessions are.
 	tk.tx(func(q *db.Queries) error {
 		return q.SetUserTOTPPolicy(ctx, db.SetUserTOTPPolicyParams{UserID: vic, Policy: "required", SetAt: 1, SetBy: "admin"})
 	})
 	wantError(t, tk.bearer(auth, http.MethodGet, tk.path("/blocking"), nil), http.StatusForbidden, "totp_setup_required")
+	listed("totp_setup_required")
 	tk.tx(func(q *db.Queries) error {
 		return q.SetUserTOTPPolicy(ctx, db.SetUserTOTPPolicyParams{UserID: vic, Policy: "exempt", SetAt: 1, SetBy: "admin"})
 	})
 	mustStatus(t, tk.bearer(auth, http.MethodGet, tk.path("/blocking"), nil), http.StatusOK)
+
+	// A disabled owner's token is refused as invalid, and listed as refused for that reason; enabled, it works again.
+	setDisabled := func(d bool) {
+		t.Helper()
+		tk.tx(func(q *db.Queries) error {
+			return q.SetUserDisabled(ctx, db.SetUserDisabledParams{Disabled: d, ID: vic})
+		})
+	}
+	setDisabled(true)
+	wantError(t, tk.bearer(auth, http.MethodGet, tk.path("/blocking"), nil), http.StatusUnauthorized, "invalid_token")
+	listed("owner_disabled")
+	setDisabled(false)
+	mustStatus(t, tk.bearer(auth, http.MethodGet, tk.path("/blocking"), nil), http.StatusOK)
+	listed("")
 }
 
 func TestTokenLastUse(t *testing.T) {
@@ -330,7 +368,7 @@ func TestTokenLastUse(t *testing.T) {
 	secret, _ := tk.makeToken("admin", "cron", rbac.Grant{Permission: rbac.DomainsView, Scope: rbac.AllScope()})
 	lastUse := func() (time.Time, string) {
 		t.Helper()
-		ts, err := rbac.ListUserTokens(context.Background(), tk.st.Read(), tk.userID("admin"), tk.now)
+		ts, err := rbac.ListUserTokens(context.Background(), tk.st.Read(), tk.userID("admin"), tk.now, 0)
 		if err != nil || len(ts) != 1 {
 			t.Fatal(ts, err)
 		}
@@ -370,4 +408,145 @@ func TestTokenClock(t *testing.T) {
 	if len(c.last) != 1 {
 		t.Errorf("%d entries kept, want 1", len(c.last))
 	}
+}
+
+// An LDAP user's token uses the roles it holds, is suspended (not ended) once they are older than the recheck window,
+// and works again when a recheck confirms them.
+func TestLDAPToken(t *testing.T) {
+	dir := &stubLDAP{users: map[string]stubLDAPUser{
+		"dana": {password: "dana-password", dn: "CN=Dana,DC=example,DC=local", groups: []string{adminGroupDN}},
+	}}
+	now := time.Now().UTC()
+	e := newLDAPEnv(t, dir, withLimits, func(o *Options) { o.Now = func() time.Time { return now } })
+	e.addUser("admin", "admin-password-1", true)
+	dana := e.loggedIn("dana", "dana-password")
+	res := dana.do(http.MethodPost, accountTokens, gen.APITokenInput{
+		Name: "siem", ExpiresAt: now.Add(24 * time.Hour), Grants: []gen.Grant{allGrant(rbac.AuditView)}, Password: "dana-password",
+	})
+	mustStatus(t, res, http.StatusCreated)
+	nt := decode[gen.NewAPIToken](t, res)
+	tokenID := func() int64 {
+		row, err := e.st.Read().GetAPITokenForAuth(t.Context(), nt.ApiToken.PublicId)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return row.ID
+	}()
+	get := func(path string) response {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.RemoteAddr = "10.0.0.60:1"
+		r.Header.Set("Authorization", "Bearer "+nt.Token)
+		w := httptest.NewRecorder()
+		e.h.ServeHTTP(w, r)
+		return response{w}
+	}
+	listed := func() gen.APITokenState {
+		t.Helper()
+		return decode[gen.APITokenList](t, dana.do(http.MethodGet, accountTokens, nil)).Tokens[0].State
+	}
+
+	mustStatus(t, get("/api/v1/audit"), http.StatusOK)
+	if s := listed(); s != gen.APITokenStateActive {
+		t.Errorf("listed as %s", s)
+	}
+
+	// Past the recheck interval plus the grace period without a recheck: suspended, more often than the login limit
+	// allows failures, since it isn't one.
+	now = now.Add(auth.DefaultRecheckInterval + auth.DefaultRecheckGrace + time.Second)
+	for range 6 {
+		wantError(t, get("/api/v1/audit"), http.StatusUnauthorized, "token_suspended")
+	}
+	if s := listed(); s != gen.APITokenStateSuspended {
+		t.Errorf("listed as %s, want suspended", s)
+	}
+	// A suspended token's roles aren't trusted, so only a disabled owner is given as a reason, as the gate checks it
+	// first.
+	admin := e.loggedIn("admin", "admin-password-1")
+	adminListed := func() gen.APIToken {
+		t.Helper()
+		return decode[gen.APITokenList](t, admin.do(http.MethodGet, "/api/v1/tokens", nil)).Tokens[0]
+	}
+	if lt := adminListed(); lt.Refused != nil {
+		t.Errorf("suspended token refused %v", *lt.Refused)
+	}
+	setDisabled := func(d bool) {
+		t.Helper()
+		if err := e.st.WithTx(t.Context(), func(q *db.Queries) error {
+			return q.SetUserDisabled(t.Context(), db.SetUserDisabledParams{Disabled: d, ID: nt.ApiToken.UserId})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setDisabled(true)
+	if lt := adminListed(); lt.State != gen.APITokenStateSuspended || lt.Refused == nil || *lt.Refused != gen.OwnerDisabled {
+		t.Errorf("listed as %s, refused %v, want suspended and owner_disabled", lt.State, lt.Refused)
+	}
+	setDisabled(false)
+
+	// A successful recheck resumes it.
+	tx := func(fn func(q *db.Queries) error) {
+		t.Helper()
+		if err := e.st.WithTx(t.Context(), fn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx(func(q *db.Queries) error {
+		return q.SetUserTokensRolesChecked(t.Context(), db.SetUserTokensRolesCheckedParams{
+			RolesCheckedAt: sql.NullInt64{Int64: store.Millis(now), Valid: true}, UserID: nt.ApiToken.UserId,
+		})
+	})
+	mustStatus(t, get("/api/v1/audit"), http.StatusOK)
+
+	// Its permissions come from the roles it holds: with none left, tokens.use is gone too.
+	tx(func(q *db.Queries) error { return q.ClearAPITokenRoles(t.Context(), tokenID) })
+	res = get("/api/v1/audit")
+	wantError(t, res, http.StatusForbidden, "forbidden")
+	if d := errorDetails(t, res); d["permission"] != string(rbac.TokensUse) {
+		t.Errorf("details %v", d)
+	}
+	// Her own list says so from the token's roles, though her session still holds tokens.use.
+	if lt := decode[gen.APITokenList](t, dana.do(http.MethodGet, accountTokens, nil)).Tokens[0]; lt.State != gen.APITokenStateActive ||
+		lt.Refused == nil || *lt.Refused != gen.LacksTokensUse {
+		t.Errorf("listed as %s, refused %v", lt.State, lt.Refused)
+	}
+}
+
+// A revoked token, or one whose owner is disabled, has the right secret: it is refused with the same answer as any
+// invalid token, but isn't counted against the login limit, so a script left running with it can't lock out its
+// address. A wrong secret still is counted.
+func TestTokenRefusalsCountedOnlyForGuesses(t *testing.T) {
+	tk := newTokenEnv(t, withLimits) // 4 failures per address
+	ctx := context.Background()
+	admin := tk.userID("admin")
+	adminActor := rbac.Actor{UserID: admin, Username: "admin", RoleIDs: []int64{adminRoleID}}
+
+	tk.addGrantUser("vic", "vic-password-1", grant(rbac.TokensUse, "all", 0), grant(rbac.DomainsView, "all", 0))
+	disabledSecret, _ := tk.makeToken("vic", "owner disabled", rbac.Grant{Permission: rbac.DomainsView, Scope: rbac.AllScope()})
+	revokedSecret, revokedID := tk.makeToken("admin", "revoked", rbac.Grant{Permission: rbac.DomainsView, Scope: rbac.AllScope()})
+	goodSecret, _ := tk.makeToken("admin", "good", rbac.Grant{Permission: rbac.DomainsView, Scope: rbac.AllScope()})
+	if err := tk.srv.Roles.RevokeToken(ctx, adminActor, revokedID, false); err != nil {
+		t.Fatal(err)
+	}
+	vic := tk.userID("vic")
+	tk.tx(func(q *db.Queries) error {
+		return q.SetUserDisabled(ctx, db.SetUserDisabledParams{Disabled: true, ID: vic})
+	})
+
+	for name, secret := range map[string]string{"revoked": revokedSecret, "owner disabled": disabledSecret} {
+		for i := range 6 {
+			res := tk.bearer("Bearer "+secret, http.MethodGet, tk.path("/domains"), nil)
+			if res.Code != http.StatusUnauthorized || res.errorCode() != "invalid_token" {
+				t.Fatalf("%s, use %d: got %d %s, want 401 invalid_token", name, i+1, res.Code, res.Body)
+			}
+		}
+	}
+	// None of that counted: a good token still works.
+	mustStatus(t, tk.bearer("Bearer "+goodSecret, http.MethodGet, tk.path("/domains"), nil), http.StatusOK)
+
+	// A wrong secret does count.
+	wrong := goodSecret[:len(goodSecret)-1] + map[bool]string{true: "b", false: "a"}[strings.HasSuffix(goodSecret, "a")]
+	for range 4 {
+		wantError(t, tk.bearer("Bearer "+wrong, http.MethodGet, tk.path("/domains"), nil), http.StatusUnauthorized, "invalid_token")
+	}
+	wantError(t, tk.bearer("Bearer "+goodSecret, http.MethodGet, tk.path("/domains"), nil), http.StatusTooManyRequests, "rate_limited")
 }

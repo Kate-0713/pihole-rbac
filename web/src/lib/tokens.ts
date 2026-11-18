@@ -14,13 +14,50 @@ export type TokenGrantable = Schemas['TokenGrantable'];
 
 export const maxTokenNameChars = 64;
 
-// canMakeTokens says whether the UI should offer to make a token: tokens.use, and a local account, since LDAP users
-// can't have tokens until a later release (the server refuses them with ldap_user).
-export function canMakeTokens(holdsTokensUse: boolean, source: string | undefined): boolean {
-	return holdsTokensUse && source === 'local';
+// revokedText says who revoked a token, for the list: "Revoked by you", "by its owner" on the admin tab, "by an
+// admin", or "by the directory check" with the reason the recheck gave. A token revoked before this was recorded is
+// just "Revoked".
+export function revokedText(t: APIToken, admin: boolean): string {
+	switch (t.revoked_by) {
+		case 'self':
+			return admin ? 'Revoked by its owner' : 'Revoked by you';
+		case 'admin':
+			return 'Revoked by an admin';
+		case 'recheck':
+			return t.revoked_reason
+				? `Revoked by the directory check (${t.revoked_reason})`
+				: 'Revoked by the directory check';
+		default:
+			return 'Revoked';
+	}
 }
 
-export const msgLDAPNoTokens = 'API tokens are only available to local accounts for now.';
+// suspendedNote explains a suspended token: an LDAP user's, whose roles the directory hasn't confirmed recently.
+export function suspendedNote(t: APIToken, admin: boolean): string {
+	const whose = admin ? `${t.username}'s` : 'your';
+	return `Suspended: the directory hasn't confirmed ${whose} groups recently, so it is refused for now. It works again after the next successful check.`;
+}
+// refusedNote explains why a live token is refused because of its owner (t.refused), and what makes it work again.
+// Null when it isn't refused.
+export function refusedNote(t: APIToken, admin: boolean): string | null {
+	switch (t.refused) {
+		case 'owner_disabled':
+			return admin
+				? `Refused: ${t.username}'s account is disabled. It works again once the account is enabled.`
+				: 'Refused: your account is disabled. It works again once it is enabled.';
+		case 'totp_setup_required':
+			return admin
+				? `Refused: ${t.username} must set up two-factor login first. It works again once they have.`
+				: 'Refused: you must set up two-factor login first. It works again once you have.';
+		case 'lacks_tokens_use':
+			return admin
+				? `Refused: ${t.username}'s roles no longer allow using API tokens. It works again if a role gives that back (for a directory user, once the next check sees the group).`
+				: 'Refused: your roles no longer allow using API tokens. It works again if a role gives that back (for a directory account, once the next check sees the group).';
+		default:
+			return null;
+	}
+}
+
 export const maxLifetimeDays = 365;
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -97,11 +134,14 @@ export function tokenScopes(
 	};
 }
 
-// stateLabel names a token's state for its badge.
+// stateLabel names a token's state for its badge. An active token its owner's account refuses is "Refused": it isn't
+// revoked, but nothing it sends gets through.
 export function stateLabel(t: APIToken): string {
 	switch (t.state) {
 		case 'active':
-			return 'Active';
+			return t.refused ? 'Refused' : 'Active';
+		case 'suspended':
+			return 'Suspended';
 		case 'expired':
 			return 'Expired';
 		default:

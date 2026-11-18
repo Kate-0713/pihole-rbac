@@ -3,15 +3,14 @@
 
 import { ApiError, api, unwrap } from '#lib/api/client.js';
 import { can } from '#lib/permissions.js';
-import { session } from '#lib/stores/session.svelte.js';
-import { canMakeTokens, type APIToken, type TokenGrantable } from '#lib/tokens.js';
+import type { APIToken, TokenGrantable } from '#lib/tokens.js';
 import type { PageLoad } from './$types';
 
 export const _myTokensKey = 'app:my-tokens';
 
 type Data = {
 	tokens: APIToken[] | null;
-	grantable: TokenGrantable | null; // null when they can't make one (canMakeTokens): the page lists and revokes
+	grantable: TokenGrantable | null; // null without tokens.use: the page lists and revokes, but can't make one
 	totpOn: boolean;
 	error: string | null;
 };
@@ -21,7 +20,7 @@ type Data = {
 export const load: PageLoad = async ({ parent, fetch, depends }): Promise<Data> => {
 	depends(_myTokensKey);
 	await parent(); // the session must be known before can() is asked
-	const canMake = canMakeTokens(can('tokens.use'), session.user?.source);
+	const canMake = can('tokens.use');
 	try {
 		// Promise.all runs the three reads at once rather than one after another.
 		const [list, grantable, totp] = await Promise.all([

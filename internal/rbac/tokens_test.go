@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
+	"github.com/Kate-0713/pihole-rbac/internal/auth"
+	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
 	"github.com/Kate-0713/pihole-rbac/internal/tokens"
 )
@@ -21,7 +23,7 @@ func tokenIn(name string, grants ...Grant) TokenInput {
 
 func (e *env) userTokens(userID int64) []Token {
 	e.t.Helper()
-	ts, err := ListUserTokens(e.ctx, e.st.Read(), userID, e.m.now())
+	ts, err := ListUserTokens(e.ctx, e.st.Read(), userID, e.m.now(), 0)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -71,9 +73,6 @@ func TestCreateTokenRefusals(t *testing.T) {
 	viewers := e.role("viewers", g(TokensUse, AllScope()), g(DomainsView, InstanceScope(e.inst1)))
 	vic := e.local("vic", viewers)
 	plain := e.local("pat", e.role("plain", g(DomainsView, AllScope())))
-	bob := e.ldapUser("bob")
-	e.session(bob, t0, e.admin)
-
 	ok := g(DomainsView, InstanceScope(e.inst1))
 	for _, c := range []struct {
 		name   string
@@ -83,7 +82,6 @@ func TestCreateTokenRefusals(t *testing.T) {
 		denied bool
 	}{
 		{"no tokens.use", plain, tokenIn("x", g(DomainsView, AllScope())), CodeForbidden, true},
-		{"an LDAP user", bob, tokenIn("x", ok), CodeConflict, false},
 		{"an empty name", alice, tokenIn("   ", ok), CodeValidation, false},
 		{"a name too long", alice, tokenIn(strings.Repeat("é", 65), ok), CodeValidation, false},
 		{"a control character", alice, tokenIn("a\tb", ok), CodeValidation, false},
@@ -109,11 +107,6 @@ func TestCreateTokenRefusals(t *testing.T) {
 				t.Error("a refusal that isn't about permissions was audited")
 			}
 		})
-	}
-	if _, err := e.m.CreateToken(e.ctx, e.actor(bob), tokenIn("x", ok)); err != nil {
-		if ee, _ := AsError(err); ee.Details["reason"] != "ldap_user" {
-			t.Errorf("LDAP refusal details = %v", ee.Details)
-		}
 	}
 	if _, err := e.m.CreateToken(e.ctx, e.actor(vic), tokenIn("x", g(DomainsView, AllScope()))); err != nil {
 		if ee, _ := AsError(err); fmt.Sprint(ee.Details["missing"]) != "[domains.view on all]" {
@@ -193,7 +186,7 @@ func TestRevokeToken(t *testing.T) {
 		t.Errorf("audit row = %s %s %s", row.Action, row.Target, row.Detail)
 	}
 	got := e.userTokens(vic)[0]
-	if got.State != TokenRevoked || !got.RevokedAt.Equal(t0) {
+	if got.State != TokenRevoked || !got.RevokedAt.Equal(t0) || got.RevokedBy != "admin" || got.RevokedReason != "" {
 		t.Errorf("after revoking: %+v", got)
 	}
 
@@ -211,6 +204,9 @@ func TestRevokeToken(t *testing.T) {
 	wantCode(t, e.m.RevokeToken(e.ctx, e.actor(vic), mine.Token.PublicID, false), "")
 	if d := detail(t, e.lastAudit()); d["by"] != "self" || d["owner"] != nil {
 		t.Errorf("own revoke detail = %v", d)
+	}
+	if got := e.userTokens(vic)[0]; got.Name != "mine" || got.RevokedBy != "self" {
+		t.Errorf("own revoke recorded as %+v", got)
 	}
 }
 
@@ -232,7 +228,7 @@ func TestListTokens(t *testing.T) {
 	wantCode(t, e.m.RevokeToken(e.ctx, e.actor(alice), revoked, false), "")
 
 	e.m.Now = func() time.Time { return t0.Add(2 * time.Hour) }
-	all, err := ListAllTokens(e.ctx, e.st.Read(), e.m.now())
+	all, err := ListAllTokens(e.ctx, e.st.Read(), e.m.now(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,5 +352,128 @@ func TestGrantableForToken(t *testing.T) {
 				t.Errorf("offered %s, which can't be granted", gr)
 			}
 		}
+	}
+}
+
+// An LDAP user's token holds the roles of the session making it, and starts from when they were last confirmed.
+func TestCreateTokenLDAP(t *testing.T) {
+	e := newEnv(t)
+	e.local("alice", e.admin) // invariant 2 wants an enabled local admin
+	staff := e.role("staff", g(TokensUse, AllScope()), g(DomainsView, AllScope()))
+	readers := e.role("readers", g(DomainsView, InstanceScope(e.inst1)))
+	bob := e.ldapUser("bob")
+	checked := t0.Add(-5 * time.Minute)
+	e.session(bob, checked, staff, readers)
+
+	a := e.actor(bob)
+	a.RolesCheckedAt = checked
+	nt, err := e.m.CreateToken(e.ctx, a, tokenIn("ldap cron", g(DomainsView, AllScope())))
+	wantCode(t, err, "")
+	q := e.st.Read()
+	row, err := q.GetAPITokenForAuth(e.ctx, nt.Token.PublicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles, err := q.ListAPITokenRoleIDs(e.ctx, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(roles, []int64{staff, readers}) || !row.RolesCheckedAt.Valid || row.RolesCheckedAt.Int64 != store.Millis(checked) {
+		t.Errorf("token roles %v, checked %v; want %v at %v", roles, row.RolesCheckedAt, []int64{staff, readers}, checked)
+	}
+
+	// Without a confirmed check behind it, no token.
+	a.RolesCheckedAt = time.Time{}
+	_, err = e.m.CreateToken(e.ctx, a, tokenIn("unchecked", g(DomainsView, AllScope())))
+	wantCode(t, err, CodeConflict)
+
+	// A local user's token holds no roles and no check time: it uses user_roles.
+	local, err := e.m.CreateToken(e.ctx, e.actor(e.local("carol", e.admin)), tokenIn("local", g(DomainsView, AllScope())))
+	wantCode(t, err, "")
+	lrow, _ := q.GetAPITokenForAuth(e.ctx, local.Token.PublicID)
+	if lroles, _ := q.ListAPITokenRoleIDs(e.ctx, lrow.ID); len(lroles) != 0 || lrow.RolesCheckedAt.Valid {
+		t.Errorf("a local token has roles %v, checked %v", lroles, lrow.RolesCheckedAt)
+	}
+}
+
+// Removing a group mapping makes the live tokens holding the role due for a recheck at once, as it does sessions.
+func TestRemoveLDAPMappingMakesTokensDue(t *testing.T) {
+	e := newEnv(t)
+	alice := e.local("alice", e.admin)
+	staff := e.role("staff", g(TokensUse, AllScope()), g(DomainsView, AllScope()))
+	other := e.role("other", g(TokensUse, AllScope()), g(DomainsView, AllScope()))
+	mapping, err := e.m.AddLDAPMapping(e.ctx, e.actor(alice), staff, "cn=staff,dc=example")
+	wantCode(t, err, "")
+	bob := e.ldapUser("bob")
+	e.session(bob, t0, staff)
+	a := e.actor(bob)
+	a.RolesCheckedAt = t0
+	held, err := e.m.CreateToken(e.ctx, a, tokenIn("held", g(DomainsView, AllScope())))
+	wantCode(t, err, "")
+	carol := e.ldapUser("carol")
+	e.session(carol, t0, other)
+	c := e.actor(carol)
+	c.RolesCheckedAt = t0
+	unrelated, err := e.m.CreateToken(e.ctx, c, tokenIn("unrelated", g(DomainsView, AllScope())))
+	wantCode(t, err, "")
+
+	wantCode(t, e.m.RemoveLDAPMapping(e.ctx, e.actor(alice), mapping, false), "")
+	if d := detail(t, e.lastAudit()); d["tokens_rechecked"] != float64(1) {
+		t.Errorf("audit detail %v", d)
+	}
+	q := e.st.Read()
+	due := store.Millis(t0.Add(-auth.DefaultRecheckInterval))
+	for _, c := range []struct {
+		id      string
+		wantDue bool
+	}{{held.Token.PublicID, true}, {unrelated.Token.PublicID, false}} {
+		row, err := q.GetAPITokenForAuth(e.ctx, c.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if isDue := row.RolesCheckedAt.Int64 <= due; isDue != c.wantDue {
+			t.Errorf("token %s: checked %v, due %v, want due %v", c.id, row.RolesCheckedAt.Int64, isDue, c.wantDue)
+		}
+	}
+}
+
+// An LDAP user's token is listed as suspended once its roles are older than the window, and a local user's never is.
+func TestListTokensSuspended(t *testing.T) {
+	e := newEnv(t)
+	alice := e.local("alice", e.admin)
+	staff := e.role("staff", g(TokensUse, AllScope()), g(DomainsView, AllScope()))
+	bob := e.ldapUser("bob")
+	e.session(bob, t0, staff)
+	a := e.actor(bob)
+	a.RolesCheckedAt = t0
+	_, err := e.m.CreateToken(e.ctx, a, tokenIn("ldap", g(DomainsView, AllScope())))
+	wantCode(t, err, "")
+	_, err = e.m.CreateToken(e.ctx, e.actor(alice), tokenIn("local", g(DomainsView, AllScope())))
+	wantCode(t, err, "")
+
+	state := func(at time.Time, window time.Duration) map[string]TokenState {
+		t.Helper()
+		all, err := ListAllTokens(e.ctx, e.st.Read(), at, window)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]TokenState{}
+		for _, tk := range all {
+			out[tk.Name] = tk.State
+		}
+		return out
+	}
+	window := 40 * time.Minute
+	if got := state(t0.Add(window), window); got["ldap"] != TokenActive || got["local"] != TokenActive {
+		t.Errorf("at the edge of the window: %v", got)
+	}
+	if got := state(t0.Add(window+time.Second), window); got["ldap"] != TokenSuspended || got["local"] != TokenActive {
+		t.Errorf("past the window: %v", got)
+	}
+	if got := state(t0.Add(window+time.Second), 0); got["ldap"] != TokenActive {
+		t.Errorf("with no window: %v", got)
+	}
+	if got := state(t0.Add(31*24*time.Hour), window); got["ldap"] != TokenExpired {
+		t.Errorf("expired and stale: %v, want expired", got)
 	}
 }

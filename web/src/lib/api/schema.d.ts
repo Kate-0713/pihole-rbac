@@ -1212,7 +1212,7 @@ export interface paths {
         put?: never;
         /**
          * Make an API token
-         * @description Makes a token for the caller, for scripts and integrations, and returns it whole, once: only a hash of its secret is kept. Needs tokens.use, the caller's password and, if they have two-factor login on, a six-digit code or a recovery code. A wrong password is 401 invalid_credentials and a wrong code 401 totp_invalid; both count against the login limits, as for turning two-factor login off, and while a limit applies the request is 429. The code is only spent if the token is made. The token's grants must be ones the caller holds, and only target permissions and audit.view (400 otherwise; 403 forbidden with `details.missing` for grants the caller doesn't hold). On every request its permissions are its grants intersected with what the caller holds then. The expiry is required, at most a year away. A name is 1 to 64 characters and unique among the caller's tokens that aren't revoked (409 conflict, `details.reason` name_taken). A caller can have 50 tokens that are neither revoked nor expired (409, too_many_tokens). LDAP users can't have tokens yet (409, ldap_user). Audited as token_create, with the name, expiry and grants.
+         * @description Makes a token for the caller, for scripts and integrations, and returns it whole, once: only a hash of its secret is kept. Needs tokens.use, the caller's password and, if they have two-factor login on, a six-digit code or a recovery code. A wrong password is 401 invalid_credentials and a wrong code 401 totp_invalid; both count against the login limits, as for turning two-factor login off, and while a limit applies the request is 429. The code is only spent if the token is made. The token's grants must be ones the caller holds, and only target permissions and audit.view (400 otherwise; 403 forbidden with `details.missing` for grants the caller doesn't hold). On every request its permissions are its grants intersected with what the caller holds then. The expiry is required, at most a year away. A name is 1 to 64 characters and unique among the caller's tokens that aren't revoked (409 conflict, `details.reason` name_taken). A caller can have 50 tokens that are neither revoked nor expired (409, too_many_tokens). An LDAP user's password is checked with a bind, and their token holds the roles of the session making it, kept in step with the directory by the LDAP recheck. Audited as token_create, with the name, expiry and grants.
          */
         post: operations["createToken"];
         delete?: never;
@@ -3184,10 +3184,20 @@ export interface components {
             next_cursor?: string;
         };
         /**
-         * @description active until it expires or is revoked. An active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login.
+         * @description active until it expires or is revoked. An LDAP user's token is suspended while the directory hasn't confirmed its roles for longer than the recheck interval plus the grace period, and active again once a recheck has. An active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login; `refused` says which.
          * @enum {string}
          */
-        APITokenState: "active" | "expired" | "revoked";
+        APITokenState: "active" | "suspended" | "expired" | "revoked";
+        /**
+         * @description Who revoked a token: its owner, an admin, or the LDAP recheck (when no role maps to the owner's groups any more, or they are gone from the directory). Absent unless revoked, and for tokens revoked before this was recorded.
+         * @enum {string}
+         */
+        APITokenRevokedBy: "self" | "admin" | "recheck";
+        /**
+         * @description Why every request with a live token is refused because of its owner, though the token itself is fine: the owner is disabled (refused whether active or suspended), must set up two-factor login, or doesn't hold tokens.use (for an LDAP user's token, as of the token's last recheck). The token is not revoked, and works again once the owner's account allows it. Absent when nothing is refused, and for expired and revoked tokens.
+         * @enum {string}
+         */
+        APITokenRefused: "owner_disabled" | "totp_setup_required" | "lacks_tokens_use";
         /** @description An API token, never its secret. */
         APIToken: {
             /** @description The part of the token after prt_ and before the secret; safe to show and log. */
@@ -3214,6 +3224,10 @@ export interface components {
              * @description Absent unless revoked.
              */
             revoked_at?: string;
+            revoked_by?: components["schemas"]["APITokenRevokedBy"];
+            /** @description Why the LDAP recheck revoked it, in words. Absent otherwise. */
+            revoked_reason?: string;
+            refused?: components["schemas"]["APITokenRefused"];
             state: components["schemas"]["APITokenState"];
         };
         APITokenList: {
@@ -4696,7 +4710,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description No valid session (code unauthenticated), or, on an operation that accepts an API token, a token that isn't valid (code invalid_token) or has expired (code token_expired). */
+        /** @description No valid session (code unauthenticated), or, on an operation that accepts an API token, a token that isn't valid (code invalid_token), has expired (code token_expired), or is an LDAP user's whose roles the directory hasn't confirmed recently (code token_suspended, until a recheck succeeds). */
         Unauthenticated: {
             headers: {
                 [name: string]: unknown;

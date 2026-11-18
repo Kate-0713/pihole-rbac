@@ -20,8 +20,11 @@ import (
 
 // ListMyTokens lists the caller's own tokens.
 func (s *Server) ListMyTokens(ctx context.Context, _ gen.ListMyTokensRequestObject) (gen.ListMyTokensResponseObject, error) {
-	ts, err := rbac.ListUserTokens(ctx, s.Store.Read(), info(ctx).sess.UserID, s.now())
+	ts, err := rbac.ListUserTokens(ctx, s.Store.Read(), info(ctx).sess.UserID, s.now(), s.Sessions.RolesValidFor())
 	if err != nil {
+		return nil, err
+	}
+	if err := rbac.TokenRefusals(ctx, s.Store.Read(), ts, s.totpSetupRequired); err != nil {
 		return nil, err
 	}
 	return gen.ListMyTokens200JSONResponse(tokenListJSON(ts)), nil
@@ -29,8 +32,11 @@ func (s *Server) ListMyTokens(ctx context.Context, _ gen.ListMyTokensRequestObje
 
 // ListTokens lists every user's tokens (sessions.manage, checked by the gate).
 func (s *Server) ListTokens(ctx context.Context, _ gen.ListTokensRequestObject) (gen.ListTokensResponseObject, error) {
-	ts, err := rbac.ListAllTokens(ctx, s.Store.Read(), s.now())
+	ts, err := rbac.ListAllTokens(ctx, s.Store.Read(), s.now(), s.Sessions.RolesValidFor())
 	if err != nil {
+		return nil, err
+	}
+	if err := rbac.TokenRefusals(ctx, s.Store.Read(), ts, s.totpSetupRequired); err != nil {
 		return nil, err
 	}
 	return gen.ListTokens200JSONResponse(tokenListJSON(ts)), nil
@@ -107,10 +113,6 @@ func (s *Server) CreateToken(ctx context.Context, req gen.CreateTokenRequestObje
 		return nil, err
 	}
 	// Refusals that cost nothing to find come before the password, so they never cost an attempt.
-	if ri.sess.Source != auth.MethodLocal {
-		return nil, &rbac.Error{Code: rbac.CodeConflict, Details: map[string]any{"reason": "ldap_user"},
-			Message: "API tokens are only available to local accounts for now."}
-	}
 	totpOn, err := totp.Enabled(ctx, s.Store.Read(), ri.sess.UserID)
 	if err != nil {
 		return nil, err
@@ -202,6 +204,18 @@ func tokenJSON(t rbac.Token) gen.APIToken {
 	if !t.RevokedAt.IsZero() {
 		at := t.RevokedAt
 		out.RevokedAt = &at
+	}
+	if t.RevokedBy != "" {
+		by := gen.APITokenRevokedBy(t.RevokedBy)
+		out.RevokedBy = &by
+	}
+	if t.RevokedReason != "" {
+		reason := t.RevokedReason
+		out.RevokedReason = &reason
+	}
+	if t.Refused != rbac.TokenNotRefused {
+		refused := gen.APITokenRefused(t.Refused)
+		out.Refused = &refused
 	}
 	return out
 }

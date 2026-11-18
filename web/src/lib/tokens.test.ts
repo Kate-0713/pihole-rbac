@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-	canMakeTokens,
+	refusedNote,
+	revokedText,
+	suspendedNote,
 	curlExample,
 	dateExpiry,
 	dateValue,
@@ -127,7 +129,10 @@ describe('token display', () => {
 	it('labels states', () => {
 		expect(stateLabel(token({}))).toBe('Active');
 		expect(stateLabel(token({ state: 'expired' }))).toBe('Expired');
+		expect(stateLabel(token({ state: 'suspended' }))).toBe('Suspended');
 		expect(stateLabel(token({ state: 'revoked' }))).toBe('Revoked');
+		expect(stateLabel(token({ refused: 'lacks_tokens_use' }))).toBe('Refused');
+		expect(stateLabel(token({ state: 'suspended', refused: 'owner_disabled' }))).toBe('Suspended');
 	});
 
 	it('warns a week before expiry, for active tokens only', () => {
@@ -143,11 +148,38 @@ describe('token display', () => {
 	});
 });
 
-describe('canMakeTokens', () => {
-	it('needs tokens.use and a local account', () => {
-		expect(canMakeTokens(true, 'local')).toBe(true);
-		expect(canMakeTokens(true, 'ldap')).toBe(false);
-		expect(canMakeTokens(false, 'local')).toBe(false);
-		expect(canMakeTokens(true, undefined)).toBe(false);
+describe('revokedText', () => {
+	it('says who revoked it, and why for the directory check', () => {
+		const r = (over: Partial<APIToken>) => token({ state: 'revoked', revoked_at: '2026-11-18T10:00:00Z', ...over });
+		expect(revokedText(r({ revoked_by: 'self' }), false)).toBe('Revoked by you');
+		expect(revokedText(r({ revoked_by: 'self' }), true)).toBe('Revoked by its owner');
+		expect(revokedText(r({ revoked_by: 'admin' }), false)).toBe('Revoked by an admin');
+		expect(revokedText(r({ revoked_by: 'recheck', revoked_reason: 'no role maps to their groups' }), false)).toBe(
+			'Revoked by the directory check (no role maps to their groups)'
+		);
+		expect(revokedText(r({ revoked_by: 'recheck' }), true)).toBe('Revoked by the directory check');
+		expect(revokedText(r({}), false)).toBe('Revoked');
+	});
+});
+
+describe('suspendedNote', () => {
+	it('says whose groups, and that it comes back', () => {
+		expect(suspendedNote(token({ username: 'dana' }), true)).toContain("dana's groups");
+		expect(suspendedNote(token({}), false)).toContain('your groups');
+		expect(suspendedNote(token({}), false)).toContain('works again');
+	});
+});
+
+describe('refusedNote', () => {
+	it('says why, whose, and what makes it work again', () => {
+		expect(refusedNote(token({}), false)).toBeNull();
+		const lacks = token({ username: 'dana', refused: 'lacks_tokens_use' });
+		expect(refusedNote(lacks, true)).toContain("dana's roles no longer allow using API tokens");
+		expect(refusedNote(lacks, false)).toContain('your roles');
+		expect(refusedNote(token({ username: 'vic', refused: 'owner_disabled' }), true)).toContain("vic's account is disabled");
+		expect(refusedNote(token({ refused: 'totp_setup_required' }), false)).toContain('set up two-factor login');
+		for (const r of ['owner_disabled', 'totp_setup_required', 'lacks_tokens_use'] as const) {
+			expect(refusedNote(token({ refused: r }), true)).toContain('works again');
+		}
 	});
 });

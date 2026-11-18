@@ -26,6 +26,9 @@ type Actor struct {
 	RoleIDs  []int64 // the acting session's roles; permissions are resolved from these inside the transaction
 	PublicID string  // the acting session's public ID, kept when the actor resets their own password
 	IP       string
+	// RolesCheckedAt is when the acting session's roles were last confirmed against the directory, for an LDAP user;
+	// a token they make starts from it. Zero otherwise.
+	RolesCheckedAt time.Time
 }
 
 // Manager makes every change to roles, grants, user roles, LDAP mappings and users. Each change runs in one

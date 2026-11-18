@@ -350,13 +350,20 @@ func (m *Manager) RemoveLDAPMapping(ctx context.Context, a Actor, mappingID int6
 		if err := t.q.DeleteLDAPMapping(t.ctx, mappingID); err != nil {
 			return err
 		}
-		n, err := t.q.MarkRoleSessionsDue(t.ctx, db.MarkRoleSessionsDueParams{
-			Due: store.Millis(t.now.Add(-interval)), RoleID: mp.RoleID,
-		})
+		due := store.Millis(t.now.Add(-interval))
+		n, err := t.q.MarkRoleSessionsDue(t.ctx, db.MarkRoleSessionsDueParams{Due: due, RoleID: mp.RoleID})
+		if err != nil {
+			return err
+		}
+		// Tokens too, or an LDAP user's token would keep the role until its roles were next due.
+		nt, err := t.q.MarkRoleTokensDue(t.ctx, db.MarkRoleTokensDueParams{Due: due, RoleID: mp.RoleID})
 		t.entry.Detail["mapping_id"] = mappingID
 		t.entry.Detail["group_dn"] = mp.GroupDn
 		if n > 0 {
 			t.entry.Detail["sessions_rechecked"] = n
+		}
+		if nt > 0 {
+			t.entry.Detail["tokens_rechecked"] = nt
 		}
 		return err
 	})

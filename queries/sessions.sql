@@ -56,12 +56,18 @@ WHERE user_id IN (SELECT id FROM users WHERE source = 'ldap')
 -- name: ListUserSessions :many
 SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at, public_id;
 
--- The LDAP users with at least one session whose roles were last checked at or before cutoff.
+-- The LDAP users due for a recheck: those with a session whose roles were last checked at or before cutoff, and
+-- enabled ones with a live API token whose roles were. A disabled user's tokens are left alone (they are refused while
+-- the account is disabled, and come back when it is enabled), so only their sessions make them due.
 -- name: ListLDAPUsersDueForRecheck :many
-SELECT DISTINCT u.id, u.username, u.disabled, u.ldap_dn
+SELECT u.id, u.username, u.disabled, u.ldap_dn
 FROM users u
-JOIN sessions s ON s.user_id = u.id
-WHERE u.source = 'ldap' AND s.roles_checked_at <= sqlc.arg(cutoff)
+WHERE u.source = 'ldap' AND (
+    EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.roles_checked_at <= sqlc.arg(cutoff))
+    OR (u.disabled = 0 AND EXISTS (
+        SELECT 1 FROM api_tokens t
+        WHERE t.user_id = u.id AND t.revoked_at IS NULL AND t.expires_at > sqlc.arg(now)
+          AND t.roles_checked_at <= sqlc.arg(cutoff))))
 ORDER BY u.id;
 
 -- name: SetUserSessionsRolesChecked :exec

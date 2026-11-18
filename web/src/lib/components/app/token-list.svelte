@@ -10,7 +10,7 @@
 	import { Button, buttonVariants } from '#lib/components/ui/button/index.js';
 	import { formatDateTime } from '#lib/format.js';
 	import { summarise, type Catalogue } from '#lib/roles.js';
-	import { expiresSoon, stateLabel, type APIToken } from '#lib/tokens.js';
+	import { expiresSoon, refusedNote, revokedText, stateLabel, suspendedNote, type APIToken } from '#lib/tokens.js';
 	import { notices } from '#lib/stores/notices.svelte.js';
 
 	// A list of API tokens, newest first, with what each can do and when it was last used. `admin` is the admin tab:
@@ -61,13 +61,29 @@
 	<!-- A list rather than a table, as for sessions: each token has several lines of detail. -->
 	<ul class="divide-y rounded-md border" aria-label="API tokens">
 		{#each tokens as t (t.public_id)}
-			<li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 p-3" class:opacity-60={t.state !== 'active'}>
-				<div class="grid min-w-0 gap-1 text-sm">
+			<!-- Expired and revoked tokens are dimmed: they are history. A suspended one isn't: it comes back by itself.
+			     The row doesn't wrap: the details take the room beside Revoke, so a long note wraps within them and the
+			     button stays at the top right. -->
+			<li
+				class="flex items-start justify-between gap-4 p-3"
+				class:opacity-60={t.state === 'expired' || t.state === 'revoked'}
+			>
+				<div class="grid min-w-0 flex-1 gap-1 text-sm">
 					<p class="font-medium">
 						{admin ? `${t.username} · ${t.name}` : t.name}
-						<Badge variant={t.state === 'active' ? 'secondary' : 'outline'} class="ml-1">{stateLabel(t)}</Badge>
+						<Badge
+							variant={t.state === 'active' && !t.refused ? 'secondary' : t.state === 'active' || t.state === 'suspended' ? 'destructive' : 'outline'}
+							class="ml-1">{stateLabel(t)}</Badge
+						>
 						{#if expiresSoon(t, now)}<Badge variant="destructive" class="ml-1">Expires soon</Badge>{/if}
 					</p>
+					{#if t.state === 'suspended'}
+						<p class="text-destructive">{suspendedNote(t, admin)}</p>
+					{/if}
+					<!-- Refused, not revoked: the owner's account stops it, and it works again once that changes. -->
+					{#if refusedNote(t, admin)}
+						<p class="text-destructive">{refusedNote(t, admin)}</p>
+					{/if}
 					<ul class="text-muted-foreground font-mono text-xs">
 						{#each summarise(t.grants, catalogue) as line (line)}
 							<li>{line}</li>
@@ -75,7 +91,7 @@
 					</ul>
 					<p class="text-muted-foreground">
 						{#if t.state === 'revoked'}
-							Revoked {formatDateTime(t.revoked_at)}
+							{revokedText(t, admin)}, {formatDateTime(t.revoked_at)}
 						{:else}
 							{t.state === 'expired' ? 'Expired' : 'Expires'} {formatDateTime(t.expires_at)}
 						{/if}
@@ -83,8 +99,8 @@
 						{t.last_used_at ? `last used ${formatDateTime(t.last_used_at)} from ${t.last_used_ip}` : 'never used'}
 					</p>
 				</div>
-				{#if t.state === 'active'}
-					<Button variant="outline" size="sm" onclick={() => ask(t)} aria-label="Revoke {admin ? `${t.username}'s ` : ''}token {t.name}">
+				{#if t.state === 'active' || t.state === 'suspended'}
+					<Button variant="outline" size="sm" class="shrink-0" onclick={() => ask(t)} aria-label="Revoke {admin ? `${t.username}'s ` : ''}token {t.name}">
 						Revoke
 					</Button>
 				{/if}

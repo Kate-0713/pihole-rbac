@@ -11,6 +11,29 @@ import (
 	"strings"
 )
 
+const addAPITokenRole = `-- name: AddAPITokenRole :exec
+INSERT INTO api_token_roles (token_id, role_id) VALUES (?, ?)
+`
+
+type AddAPITokenRoleParams struct {
+	TokenID int64
+	RoleID  int64
+}
+
+func (q *Queries) AddAPITokenRole(ctx context.Context, arg AddAPITokenRoleParams) error {
+	_, err := q.db.ExecContext(ctx, addAPITokenRole, arg.TokenID, arg.RoleID)
+	return err
+}
+
+const clearAPITokenRoles = `-- name: ClearAPITokenRoles :exec
+DELETE FROM api_token_roles WHERE token_id = ?
+`
+
+func (q *Queries) ClearAPITokenRoles(ctx context.Context, tokenID int64) error {
+	_, err := q.db.ExecContext(ctx, clearAPITokenRoles, tokenID)
+	return err
+}
+
 const countLiveAPITokensForUser = `-- name: CountLiveAPITokensForUser :one
 SELECT COUNT(*) FROM api_tokens
 WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2
@@ -62,22 +85,27 @@ func (q *Queries) DeleteDeadAPITokenGrantsOnInstance(ctx context.Context, arg De
 }
 
 const getAPIToken = `-- name: GetAPIToken :one
-SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.created_at, t.expires_at, t.last_used_at, t.last_used_ip, t.revoked_at, u.username FROM api_tokens t JOIN users u ON u.id = t.user_id
+SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.created_at, t.expires_at, t.last_used_at, t.last_used_ip, t.revoked_at, t.roles_checked_at, t.revoked_by, t.revoked_reason, u.username, u.source AS owner_source, u.disabled AS owner_disabled FROM api_tokens t JOIN users u ON u.id = t.user_id
 WHERE t.public_id = ?
 `
 
 type GetAPITokenRow struct {
-	ID         int64
-	PublicID   string
-	UserID     int64
-	Name       string
-	SecretHash []byte
-	CreatedAt  int64
-	ExpiresAt  int64
-	LastUsedAt sql.NullInt64
-	LastUsedIp string
-	RevokedAt  sql.NullInt64
-	Username   string
+	ID             int64
+	PublicID       string
+	UserID         int64
+	Name           string
+	SecretHash     []byte
+	CreatedAt      int64
+	ExpiresAt      int64
+	LastUsedAt     sql.NullInt64
+	LastUsedIp     string
+	RevokedAt      sql.NullInt64
+	RolesCheckedAt sql.NullInt64
+	RevokedBy      sql.NullString
+	RevokedReason  sql.NullString
+	Username       string
+	OwnerSource    string
+	OwnerDisabled  bool
 }
 
 func (q *Queries) GetAPIToken(ctx context.Context, publicID string) (GetAPITokenRow, error) {
@@ -94,29 +122,35 @@ func (q *Queries) GetAPIToken(ctx context.Context, publicID string) (GetAPIToken
 		&i.LastUsedAt,
 		&i.LastUsedIp,
 		&i.RevokedAt,
+		&i.RolesCheckedAt,
+		&i.RevokedBy,
+		&i.RevokedReason,
 		&i.Username,
+		&i.OwnerSource,
+		&i.OwnerDisabled,
 	)
 	return i, err
 }
 
 const getAPITokenForAuth = `-- name: GetAPITokenForAuth :one
-SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.expires_at, t.revoked_at,
+SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.expires_at, t.revoked_at, t.roles_checked_at,
        u.username, u.source, u.disabled
 FROM api_tokens t JOIN users u ON u.id = t.user_id
 WHERE t.public_id = ?
 `
 
 type GetAPITokenForAuthRow struct {
-	ID         int64
-	PublicID   string
-	UserID     int64
-	Name       string
-	SecretHash []byte
-	ExpiresAt  int64
-	RevokedAt  sql.NullInt64
-	Username   string
-	Source     string
-	Disabled   bool
+	ID             int64
+	PublicID       string
+	UserID         int64
+	Name           string
+	SecretHash     []byte
+	ExpiresAt      int64
+	RevokedAt      sql.NullInt64
+	RolesCheckedAt sql.NullInt64
+	Username       string
+	Source         string
+	Disabled       bool
 }
 
 // A token as a request authenticates with it, with what the gate needs of its owner.
@@ -131,6 +165,7 @@ func (q *Queries) GetAPITokenForAuth(ctx context.Context, publicID string) (GetA
 		&i.SecretHash,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.RolesCheckedAt,
 		&i.Username,
 		&i.Source,
 		&i.Disabled,
@@ -141,24 +176,26 @@ func (q *Queries) GetAPITokenForAuth(ctx context.Context, publicID string) (GetA
 const insertAPIToken = `-- name: InsertAPIToken :one
 
 
-INSERT INTO api_tokens (public_id, user_id, name, secret_hash, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO api_tokens (public_id, user_id, name, secret_hash, created_at, expires_at, roles_checked_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
 type InsertAPITokenParams struct {
-	PublicID   string
-	UserID     int64
-	Name       string
-	SecretHash []byte
-	CreatedAt  int64
-	ExpiresAt  int64
+	PublicID       string
+	UserID         int64
+	Name           string
+	SecretHash     []byte
+	CreatedAt      int64
+	ExpiresAt      int64
+	RolesCheckedAt sql.NullInt64
 }
 
 // SPDX-FileCopyrightText: 2026 Kate O'Grady
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // A token is live while it is neither revoked nor expired. A live token whose owner no longer holds tokens.use, or
 // is disabled, is refused on use but still live: it works again if they get it back before it expires.
+// roles_checked_at is set for an LDAP user's token, from the session that makes it, and NULL for a local user's.
 func (q *Queries) InsertAPIToken(ctx context.Context, arg InsertAPITokenParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, insertAPIToken,
 		arg.PublicID,
@@ -167,6 +204,7 @@ func (q *Queries) InsertAPIToken(ctx context.Context, arg InsertAPITokenParams) 
 		arg.SecretHash,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.RolesCheckedAt,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -242,24 +280,56 @@ func (q *Queries) ListAPITokenGrants(ctx context.Context, tokenIds []int64) ([]A
 	return items, nil
 }
 
+const listAPITokenRoleIDs = `-- name: ListAPITokenRoleIDs :many
+SELECT role_id FROM api_token_roles WHERE token_id = ? ORDER BY role_id
+`
+
+func (q *Queries) ListAPITokenRoleIDs(ctx context.Context, tokenID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listAPITokenRoleIDs, tokenID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var role_id int64
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAPITokensForUser = `-- name: ListAPITokensForUser :many
-SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.created_at, t.expires_at, t.last_used_at, t.last_used_ip, t.revoked_at, u.username FROM api_tokens t JOIN users u ON u.id = t.user_id
+SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.created_at, t.expires_at, t.last_used_at, t.last_used_ip, t.revoked_at, t.roles_checked_at, t.revoked_by, t.revoked_reason, u.username, u.source AS owner_source, u.disabled AS owner_disabled FROM api_tokens t JOIN users u ON u.id = t.user_id
 WHERE t.user_id = ?
 ORDER BY t.created_at DESC, t.id DESC
 `
 
 type ListAPITokensForUserRow struct {
-	ID         int64
-	PublicID   string
-	UserID     int64
-	Name       string
-	SecretHash []byte
-	CreatedAt  int64
-	ExpiresAt  int64
-	LastUsedAt sql.NullInt64
-	LastUsedIp string
-	RevokedAt  sql.NullInt64
-	Username   string
+	ID             int64
+	PublicID       string
+	UserID         int64
+	Name           string
+	SecretHash     []byte
+	CreatedAt      int64
+	ExpiresAt      int64
+	LastUsedAt     sql.NullInt64
+	LastUsedIp     string
+	RevokedAt      sql.NullInt64
+	RolesCheckedAt sql.NullInt64
+	RevokedBy      sql.NullString
+	RevokedReason  sql.NullString
+	Username       string
+	OwnerSource    string
+	OwnerDisabled  bool
 }
 
 func (q *Queries) ListAPITokensForUser(ctx context.Context, userID int64) ([]ListAPITokensForUserRow, error) {
@@ -282,7 +352,12 @@ func (q *Queries) ListAPITokensForUser(ctx context.Context, userID int64) ([]Lis
 			&i.LastUsedAt,
 			&i.LastUsedIp,
 			&i.RevokedAt,
+			&i.RolesCheckedAt,
+			&i.RevokedBy,
+			&i.RevokedReason,
 			&i.Username,
+			&i.OwnerSource,
+			&i.OwnerDisabled,
 		); err != nil {
 			return nil, err
 		}
@@ -298,22 +373,27 @@ func (q *Queries) ListAPITokensForUser(ctx context.Context, userID int64) ([]Lis
 }
 
 const listAllAPITokens = `-- name: ListAllAPITokens :many
-SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.created_at, t.expires_at, t.last_used_at, t.last_used_ip, t.revoked_at, u.username FROM api_tokens t JOIN users u ON u.id = t.user_id
+SELECT t.id, t.public_id, t.user_id, t.name, t.secret_hash, t.created_at, t.expires_at, t.last_used_at, t.last_used_ip, t.revoked_at, t.roles_checked_at, t.revoked_by, t.revoked_reason, u.username, u.source AS owner_source, u.disabled AS owner_disabled FROM api_tokens t JOIN users u ON u.id = t.user_id
 ORDER BY u.username, t.created_at DESC, t.id DESC
 `
 
 type ListAllAPITokensRow struct {
-	ID         int64
-	PublicID   string
-	UserID     int64
-	Name       string
-	SecretHash []byte
-	CreatedAt  int64
-	ExpiresAt  int64
-	LastUsedAt sql.NullInt64
-	LastUsedIp string
-	RevokedAt  sql.NullInt64
-	Username   string
+	ID             int64
+	PublicID       string
+	UserID         int64
+	Name           string
+	SecretHash     []byte
+	CreatedAt      int64
+	ExpiresAt      int64
+	LastUsedAt     sql.NullInt64
+	LastUsedIp     string
+	RevokedAt      sql.NullInt64
+	RolesCheckedAt sql.NullInt64
+	RevokedBy      sql.NullString
+	RevokedReason  sql.NullString
+	Username       string
+	OwnerSource    string
+	OwnerDisabled  bool
 }
 
 func (q *Queries) ListAllAPITokens(ctx context.Context) ([]ListAllAPITokensRow, error) {
@@ -336,7 +416,12 @@ func (q *Queries) ListAllAPITokens(ctx context.Context) ([]ListAllAPITokensRow, 
 			&i.LastUsedAt,
 			&i.LastUsedIp,
 			&i.RevokedAt,
+			&i.RolesCheckedAt,
+			&i.RevokedBy,
+			&i.RevokedReason,
 			&i.Username,
+			&i.OwnerSource,
+			&i.OwnerDisabled,
 		); err != nil {
 			return nil, err
 		}
@@ -488,6 +573,103 @@ func (q *Queries) ListLiveAPITokensWithGrantsOnGroup(ctx context.Context, arg Li
 	return items, nil
 }
 
+const listLiveLDAPTokenRoleIDsForUser = `-- name: ListLiveLDAPTokenRoleIDsForUser :many
+SELECT DISTINCT r.role_id FROM api_token_roles r JOIN api_tokens t ON t.id = r.token_id
+WHERE t.user_id = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2
+ORDER BY r.role_id
+`
+
+type ListLiveLDAPTokenRoleIDsForUserParams struct {
+	UserID int64
+	Now    int64
+}
+
+// The roles an LDAP user's live tokens hold between them, for the recheck to compare.
+func (q *Queries) ListLiveLDAPTokenRoleIDsForUser(ctx context.Context, arg ListLiveLDAPTokenRoleIDsForUserParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listLiveLDAPTokenRoleIDsForUser, arg.UserID, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var role_id int64
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveLDAPTokensForUser = `-- name: ListLiveLDAPTokensForUser :many
+SELECT id, public_id, name FROM api_tokens
+WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2 AND roles_checked_at IS NOT NULL
+ORDER BY id
+`
+
+type ListLiveLDAPTokensForUserParams struct {
+	UserID int64
+	Now    int64
+}
+
+type ListLiveLDAPTokensForUserRow struct {
+	ID       int64
+	PublicID string
+	Name     string
+}
+
+// An LDAP user's live tokens, for the recheck.
+func (q *Queries) ListLiveLDAPTokensForUser(ctx context.Context, arg ListLiveLDAPTokensForUserParams) ([]ListLiveLDAPTokensForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLiveLDAPTokensForUser, arg.UserID, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLiveLDAPTokensForUserRow{}
+	for rows.Next() {
+		var i ListLiveLDAPTokensForUserRow
+		if err := rows.Scan(&i.ID, &i.PublicID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markRoleTokensDue = `-- name: MarkRoleTokensDue :execrows
+UPDATE api_tokens SET roles_checked_at = MIN(roles_checked_at, CAST(?1 AS INTEGER))
+WHERE revoked_at IS NULL AND roles_checked_at IS NOT NULL
+  AND id IN (SELECT token_id FROM api_token_roles WHERE role_id = ?2)
+`
+
+type MarkRoleTokensDueParams struct {
+	Due    int64
+	RoleID int64
+}
+
+// Makes the live tokens holding a role due for the LDAP recheck at once, as MarkRoleSessionsDue does for sessions,
+// when a group mapping to the role is removed. Only LDAP users' tokens hold roles.
+func (q *Queries) MarkRoleTokensDue(ctx context.Context, arg MarkRoleTokensDueParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markRoleTokensDue, arg.Due, arg.RoleID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const pruneAPITokens = `-- name: PruneAPITokens :execrows
 DELETE FROM api_tokens WHERE revoked_at < ?1 OR expires_at < ?1
 `
@@ -502,22 +684,47 @@ func (q *Queries) PruneAPITokens(ctx context.Context, cutoff sql.NullInt64) (int
 }
 
 const revokeAPIToken = `-- name: RevokeAPIToken :execrows
-UPDATE api_tokens SET revoked_at = ?1
-WHERE id = ?2 AND revoked_at IS NULL
+UPDATE api_tokens
+SET revoked_at = ?1, revoked_by = ?2, revoked_reason = ?3
+WHERE id = ?4 AND revoked_at IS NULL
 `
 
 type RevokeAPITokenParams struct {
-	RevokedAt sql.NullInt64
-	ID        int64
+	RevokedAt     sql.NullInt64
+	RevokedBy     sql.NullString
+	RevokedReason sql.NullString
+	ID            int64
 }
 
-// Revokes a token. No row changes if it was revoked already.
+// Revokes a token, recording who did (self, admin or recheck) and, for the recheck, why. No row changes if it was
+// revoked already.
 func (q *Queries) RevokeAPIToken(ctx context.Context, arg RevokeAPITokenParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, revokeAPIToken, arg.RevokedAt, arg.ID)
+	result, err := q.db.ExecContext(ctx, revokeAPIToken,
+		arg.RevokedAt,
+		arg.RevokedBy,
+		arg.RevokedReason,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const setUserTokensRolesChecked = `-- name: SetUserTokensRolesChecked :exec
+UPDATE api_tokens SET roles_checked_at = ?1
+WHERE user_id = ?2 AND revoked_at IS NULL AND roles_checked_at IS NOT NULL
+`
+
+type SetUserTokensRolesCheckedParams struct {
+	RolesCheckedAt sql.NullInt64
+	UserID         int64
+}
+
+// Records a successful recheck on an LDAP user's live tokens.
+func (q *Queries) SetUserTokensRolesChecked(ctx context.Context, arg SetUserTokensRolesCheckedParams) error {
+	_, err := q.db.ExecContext(ctx, setUserTokensRolesChecked, arg.RolesCheckedAt, arg.UserID)
+	return err
 }
 
 const touchAPIToken = `-- name: TouchAPIToken :exec

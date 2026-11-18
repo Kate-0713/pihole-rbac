@@ -18,7 +18,9 @@ info:
     token's permissions are its own grants intersected with what its owner holds now, and its owner must still hold
     tokens.use. Every other operation answers a token with 403 token_not_allowed. A token that isn't valid (unknown,
     malformed, revoked, or its owner disabled) is 401 invalid_token, and counts against the per-address login limit
-    (429 rate_limited while it applies); an expired one is 401 token_expired.
+    (429 rate_limited while it applies); an expired one is 401 token_expired; and an LDAP user's token whose roles the
+    directory hasn't confirmed for longer than the recheck interval plus the grace period is 401 token_suspended until
+    a recheck succeeds.
   license:
     name: GNU Affero General Public License v3.0 or later
     identifier: AGPL-3.0-or-later
@@ -2128,7 +2130,8 @@ paths:
         hold). On every request its permissions are its grants intersected with what the caller holds then. The expiry
         is required, at most a year away. A name is 1 to 64 characters and unique among the caller's tokens that
         aren't revoked (409 conflict, `details.reason` name_taken). A caller can have 50 tokens that are neither
-        revoked nor expired (409, too_many_tokens). LDAP users can't have tokens yet (409, ldap_user). Audited as
+        revoked nor expired (409, too_many_tokens). An LDAP user's password is checked with a bind, and their token holds
+        the roles of the session making it, kept in step with the directory by the LDAP recheck. Audited as
         token_create, with the name, expiry and grants.
       operationId: createToken
       x-permission: tokens.use
@@ -5291,7 +5294,8 @@ components:
     Unauthenticated:
       description: >-
         No valid session (code unauthenticated), or, on an operation that accepts an API token, a token that isn't
-        valid (code invalid_token) or has expired (code token_expired).
+        valid (code invalid_token), has expired (code token_expired), or is an LDAP user's whose roles the directory
+        hasn't confirmed recently (code token_suspended, until a recheck succeeds).
       content:
         application/json:
           schema:
@@ -7258,10 +7262,29 @@ components:
 
     APITokenState:
       type: string
-      enum: [active, expired, revoked]
+      enum: [active, suspended, expired, revoked]
       description: >-
-        active until it expires or is revoked. An active token is still refused while its owner lacks tokens.use, is
-        disabled, or must set up two-factor login.
+        active until it expires or is revoked. An LDAP user's token is suspended while the directory hasn't confirmed
+        its roles for longer than the recheck interval plus the grace period, and active again once a recheck has. An
+        active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login;
+        `refused` says which.
+
+    APITokenRevokedBy:
+      type: string
+      enum: [self, admin, recheck]
+      description: >-
+        Who revoked a token: its owner, an admin, or the LDAP recheck (when no role maps to the owner's groups any
+        more, or they are gone from the directory). Absent unless revoked, and for tokens revoked before this was
+        recorded.
+
+    APITokenRefused:
+      type: string
+      enum: [owner_disabled, totp_setup_required, lacks_tokens_use]
+      description: >-
+        Why every request with a live token is refused because of its owner, though the token itself is fine: the
+        owner is disabled (refused whether active or suspended), must set up two-factor login, or doesn't hold
+        tokens.use (for an LDAP user's token, as of the token's last recheck). The token is not revoked, and works
+        again once the owner's account allows it. Absent when nothing is refused, and for expired and revoked tokens.
 
     APIToken:
       type: object
@@ -7301,6 +7324,13 @@ components:
           type: string
           format: date-time
           description: Absent unless revoked.
+        revoked_by:
+          $ref: "#/components/schemas/APITokenRevokedBy"
+        revoked_reason:
+          type: string
+          description: Why the LDAP recheck revoked it, in words. Absent otherwise.
+        refused:
+          $ref: "#/components/schemas/APITokenRefused"
         state:
           $ref: "#/components/schemas/APITokenState"
 

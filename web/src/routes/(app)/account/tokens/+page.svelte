@@ -8,9 +8,7 @@
 	import TokenList from '#lib/components/app/token-list.svelte';
 	import { Alert, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { can } from '#lib/permissions.js';
-	import { session } from '#lib/stores/session.svelte.js';
-	import { grantableCatalogue, msgLDAPNoTokens } from '#lib/tokens.js';
+	import { grantableCatalogue } from '#lib/tokens.js';
 	import { _myTokensKey as myTokensKey } from './+page.js';
 	import type { PageProps } from './$types';
 
@@ -37,11 +35,7 @@
 	endpoints with the permissions you give it, while you still hold them. Revoke any you no longer use.
 </p>
 {#if !data.grantable && !data.error}
-	<p class="text-muted-foreground text-sm">
-		{session.user?.source === 'local' || !can('tokens.use')
-			? "You can't make new tokens: that needs the tokens.use permission."
-			: msgLDAPNoTokens}
-	</p>
+	<p class="text-muted-foreground text-sm">You can't make new tokens: that needs the tokens.use permission.</p>
 {/if}
 
 {#if data.error}

@@ -27,7 +27,7 @@ func actor(ctx context.Context) rbac.Actor {
 	ri := info(ctx)
 	return rbac.Actor{
 		UserID: ri.user.UserID, Username: ri.user.Username, Source: ri.user.Source, RoleIDs: ri.user.RoleIDs,
-		PublicID: ri.user.PublicID, IP: ri.ip,
+		PublicID: ri.user.PublicID, IP: ri.ip, RolesCheckedAt: ri.user.RolesCheckedAt,
 	}
 }
 

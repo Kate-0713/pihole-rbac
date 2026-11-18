@@ -26,6 +26,21 @@ const (
 	TokenActive  TokenState = "active"
 	TokenExpired TokenState = "expired"
 	TokenRevoked TokenState = "revoked"
+	// TokenSuspended is an LDAP user's token whose roles haven't been confirmed by the directory for longer than the
+	// recheck interval plus the grace period. It is refused until a recheck succeeds, which makes it active again.
+	TokenSuspended TokenState = "suspended"
+)
+
+// TokenRefusal says why a live token is refused because of its owner, though the token itself is fine. Unlike a
+// revoked token, it works again once the owner's account does: enabled again, two-factor login set up, or tokens.use
+// held again (for an LDAP user, after the recheck has seen the group).
+type TokenRefusal string
+
+const (
+	TokenNotRefused       TokenRefusal = ""
+	RefusedOwnerDisabled  TokenRefusal = "owner_disabled"
+	RefusedTOTPSetup      TokenRefusal = "totp_setup_required"
+	RefusedLacksTokensUse TokenRefusal = "lacks_tokens_use"
 )
 
 // TokenInput is a new token as its owner asks for it.
@@ -50,7 +65,17 @@ type Token struct {
 	LastUsedAt time.Time // zero if never used
 	LastUsedIP string
 	RevokedAt  time.Time // zero unless revoked
-	State      TokenState
+	// RevokedBy is who revoked it: "self" (its owner), "admin" or "recheck" (the LDAP recheck, which also gives
+	// RevokedReason). Empty when not revoked, or revoked before this was recorded.
+	RevokedBy     string
+	RevokedReason string
+	State         TokenState
+	// Refused is set by TokenRefusals; empty if it hasn't run or the owner allows the token.
+	Refused TokenRefusal
+
+	id            int64
+	ownerLDAP     bool
+	ownerDisabled bool
 }
 
 // NewToken is a token just made: the whole token, shown once, and its description.
@@ -63,7 +88,7 @@ func tokenTarget(username, name string) string { return "token:" + username + "/
 
 // CreateToken makes an API token for the actor. Checking their password is the caller's job, before calling this; a
 // two-factor code is checked by in.Verify, in the transaction. In one transaction it checks that:
-//   - the actor is a local user (LDAP users get tokens in a later release) and holds tokens.use;
+//   - the actor holds tokens.use;
 //   - the name is 1 to 64 characters, with no control characters, and not used by another of their unrevoked tokens;
 //   - the expiry is in the future and at most a year away;
 //   - there is at least one grant, each valid (invariant 6), one a token can hold, and held by the actor (invariant 3);
@@ -75,10 +100,6 @@ func (m *Manager) CreateToken(ctx context.Context, a Actor, in TokenInput) (NewT
 	err := m.do(ctx, a, audit.ActionTokenCreate, func(t *txn) error {
 		name := strings.TrimSpace(in.Name)
 		t.entry.Target = tokenTarget(a.Username, name)
-		if a.Source != auth.MethodLocal {
-			return newError(CodeConflict, map[string]any{"reason": "ldap_user"},
-				"API tokens are only available to local accounts for now.")
-		}
 		if err := t.require(TokensUse); err != nil {
 			return err
 		}
@@ -122,10 +143,22 @@ func (m *Manager) CreateToken(ctx context.Context, a Actor, in TokenInput) (NewT
 			}
 		}
 
+		// An LDAP user's roles come from the directory, so the token holds the roles of the session making it, and
+		// starts from when they were last confirmed (not now: the token is no fresher than that check). The recheck
+		// keeps them in step from then on. A local user's token uses user_roles and holds none.
+		ldap := a.Source == auth.MethodLDAP
+		var checked sql.NullInt64
+		if ldap {
+			if len(a.RoleIDs) == 0 || a.RolesCheckedAt.IsZero() {
+				return newError(CodeConflict, map[string]any{"reason": "no_roles"}, "Your roles haven't been confirmed by the directory. Log in again.")
+			}
+			checked = sql.NullInt64{Int64: store.Millis(a.RolesCheckedAt), Valid: true}
+		}
+
 		secret, publicID, hash := tokens.New()
 		id, err := t.q.InsertAPIToken(t.ctx, db.InsertAPITokenParams{
 			PublicID: publicID, UserID: a.UserID, Name: name, SecretHash: hash,
-			CreatedAt: store.Millis(t.now), ExpiresAt: store.Millis(expires),
+			CreatedAt: store.Millis(t.now), ExpiresAt: store.Millis(expires), RolesCheckedAt: checked,
 		})
 		if store.Constraint(err) == store.Unique {
 			return newError(CodeConflict, map[string]any{"field": "name", "reason": "name_taken"},
@@ -144,6 +177,13 @@ func (m *Manager) CreateToken(ctx context.Context, a Actor, in TokenInput) (NewT
 			}
 			if err := t.q.InsertAPITokenGrant(t.ctx, p); err != nil {
 				return fmt.Errorf("insert token grant %s: %w", g, err)
+			}
+		}
+		if ldap {
+			for _, role := range a.RoleIDs {
+				if err := t.q.AddAPITokenRole(t.ctx, db.AddAPITokenRoleParams{TokenID: id, RoleID: role}); err != nil {
+					return fmt.Errorf("insert token role: %w", err)
+				}
 			}
 		}
 		t.entry.Detail["token_id"] = publicID
@@ -176,8 +216,9 @@ func (m *Manager) RevokeToken(ctx context.Context, a Actor, publicID string, asA
 		}
 		t.entry.Target = tokenTarget(row.Username, row.Name)
 		t.entry.Detail["token_id"] = row.PublicID
+		by := "self"
 		if row.UserID == a.UserID {
-			t.entry.Detail["by"] = "self"
+			t.entry.Detail["by"] = by
 		} else {
 			if !asAdmin {
 				return notFound
@@ -185,10 +226,14 @@ func (m *Manager) RevokeToken(ctx context.Context, a Actor, publicID string, asA
 			if err := t.require(SessionsManage); err != nil {
 				return err
 			}
-			t.entry.Detail["by"] = "admin"
+			by = "admin"
+			t.entry.Detail["by"] = by
 			t.entry.Detail["owner"] = row.Username
 		}
-		n, err := t.q.RevokeAPIToken(t.ctx, db.RevokeAPITokenParams{ID: row.ID, RevokedAt: sql.NullInt64{Int64: store.Millis(t.now), Valid: true}})
+		n, err := t.q.RevokeAPIToken(t.ctx, db.RevokeAPITokenParams{
+			ID: row.ID, RevokedAt: sql.NullInt64{Int64: store.Millis(t.now), Valid: true},
+			RevokedBy: sql.NullString{String: by, Valid: true},
+		})
 		if err != nil {
 			return err
 		}
@@ -199,8 +244,10 @@ func (m *Manager) RevokeToken(ctx context.Context, a Actor, publicID string, asA
 	})
 }
 
-// ListUserTokens lists a user's tokens, newest first, including revoked and expired ones not yet pruned.
-func ListUserTokens(ctx context.Context, q *db.Queries, userID int64, now time.Time) ([]Token, error) {
+// ListUserTokens lists a user's tokens, newest first, including revoked and expired ones not yet pruned. rolesValidFor
+// is how long an LDAP user's token's roles stay usable without a recheck (Sessions.RolesValidFor), past which it is
+// listed as suspended; zero never suspends.
+func ListUserTokens(ctx context.Context, q *db.Queries, userID int64, now time.Time, rolesValidFor time.Duration) ([]Token, error) {
 	rows, err := q.ListAPITokensForUser(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -209,11 +256,11 @@ func ListUserTokens(ctx context.Context, q *db.Queries, userID int64, now time.T
 	for i, r := range rows {
 		conv[i] = db.GetAPITokenRow(r)
 	}
-	return tokensWithGrants(ctx, q, conv, now)
+	return tokensWithGrants(ctx, q, conv, now, rolesValidFor)
 }
 
-// ListAllTokens lists every user's tokens, by username, then newest first.
-func ListAllTokens(ctx context.Context, q *db.Queries, now time.Time) ([]Token, error) {
+// ListAllTokens lists every user's tokens, by username, then newest first. rolesValidFor is as for ListUserTokens.
+func ListAllTokens(ctx context.Context, q *db.Queries, now time.Time, rolesValidFor time.Duration) ([]Token, error) {
 	rows, err := q.ListAllAPITokens(ctx)
 	if err != nil {
 		return nil, err
@@ -222,10 +269,10 @@ func ListAllTokens(ctx context.Context, q *db.Queries, now time.Time) ([]Token, 
 	for i, r := range rows {
 		conv[i] = db.GetAPITokenRow(r)
 	}
-	return tokensWithGrants(ctx, q, conv, now)
+	return tokensWithGrants(ctx, q, conv, now, rolesValidFor)
 }
 
-func tokensWithGrants(ctx context.Context, q *db.Queries, rows []db.GetAPITokenRow, now time.Time) ([]Token, error) {
+func tokensWithGrants(ctx context.Context, q *db.Queries, rows []db.GetAPITokenRow, now time.Time, rolesValidFor time.Duration) ([]Token, error) {
 	out := make([]Token, len(rows))
 	if len(rows) == 0 {
 		return out, nil
@@ -234,7 +281,7 @@ func tokensWithGrants(ctx context.Context, q *db.Queries, rows []db.GetAPITokenR
 	index := make(map[int64]int, len(rows))
 	for i, r := range rows {
 		ids[i], index[r.ID] = r.ID, i
-		out[i] = tokenFromRow(r, now)
+		out[i] = tokenFromRow(r, now, rolesValidFor)
 	}
 	grants, err := q.ListAPITokenGrants(ctx, ids)
 	if err != nil {
@@ -252,11 +299,12 @@ func tokensWithGrants(ctx context.Context, q *db.Queries, rows []db.GetAPITokenR
 	return out, nil
 }
 
-func tokenFromRow(r db.GetAPITokenRow, now time.Time) Token {
+func tokenFromRow(r db.GetAPITokenRow, now time.Time, rolesValidFor time.Duration) Token {
 	t := Token{
 		PublicID: r.PublicID, UserID: r.UserID, Username: r.Username, Name: r.Name,
 		CreatedAt: store.FromMillis(r.CreatedAt), ExpiresAt: store.FromMillis(r.ExpiresAt), LastUsedIP: r.LastUsedIp,
 		Grants: []Grant{}, State: TokenActive,
+		id: r.ID, ownerLDAP: r.OwnerSource == "ldap", ownerDisabled: r.OwnerDisabled,
 	}
 	if r.LastUsedAt.Valid {
 		t.LastUsedAt = store.FromMillis(r.LastUsedAt.Int64)
@@ -264,10 +312,72 @@ func tokenFromRow(r db.GetAPITokenRow, now time.Time) Token {
 	switch {
 	case r.RevokedAt.Valid:
 		t.RevokedAt, t.State = store.FromMillis(r.RevokedAt.Int64), TokenRevoked
+		t.RevokedBy, t.RevokedReason = r.RevokedBy.String, r.RevokedReason.String
 	case !t.ExpiresAt.After(now):
 		t.State = TokenExpired
+	case r.RolesCheckedAt.Valid && RolesStale(store.FromMillis(r.RolesCheckedAt.Int64), now, rolesValidFor):
+		t.State = TokenSuspended
 	}
 	return t
+}
+
+// TokenRefusals fills in Refused for each live token, in the order the gate checks them: a disabled owner refuses an
+// active or suspended token; a suspended one is otherwise left to its state, since its roles aren't trusted; an active
+// one is refused while its owner must set up two-factor login (totpHold, given the roles the token is checked with),
+// then while those roles lack tokens.use. Those roles are the user's for a local user and the token's own for an LDAP
+// user's, so two of an LDAP user's tokens can differ until the next recheck.
+func TokenRefusals(ctx context.Context, q *db.Queries, ts []Token,
+	totpHold func(ctx context.Context, userID int64, roleIDs []int64) (bool, error)) error {
+	userRoles := map[int64][]int64{}
+	for i := range ts {
+		t := &ts[i]
+		if t.State != TokenActive && t.State != TokenSuspended {
+			continue
+		}
+		if t.ownerDisabled {
+			t.Refused = RefusedOwnerDisabled
+			continue
+		}
+		if t.State != TokenActive {
+			continue
+		}
+		var roleIDs []int64
+		var err error
+		if t.ownerLDAP {
+			roleIDs, err = q.ListAPITokenRoleIDs(ctx, t.id)
+		} else if r, ok := userRoles[t.UserID]; ok {
+			roleIDs = r
+		} else {
+			roleIDs, err = q.ListUserRoleIDs(ctx, t.UserID)
+			userRoles[t.UserID] = roleIDs
+		}
+		if err != nil {
+			return fmt.Errorf("rbac: token owner's roles: %w", err)
+		}
+		hold, err := totpHold(ctx, t.UserID, roleIDs)
+		if err != nil {
+			return err
+		}
+		if hold {
+			t.Refused = RefusedTOTPSetup
+			continue
+		}
+		set, err := Resolve(ctx, q, roleIDs)
+		if err != nil {
+			return err
+		}
+		if !set.CanGlobal(TokensUse) {
+			t.Refused = RefusedLacksTokensUse
+		}
+	}
+	return nil
+}
+
+// RolesStale reports whether roles last confirmed at checked are too old to use at now: older than rolesValidFor,
+// the recheck interval plus the grace period. Zero rolesValidFor is never stale. Sessions end at the same point; the
+// gate suspends a token there, and the token list says so.
+func RolesStale(checked, now time.Time, rolesValidFor time.Duration) bool {
+	return rolesValidFor > 0 && now.Sub(checked) > rolesValidFor
 }
 
 // PruneTokens deletes tokens revoked or expired more than tokens.KeepFor ago, and returns how many. Their audit rows

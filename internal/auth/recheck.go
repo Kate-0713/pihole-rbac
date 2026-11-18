@@ -26,15 +26,18 @@ type Directory interface {
 	Lookup(ctx context.Context, username string) (*Identity, error)
 }
 
-// Rechecker keeps the roles of logged-in LDAP users in step with the directory. An LDAP user's roles live only in
-// their sessions, taken from their groups at login, so without this a user removed from a group would keep the role
-// until their session ended.
+// Rechecker keeps the roles of LDAP users' sessions and API tokens in step with the directory. An LDAP user's roles
+// live only in their sessions and tokens, taken from their groups at login (and from the session that made a token),
+// so without this a user removed from a group would keep the role until their session ended or their token expired.
 //
-// It runs in the background, never in a request. Every minute it finds the LDAP users that have a session whose
-// roles were last checked more than Interval ago, looks each one up with the service account, and replaces the roles
-// of all their sessions with what their groups map to now. A user with no role left, or no longer in the directory,
-// loses their sessions. If the directory can't be reached nothing changes; Sessions.Get ends sessions whose last
-// successful check is older than the interval plus the grace period.
+// It runs in the background, never in a request. Every minute it finds the LDAP users that have a session, or a live
+// token, whose roles were last checked more than Interval ago, looks each one up with the service account, and
+// replaces the roles of all their sessions and live tokens with what their groups map to now. A user with no role
+// left, or no longer in the directory, loses their sessions and has their tokens revoked. If the directory can't be
+// reached nothing changes: Sessions.Get ends sessions whose last successful check is older than the interval plus the
+// grace period, and the API suspends tokens in the same state until a recheck succeeds. A disabled user's sessions are
+// removed, but their tokens are left alone: they are refused while the account is disabled, and are rechecked once it
+// is enabled again.
 type Rechecker struct {
 	Store *store.Store
 	Audit *audit.Logger
@@ -83,7 +86,10 @@ func (r *Rechecker) RunOnce(ctx context.Context) error {
 	if interval <= 0 {
 		interval = DefaultRecheckInterval
 	}
-	due, err := r.Store.Read().ListLDAPUsersDueForRecheck(ctx, store.Millis(r.now().Add(-interval)))
+	now := r.now()
+	due, err := r.Store.Read().ListLDAPUsersDueForRecheck(ctx, db.ListLDAPUsersDueForRecheckParams{
+		Cutoff: store.Millis(now.Add(-interval)), Now: store.Millis(now),
+	})
 	if err != nil || len(due) == 0 {
 		return err
 	}
@@ -129,18 +135,30 @@ func (r *Rechecker) RunOnce(ctx context.Context) error {
 	return nil
 }
 
-// apply brings one user's sessions in step with the directory. id is nil when the user is gone from it. The roles are
-// worked out inside the transaction, so a mapping changed while the lookup was running is not applied late. A change
-// is audited once, after the commit, as ldap_recheck.
+// apply brings one user's sessions and live tokens in step with the directory. id is nil when the user is gone from
+// it, or disabled in the app. The roles are worked out inside the transaction, so a mapping changed while the lookup
+// was running is not applied late. A change is audited after the commit: as ldap_recheck for the user, and as
+// token_revoke (by recheck, with the reason) for each token it revokes.
 func (r *Rechecker) apply(ctx context.Context, u db.ListLDAPUsersDueForRecheckRow, id *Identity, record bool) error {
 	now := r.now()
 	entry := audit.Entry{UserID: u.ID, Username: u.Username, Action: audit.ActionLDAPRecheck, Target: u.Username, Detail: map[string]any{}}
+	var revoked []audit.Entry
 	changed := false
 
 	err := r.Store.WithTx(ctx, func(q *db.Queries) error {
 		sessions, err := q.ListUserSessions(ctx, u.ID)
-		if err != nil || len(sessions) == 0 {
+		if err != nil {
 			return err
+		}
+		// A disabled user's tokens aren't touched (see Rechecker), so only their sessions count here.
+		var tokens []db.ListLiveLDAPTokensForUserRow
+		if !u.Disabled {
+			if tokens, err = q.ListLiveLDAPTokensForUser(ctx, db.ListLiveLDAPTokensForUserParams{UserID: u.ID, Now: store.Millis(now)}); err != nil {
+				return err
+			}
+		}
+		if len(sessions) == 0 && len(tokens) == 0 {
+			return nil
 		}
 		end := func(reason string) error {
 			n, err := q.DeleteUserSessions(ctx, u.ID)
@@ -148,12 +166,35 @@ func (r *Rechecker) apply(ctx context.Context, u db.ListLDAPUsersDueForRecheckRo
 				return err
 			}
 			entry.Detail["reason"], entry.Detail["sessions_ended"] = reason, n
+			for _, tk := range tokens {
+				if _, err := q.RevokeAPIToken(ctx, db.RevokeAPITokenParams{
+					ID: tk.ID, RevokedAt: sql.NullInt64{Int64: store.Millis(now), Valid: true},
+					RevokedBy: sql.NullString{String: "recheck", Valid: true}, RevokedReason: sql.NullString{String: reason, Valid: true},
+				}); err != nil {
+					return err
+				}
+				revoked = append(revoked, audit.Entry{
+					At: now, UserID: u.ID, Username: u.Username, Action: audit.ActionTokenRevoke,
+					Target: "token:" + u.Username + "/" + tk.Name,
+					Detail: map[string]any{"token_id": tk.PublicID, "by": "recheck", "reason": reason},
+				})
+			}
+			if len(tokens) > 0 {
+				entry.Detail["tokens_revoked"] = len(tokens)
+			}
 			if !record {
 				return nil
 			}
 			changed = true
-			_, err = audit.Insert(ctx, q, entry)
-			return err
+			if _, err := audit.Insert(ctx, q, entry); err != nil {
+				return err
+			}
+			for _, e := range revoked {
+				if _, err := audit.Insert(ctx, q, e); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		if id == nil {
 			if u.Disabled {
@@ -181,11 +222,22 @@ func (r *Rechecker) apply(ctx context.Context, u db.ListLDAPUsersDueForRecheckRo
 				return err
 			}
 		}
-		current, err := q.ListSessionRoleIDsForUser(ctx, u.ID)
+		// What the user held before: their sessions' roles, or with no session, their tokens'.
+		var current []int64
+		if len(sessions) > 0 {
+			current, err = q.ListSessionRoleIDsForUser(ctx, u.ID)
+		} else {
+			current, err = q.ListLiveLDAPTokenRoleIDsForUser(ctx, db.ListLiveLDAPTokenRoleIDsForUserParams{UserID: u.ID, Now: store.Millis(now)})
+		}
 		if err != nil {
 			return err
 		}
 		if !slices.Equal(current, roles) {
+			entry.Detail["roles_added"] = difference(roles, current)
+			entry.Detail["roles_removed"] = difference(current, roles)
+			changed = true
+		}
+		if len(sessions) > 0 && !slices.Equal(current, roles) {
 			if err := q.ClearSessionRolesForUser(ctx, u.ID); err != nil {
 				return err
 			}
@@ -194,11 +246,25 @@ func (r *Rechecker) apply(ctx context.Context, u db.ListLDAPUsersDueForRecheckRo
 					return err
 				}
 			}
-			entry.Detail["roles_added"] = difference(roles, current)
-			entry.Detail["roles_removed"] = difference(current, roles)
-			changed = true
+		}
+		// Every live token gets the roles, whatever it held: tokens made at different times can differ, and writing a
+		// few rows is cheaper than comparing each.
+		for _, tk := range tokens {
+			if err := q.ClearAPITokenRoles(ctx, tk.ID); err != nil {
+				return err
+			}
+			for _, role := range roles {
+				if err := q.AddAPITokenRole(ctx, db.AddAPITokenRoleParams{TokenID: tk.ID, RoleID: role}); err != nil {
+					return err
+				}
+			}
 		}
 		if err := q.SetUserSessionsRolesChecked(ctx, db.SetUserSessionsRolesCheckedParams{RolesCheckedAt: store.Millis(now), UserID: u.ID}); err != nil {
+			return err
+		}
+		if err := q.SetUserTokensRolesChecked(ctx, db.SetUserTokensRolesCheckedParams{
+			RolesCheckedAt: sql.NullInt64{Int64: store.Millis(now), Valid: true}, UserID: u.ID,
+		}); err != nil {
 			return err
 		}
 		if !changed {
@@ -212,6 +278,9 @@ func (r *Rechecker) apply(ctx context.Context, u db.ListLDAPUsersDueForRecheckRo
 	}
 	if changed {
 		r.Audit.Log(entry)
+		for _, e := range revoked {
+			r.Audit.Log(e)
+		}
 	}
 	return nil
 }

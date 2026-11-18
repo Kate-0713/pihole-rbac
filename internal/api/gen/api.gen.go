@@ -18,11 +18,54 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for APITokenRefused.
+const (
+	LacksTokensUse    APITokenRefused = "lacks_tokens_use"
+	OwnerDisabled     APITokenRefused = "owner_disabled"
+	TotpSetupRequired APITokenRefused = "totp_setup_required"
+)
+
+// Valid indicates whether the value is a known member of the APITokenRefused enum.
+func (e APITokenRefused) Valid() bool {
+	switch e {
+	case LacksTokensUse:
+		return true
+	case OwnerDisabled:
+		return true
+	case TotpSetupRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for APITokenRevokedBy.
+const (
+	Admin   APITokenRevokedBy = "admin"
+	Recheck APITokenRevokedBy = "recheck"
+	Self    APITokenRevokedBy = "self"
+)
+
+// Valid indicates whether the value is a known member of the APITokenRevokedBy enum.
+func (e APITokenRevokedBy) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case Recheck:
+		return true
+	case Self:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for APITokenState.
 const (
-	APITokenStateActive  APITokenState = "active"
-	APITokenStateExpired APITokenState = "expired"
-	APITokenStateRevoked APITokenState = "revoked"
+	APITokenStateActive    APITokenState = "active"
+	APITokenStateExpired   APITokenState = "expired"
+	APITokenStateRevoked   APITokenState = "revoked"
+	APITokenStateSuspended APITokenState = "suspended"
 )
 
 // Valid indicates whether the value is a known member of the APITokenState enum.
@@ -33,6 +76,8 @@ func (e APITokenState) Valid() bool {
 	case APITokenStateExpired:
 		return true
 	case APITokenStateRevoked:
+		return true
+	case APITokenStateSuspended:
 		return true
 	default:
 		return false
@@ -1969,10 +2014,19 @@ type APIToken struct {
 	// PublicId The part of the token after prt_ and before the secret; safe to show and log.
 	PublicId string `json:"public_id"`
 
+	// Refused Why every request with a live token is refused because of its owner, though the token itself is fine: the owner is disabled (refused whether active or suspended), must set up two-factor login, or doesn't hold tokens.use (for an LDAP user's token, as of the token's last recheck). The token is not revoked, and works again once the owner's account allows it. Absent when nothing is refused, and for expired and revoked tokens.
+	Refused *APITokenRefused `json:"refused,omitempty"`
+
 	// RevokedAt Absent unless revoked.
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 
-	// State active until it expires or is revoked. An active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login.
+	// RevokedBy Who revoked a token: its owner, an admin, or the LDAP recheck (when no role maps to the owner's groups any more, or they are gone from the directory). Absent unless revoked, and for tokens revoked before this was recorded.
+	RevokedBy *APITokenRevokedBy `json:"revoked_by,omitempty"`
+
+	// RevokedReason Why the LDAP recheck revoked it, in words. Absent otherwise.
+	RevokedReason *string `json:"revoked_reason,omitempty"`
+
+	// State active until it expires or is revoked. An LDAP user's token is suspended while the directory hasn't confirmed its roles for longer than the recheck interval plus the grace period, and active again once a recheck has. An active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login; `refused` says which.
 	State  APITokenState `json:"state"`
 	UserId int64         `json:"user_id"`
 
@@ -2001,7 +2055,13 @@ type APITokenList struct {
 	Tokens []APIToken `json:"tokens"`
 }
 
-// APITokenState active until it expires or is revoked. An active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login.
+// APITokenRefused Why every request with a live token is refused because of its owner, though the token itself is fine: the owner is disabled (refused whether active or suspended), must set up two-factor login, or doesn't hold tokens.use (for an LDAP user's token, as of the token's last recheck). The token is not revoked, and works again once the owner's account allows it. Absent when nothing is refused, and for expired and revoked tokens.
+type APITokenRefused string
+
+// APITokenRevokedBy Who revoked a token: its owner, an admin, or the LDAP recheck (when no role maps to the owner's groups any more, or they are gone from the directory). Absent unless revoked, and for tokens revoked before this was recorded.
+type APITokenRevokedBy string
+
+// APITokenState active until it expires or is revoked. An LDAP user's token is suspended while the directory hasn't confirmed its roles for longer than the recheck interval plus the grace period, and active again once a recheck has. An active token is still refused while its owner lacks tokens.use, is disabled, or must set up two-factor login; `refused` says which.
 type APITokenState string
 
 // About defines model for About.

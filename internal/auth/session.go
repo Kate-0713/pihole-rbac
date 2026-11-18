@@ -100,6 +100,12 @@ func NewSessions(st *store.Store, key func() secrets.Value, opts SessionOptions)
 // SetLifetimes changes the absolute lifetime and the idle timeout. A new lifetime applies to sessions created from now
 // on, since each session's end is fixed when it starts; a new idle timeout applies to every session at once. Zero
 // keeps a value as it is.
+// RolesValidFor is how long an LDAP user's roles stay usable without a successful recheck: the recheck interval plus
+// the grace period. A session ends after it; an API token is suspended until a recheck succeeds.
+func (s *Sessions) RolesValidFor() time.Duration {
+	return s.opts.RecheckInterval + s.opts.RecheckGrace
+}
+
 func (s *Sessions) SetLifetimes(lifetime, idle time.Duration) {
 	if lifetime > 0 {
 		s.lifetime.Store(int64(lifetime))

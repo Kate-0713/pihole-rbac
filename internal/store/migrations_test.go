@@ -34,6 +34,9 @@ var releasedMigrations = map[string]string{
 	"00008_client_overrides.sql":             "5d25b3286763bd1f845cc6528a703a3277a8d219a6405805d0af4d7e661553de", // v2.6.0
 	"00009_dhcp.sql":                         "9cc6d2d1141ecec2065dcc95f5283a75a080ccb5e749dba01caac7167cc26769", // v2.7.0
 	"00010_totp.sql":                         "442ecf854f8c9b742d1567b37ba6b5b6081c7fff82e49ce6d2d0921ead89aeb9", // v2.8.0
+	"00011_api_tokens.sql":                   "1d0a803a56da1f85b968a03b65ab2cab93838fe4c8ff8d0a49e7bf7738559d9b", // v2.9.0
+	"00012_api_token_roles.sql":              "0121e51b26bb964e46b38519b2936c73ad4d8388b622fbda072aaee7538c17b1", // v2.9.0
+	"00013_api_token_revoked_by.sql":         "3bd6a1e5871b5c26ec0f11665de7b19ff234b46c46fd42e36f6ef87139ddad0f", // v2.9.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
@@ -932,5 +935,169 @@ func TestUpgradeFromV2_8_0(t *testing.T) {
 		if err := s.r.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil || n != 0 {
 			t.Errorf("after migrating up again: %s has %d rows, %v", table, n, err)
 		}
+	}
+}
+
+// TestUpgradeFrom00011: a database that ran 00011 before v2.9.0 was tagged (its first phase, on a test install) gets
+// roles_checked_at on api_tokens, empty for the tokens it has, and api_token_roles. A token's role is unique, needs a
+// token and a role, and goes with either. Migrating down to 11 removes both and keeps the tokens, and up again
+// restores them.
+func TestUpgradeFrom00011(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 11))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO users (id, username, source, password_hash, created_at) VALUES (5, 'alice', 'local', 'x', 1)`,
+		`INSERT INTO users (id, username, source, ldap_dn, created_at) VALUES (6, 'bob', 'ldap', 'cn=bob,dc=lab', 1)`,
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1), (11, 'readers', 1)`,
+		`INSERT INTO api_tokens (id, public_id, user_id, name, secret_hash, created_at, expires_at)
+			VALUES (1, 'aaaaaaaaaaaaaaaa', 5, 'cron', zeroblob(32), 1, 2)`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	exec := func(q string, args ...any) error {
+		_, err := s.w.Exec(q, args...)
+		return err
+	}
+	var checked sql.NullInt64
+	if err := s.r.QueryRow(`SELECT roles_checked_at FROM api_tokens WHERE id = 1`).Scan(&checked); err != nil || checked.Valid {
+		t.Errorf("an existing token: roles_checked_at %v, %v; want NULL", checked, err)
+	}
+	if err := exec(`INSERT INTO api_tokens (id, public_id, user_id, name, secret_hash, created_at, expires_at, roles_checked_at)
+		VALUES (2, 'bbbbbbbbbbbbbbbb', 6, 'ldap', zeroblob(32), 1, 2, 1)`); err != nil {
+		t.Fatalf("an LDAP user's token: %v", err)
+	}
+	if err := exec(`INSERT INTO api_token_roles (token_id, role_id) VALUES (2, 10), (2, 11)`); err != nil {
+		t.Fatalf("its roles: %v", err)
+	}
+	for name, values := range map[string]string{
+		"a role twice":          `(2, 10)`,
+		"a token that's absent": `(99, 10)`,
+		"a role that's absent":  `(2, 99)`,
+	} {
+		if err := exec(`INSERT INTO api_token_roles (token_id, role_id) VALUES ` + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	count := func() int {
+		var n int
+		if err := s.r.QueryRow(`SELECT count(*) FROM api_token_roles`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if err := exec(`DELETE FROM roles WHERE id = 11`); err != nil {
+		t.Fatalf("deleting a role a token holds: %v", err)
+	}
+	if n := count(); n != 1 {
+		t.Errorf("after deleting a role: %d token roles, want 1", n)
+	}
+	if err := exec(`DELETE FROM api_tokens WHERE id = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(); n != 0 {
+		t.Errorf("after deleting the token: %d token roles, want 0", n)
+	}
+
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 11); err != nil {
+		t.Fatalf("down to 11: %v", err)
+	}
+	if ok, err := s.tableExists(ctx, "api_token_roles"); err != nil || ok {
+		t.Errorf("after migrating down: api_token_roles still exists (%v)", err)
+	}
+	if err := s.r.QueryRow(`SELECT roles_checked_at FROM api_tokens`).Scan(&checked); err == nil {
+		t.Error("after migrating down: api_tokens still has roles_checked_at")
+	}
+	var tokens int
+	if err := s.r.QueryRow(`SELECT count(*) FROM api_tokens`).Scan(&tokens); err != nil || tokens != 1 {
+		t.Errorf("after migrating down: %d tokens, %v; want alice's 1", tokens, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if ok, err := s.tableExists(ctx, "api_token_roles"); err != nil || !ok {
+		t.Errorf("after migrating up again: no api_token_roles (%v)", err)
+	}
+}
+
+// TestUpgradeFrom00012: a database that ran 00012 before v2.9.0 was tagged gets revoked_by and revoked_reason on
+// api_tokens, empty for the tokens it has. revoked_by is self, admin or recheck; a reason can't be empty. Migrating
+// down to 12 removes both and keeps the tokens.
+func TestUpgradeFrom00012(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 12))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO users (id, username, source, password_hash, created_at) VALUES (5, 'alice', 'local', 'x', 1)`,
+		`INSERT INTO api_tokens (id, public_id, user_id, name, secret_hash, created_at, expires_at, revoked_at)
+			VALUES (1, 'aaaaaaaaaaaaaaaa', 5, 'old', zeroblob(32), 1, 2, 2)`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	var by, reason sql.NullString
+	if err := s.r.QueryRow(`SELECT revoked_by, revoked_reason FROM api_tokens WHERE id = 1`).Scan(&by, &reason); err != nil || by.Valid || reason.Valid {
+		t.Errorf("a token revoked before: by %v, reason %v, %v; want both NULL", by, reason, err)
+	}
+	update := func(by, reason any) error {
+		_, err := s.w.Exec(`UPDATE api_tokens SET revoked_by = ?, revoked_reason = ? WHERE id = 1`, by, reason)
+		return err
+	}
+	for _, v := range []string{"self", "admin", "recheck"} {
+		if err := update(v, nil); err != nil {
+			t.Errorf("revoked_by %s: %v", v, err)
+		}
+	}
+	if err := update("recheck", "not in the directory"); err != nil {
+		t.Errorf("a reason: %v", err)
+	}
+	if err := update("somebody", nil); err == nil {
+		t.Error("an unknown revoked_by: accepted")
+	}
+	if err := update("recheck", ""); err == nil {
+		t.Error("an empty reason: accepted")
+	}
+
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 12); err != nil {
+		t.Fatalf("down to 12: %v", err)
+	}
+	if err := s.r.QueryRow(`SELECT revoked_by FROM api_tokens`).Scan(&by); err == nil {
+		t.Error("after migrating down: api_tokens still has revoked_by")
+	}
+	var n int
+	if err := s.r.QueryRow(`SELECT count(*) FROM api_tokens`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("after migrating down: %d tokens, %v", n, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
 	}
 }

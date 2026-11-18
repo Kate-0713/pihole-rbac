@@ -70,7 +70,7 @@ func TestDeleteInstanceUsedByToken(t *testing.T) {
 	if err := e.svc.Delete(e.ctx, e.admin, b); err != nil {
 		t.Fatalf("deleting an instance only dead tokens name: %v", err)
 	}
-	toks, err := rbac.ListUserTokens(e.ctx, e.st.Read(), e.admin.UserID, t0)
+	toks, err := rbac.ListUserTokens(e.ctx, e.st.Read(), e.admin.UserID, t0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
