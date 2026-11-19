@@ -91,12 +91,15 @@ func (s *Server) finishWrite(ctx context.Context, outs []outcome, results any) (
 	}
 	switch {
 	case okCount == len(outs):
+		s.m.writes.Inc("ok")
 		return false, nil
 	case okCount == 0:
+		s.m.writes.Inc("failed")
 		failed := *first
 		failed.Results = results
 		return false, &failed
 	}
+	s.m.writes.Inc("partial")
 	for _, o := range outs {
 		if !o.ok() {
 			s.logFailure(info(ctx).r.Pattern, o.err)

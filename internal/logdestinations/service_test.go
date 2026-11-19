@@ -6,6 +6,7 @@ package logdestinations
 import (
 	"bytes"
 	"context"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics/metricstest"
 	"io"
 	"log/slog"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
@@ -28,7 +30,7 @@ type env struct {
 	nobody rbac.Actor
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T, modify ...func(*Service)) *env {
 	t.Helper()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(context.Background(), store.Options{DataDir: t.TempDir(), Logger: quiet})
@@ -42,6 +44,9 @@ func newEnv(t *testing.T) *env {
 		Tune: func(f *syslogfwd.Forwarder) {
 			f.Poll, f.BackoffMin, f.BackoffMax, f.FailAfter = 20*time.Millisecond, 10*time.Millisecond, 40*time.Millisecond, 150*time.Millisecond
 		},
+	}
+	for _, m := range modify {
+		m(svc)
 	}
 	al.SetSink(func(audit.Entry) { svc.Nudge() })
 	ctx, cancel := context.WithCancel(context.Background())
@@ -517,4 +522,56 @@ func TestStartRunsEnabledDestinations(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("%d forwarders running", n)
 	}
+}
+
+func TestForwardMetrics(t *testing.T) {
+	reg := metrics.New()
+	e := newEnv(t, func(s *Service) { s.Metrics = reg })
+	ctx := context.Background()
+	scrape := func() string {
+		var b strings.Builder
+		if _, err := reg.WriteTo(&b); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+	waitSeries := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(scrape(), want) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %q in:\n%s", want, scrape())
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	c := syslogtest.NewTCP(t)
+	in := tcp("Main", c)
+	d, err := e.svc.Create(ctx, e.admin, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitHas(t, c, "logdest_create")
+	waitSeries(`pihole_rbac_log_forward_total{destination="Main",result="sent"} `)
+
+	// A rename moves the series without restarting the forwarder, and the next rows count under the new name.
+	in.Name = "Renamed"
+	if _, err := e.svc.Update(ctx, e.admin, d.ID, in); err != nil {
+		t.Fatal(err)
+	}
+	waitSeries(`pihole_rbac_log_forward_total{destination="Renamed",result="sent"} `)
+	if out := scrape(); strings.Contains(out, `destination="Main"`) {
+		t.Errorf("the old name is still a series:\n%s", out)
+	}
+
+	// Deleting drops them, and the drain's last rows can't bring them back.
+	if err := e.svc.Delete(ctx, e.admin, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.svc.Wait()
+	if out := scrape(); strings.Contains(out, "destination=") {
+		t.Errorf("a deleted destination still has series:\n%s", out)
+	}
+	metricstest.Dump(t, reg)
 }

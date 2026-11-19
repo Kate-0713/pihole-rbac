@@ -54,3 +54,13 @@ DELETE FROM client_reset_runs WHERE status <> 'running' AND started_at < ?;
 
 -- name: UpdateClientResetRuleGroups :exec
 UPDATE client_reset_targets SET target_groups = ? WHERE id = ?;
+
+-- The newest finished run of each target that still exists, for the metrics. name is the target's current name.
+-- name: ListLastClientResetRuns :many
+SELECT r.target, COALESCE(i.name, g.name) AS name, r.finished_at, r.status
+FROM client_reset_runs r
+LEFT JOIN instances i ON i.id = r.instance_id
+LEFT JOIN instance_groups g ON g.id = r.group_id
+WHERE r.status <> 'running'
+  AND (i.id IS NOT NULL OR g.id IS NOT NULL)
+  AND r.id = (SELECT max(id) FROM client_reset_runs WHERE target = r.target AND status <> 'running');

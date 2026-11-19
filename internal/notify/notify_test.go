@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics/metricstest"
 	"io"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 )
@@ -629,5 +631,68 @@ func TestProtectedAlertsForTemporaryChanges(t *testing.T) {
 		if len(alerts) != 1 || ForProtectedAlert(e, alerts[0]).Plain() != tc.want {
 			t.Errorf("%s: alerts %+v, message %q", tc.action, alerts, tc.want)
 		}
+	}
+}
+
+func TestNotifierMetrics(t *testing.T) {
+	var mu sync.Mutex
+	fail := false
+	f := newFake(t, func(w http.ResponseWriter, r *http.Request, _ int) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fail {
+			w.WriteHeader(http.StatusNotFound) // not retryable
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	reg := metrics.New()
+	n := &Notifier{Sender: f.sender(), QueueSize: 2, Metrics: reg}
+	scrape := func() string {
+		var b strings.Builder
+		if _, err := reg.WriteTo(&b); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+	d := discordDest()
+	// Nothing is running yet: two fit, the third is dropped.
+	for range 3 {
+		n.Enqueue(Job{Destination: d, Message: &Message{}, Event: "e"})
+	}
+	if n.QueueLength() != 2 {
+		t.Errorf("queue length %d, want 2", n.QueueLength())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go n.Run(ctx)
+	waitUntil := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(scrape(), want) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %q in:\n%s", want, scrape())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	waitUntil(`pihole_rbac_notifications_total{result="sent"} 2`)
+	mu.Lock()
+	fail = true
+	mu.Unlock()
+	n.Enqueue(Job{Destination: d, Message: &Message{}, Event: "e"})
+	waitUntil(`pihole_rbac_notifications_total{result="failed"} 1`)
+	if out := scrape(); !strings.Contains(out, `pihole_rbac_notifications_total{result="dropped"} 1`) {
+		t.Errorf("drop not counted:\n%s", out)
+	}
+	metricstest.Dump(t, reg)
+}
+
+func TestNotifierWithoutMetrics(t *testing.T) {
+	n := &Notifier{QueueSize: 1}
+	n.Enqueue(Job{Destination: discordDest(), Message: &Message{}})
+	n.Enqueue(Job{Destination: discordDest(), Message: &Message{}}) // dropped, counted nowhere
+	if n.dropped.Load() != 1 {
+		t.Errorf("dropped %d", n.dropped.Load())
 	}
 }

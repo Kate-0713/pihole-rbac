@@ -30,6 +30,7 @@ const (
 // and Origin checks when they change state.
 var routePermission = map[string]string{
 	"GET /healthz":                 accessPublic,
+	"GET /metrics":                 accessPublic,
 	"GET /api/v1/about":            accessPublic,
 	"GET /api/v1/auth/csrf":        accessPublic,
 	"POST /api/v1/auth/login":      accessPublic,
@@ -321,6 +322,7 @@ func parseAccess(v string) (kind, permission string, ok bool) {
 // setup_required until then. The CSRF endpoint is among them because completing setup is a POST.
 var setupRoutes = map[string]bool{
 	"GET /healthz":             true,
+	"GET /metrics":             true,
 	"GET /api/v1/about":        true,
 	"GET /api/v1/auth/csrf":    true,
 	"GET /api/v1/setup/status": true,

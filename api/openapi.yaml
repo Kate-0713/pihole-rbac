@@ -44,6 +44,49 @@ paths:
                 type: string
                 const: ok
 
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: >-
+        The app's own metrics in the Prometheus text format, for a monitoring system to scrape. Outside `/api/v1` and
+        outside sessions, CSRF and Origin checks, like `/healthz`. It needs `Authorization: Bearer <token>`, where
+        the token is the one in `PIHOLE_RBAC_METRICS_TOKEN`: a single shared secret for scraping, not a personal API
+        token, and it opens nothing else. While no token is set the answer is 404, so nothing is exposed until
+        someone chooses to. Wrong tokens are counted per client address by a limiter of their own, which answers 429
+        with `Retry-After` and never touches the login limits. Instance, group and destination names appear as label
+        values; no secret, session or request input ever does. Available before first-run setup is complete.
+      operationId: metrics
+      security:
+        - metricsToken: []
+      x-permission: public
+      responses:
+        "200":
+          description: The metrics, in the Prometheus text exposition format, version 0.0.4.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: >-
+            The Authorization header is missing, isn't a bearer token, or has the wrong token (code
+            `invalid_token`). Carries `WWW-Authenticate: Bearer`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No metrics token is set, so metrics are off.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many wrong tokens from this address (code `rate_limited`). Carries `Retry-After`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/v1/about:
     get:
       summary: Source code location and licence
@@ -5468,6 +5511,10 @@ components:
       type: http
       scheme: bearer
       description: A personal API token, prt_<public_id>_<secret>. Only operations marked x-token accept one.
+    metricsToken:
+      type: http
+      scheme: bearer
+      description: The shared token in PIHOLE_RBAC_METRICS_TOKEN. It opens GET /metrics and nothing else.
 
   responses:
     Unauthenticated:
@@ -5838,7 +5885,7 @@ components:
           description: The environment variable, without a _FILE suffix.
         kind:
           type: string
-          enum: [master_key, session_key, ldap_bind_password, instance_password, channel_secret]
+          enum: [master_key, session_key, ldap_bind_password, instance_password, channel_secret, metrics_token]
         set:
           type: boolean
         source:

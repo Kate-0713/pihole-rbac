@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
 	"github.com/Kate-0713/pihole-rbac/internal/store"
 	"github.com/Kate-0713/pihole-rbac/internal/store/db"
@@ -113,13 +114,17 @@ type Service struct {
 	Tune func(*syslogfwd.Forwarder)
 	// DrainTimeout overrides the package's, for tests.
 	DrainTimeout time.Duration
+	// Metrics receives pihole_rbac_log_forward_total{destination,result}. nil counts nothing.
+	Metrics *metrics.Registry
 
 	mu sync.Mutex // one change at a time, from reading the destination to starting its forwarder
 
-	rmu     sync.Mutex
-	root    context.Context
-	running map[int64]*runner
-	wg      sync.WaitGroup
+	rmu       sync.Mutex
+	root      context.Context
+	running   map[int64]*runner
+	forwarded *metrics.Counter // nil without Metrics
+	names     map[int64]string // each started destination's current name, for the metric label
+	wg        sync.WaitGroup
 }
 
 type runner struct {
@@ -530,6 +535,14 @@ func (s *Service) Update(ctx context.Context, a rbac.Actor, id int64, in Input) 
 	}
 	rd.changeID = changeID
 	s.apply(ctx, rd)
+	if before.Name != norm.Name {
+		s.rmu.Lock()
+		if _, ok := s.names[id]; ok {
+			s.names[id] = norm.Name
+		}
+		s.rmu.Unlock()
+		s.forgetSeries(id, before.Name, false)
+	}
 	return s.Get(ctx, id)
 }
 
@@ -587,12 +600,18 @@ func (s *Service) apply(ctx context.Context, rd *redirect) {
 		return
 	}
 	if !rd.drain {
+		if rd.deleted {
+			s.forgetSeries(rd.old.ID, rd.old.Name, true)
+		}
 		return
 	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		s.tellOld(old, rd)
+		if rd.deleted {
+			s.forgetSeries(rd.old.ID, rd.old.Name, true)
+		}
 		s.settle(context.WithoutCancel(ctx), rd)
 	}()
 }
@@ -711,6 +730,11 @@ func (s *Service) Start(ctx context.Context) error {
 	if s.running == nil {
 		s.running = map[int64]*runner{}
 	}
+	if s.forwarded == nil && s.Metrics != nil {
+		s.forwarded = s.Metrics.Counter("pihole_rbac_log_forward_total",
+			"Audit log forwarding by destination name: sent (rows written to the collector; a row sent again counts again) and failed (passes that failed).",
+			"destination", "result")
+	}
 	s.rmu.Unlock()
 	rows, err := s.Store.Read().ListLogDestinations(ctx)
 	if err != nil {
@@ -746,6 +770,13 @@ func (s *Service) startRow(d Destination) {
 	}
 	f := s.newForwarder(d)
 	f.OnFailing, f.OnRecovered = s.onFailing, s.onRecovered
+	if s.forwarded != nil {
+		if s.names == nil {
+			s.names = map[int64]string{}
+		}
+		s.names[d.ID] = d.Name
+		f.Count = s.countFor(d.ID)
+	}
 	ctx, cancel := context.WithCancel(s.root)
 	r := &runner{f: f, cfg: d.config(), cancel: cancel, done: make(chan struct{})}
 	s.running[d.ID] = r
@@ -753,6 +784,29 @@ func (s *Service) startRow(d Destination) {
 		defer close(r.done)
 		f.Run(ctx)
 	}()
+}
+
+// countFor counts a destination's forwarding under its current name. A destination that was deleted has no name any
+// more, so a forwarder still finishing can't bring its series back.
+func (s *Service) countFor(id int64) func(string, int) {
+	return func(result string, n int) {
+		s.rmu.Lock()
+		name, ok := s.names[id]
+		s.rmu.Unlock()
+		if ok {
+			s.forwarded.Add(float64(n), name, result)
+		}
+	}
+}
+
+// forgetSeries drops a destination's series, and stops counting it if it was deleted rather than renamed.
+func (s *Service) forgetSeries(id int64, name string, deleted bool) {
+	s.rmu.Lock()
+	defer s.rmu.Unlock()
+	if deleted {
+		delete(s.names, id)
+	}
+	s.forwarded.DeleteMatching("destination", name)
 }
 
 // stop ends a destination's forwarder and waits for it, returning it, or nil if none was running.

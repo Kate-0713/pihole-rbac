@@ -26,6 +26,7 @@ const (
 	VarSecretKey        = "PIHOLE_RBAC_SECRET_KEY"
 	VarSessionKey       = "PIHOLE_RBAC_SESSION_KEY"
 	VarLDAPBindPassword = "PIHOLE_RBAC_LDAP_BIND_PASSWORD"
+	VarMetricsToken     = "PIHOLE_RBAC_METRICS_TOKEN"
 
 	instancePrefix = "PIHOLE_RBAC_INSTANCE_"
 	instanceSuffix = "_PASSWORD"
@@ -103,12 +104,18 @@ func Load(opts Options) (*Manager, error) {
 	instanceVars, ierr := discover(environ, instancePrefix, instanceSuffix, "instance")
 	channelVars, cerr := discover(environ, channelPrefix, channelSuffix, "notification channel")
 	errs := []error{ierr, cerr}
-	names := append([]string{VarSecretKey, VarSessionKey, VarLDAPBindPassword}, instanceVars...)
+	names := append([]string{VarSecretKey, VarSessionKey, VarLDAPBindPassword, VarMetricsToken}, instanceVars...)
 	for _, name := range append(names, channelVars...) {
 		v, src, path, err := lookup(m.getenv, name)
 		if err != nil {
 			errs = append(errs, err)
 			continue
+		}
+		if name == VarMetricsToken {
+			if err := checkMetricsToken(v); err != nil {
+				errs = append(errs, err)
+				continue
+			}
 		}
 		m.entries[name] = &entry{value: v, source: src, path: path}
 	}
@@ -235,6 +242,38 @@ func (m *Manager) LDAPBindPassword() (Value, bool) {
 	return v, !v.IsZero()
 }
 
+// MetricsToken returns the bearer token that GET /metrics needs, and whether one is set. Without one, /metrics
+// answers 404. It is read on every request, so a reload takes effect at once.
+func (m *Manager) MetricsToken() (Value, bool) {
+	v := m.get(VarMetricsToken)
+	return v, !v.IsZero()
+}
+
+// Limits of the metrics token, in bytes. 32 characters is what `openssl rand -base64 32` makes.
+const (
+	MinMetricsTokenLen = 32
+	MaxMetricsTokenLen = 256
+)
+
+// checkMetricsToken refuses a token that is too short to resist guessing, too long to be sensible, or has characters
+// an Authorization header can't carry safely. A token that isn't set is fine. The error names the variable, never the
+// value or how it differs.
+func checkMetricsToken(v Value) error {
+	if v.IsZero() {
+		return nil
+	}
+	t := v.Reveal()
+	if len(t) < MinMetricsTokenLen || len(t) > MaxMetricsTokenLen {
+		return fmt.Errorf("%s: must be %d to %d characters", VarMetricsToken, MinMetricsTokenLen, MaxMetricsTokenLen)
+	}
+	for i := 0; i < len(t); i++ {
+		if t[i] <= ' ' || t[i] > '~' {
+			return fmt.Errorf("%s: may only contain printable ASCII characters, without spaces", VarMetricsToken)
+		}
+	}
+	return nil
+}
+
 // InstancePassword returns the password for the instance whose env_name is envName, and whether it is set.
 func (m *Manager) InstancePassword(envName string) (Value, bool) {
 	v := m.get(InstanceVar(envName))
@@ -273,7 +312,7 @@ func (m *Manager) Status() []Status {
 	for name, e := range m.entries {
 		out = append(out, Status{Name: name, Set: !e.value.IsZero(), Source: e.source})
 	}
-	order := map[string]int{VarSecretKey: 0, VarSessionKey: 1, VarLDAPBindPassword: 2}
+	order := map[string]int{VarSecretKey: 0, VarSessionKey: 1, VarLDAPBindPassword: 2, VarMetricsToken: 3}
 	slices.SortFunc(out, func(a, b Status) int {
 		ra, oka := order[a.Name]
 		rb, okb := order[b.Name]
@@ -345,6 +384,11 @@ func (m *Manager) Reload() ReloadResult {
 				continue
 			}
 			v = Value{b: k}
+		case VarMetricsToken:
+			if err := checkMetricsToken(v); err != nil {
+				res.Failed = append(res.Failed, Failure{Name: name, Err: err})
+				continue
+			}
 		}
 		if v.Equal(e.value) {
 			continue
@@ -364,6 +408,7 @@ const (
 	KindLDAPBindPassword Kind = "ldap_bind_password"
 	KindInstancePassword Kind = "instance_password"
 	KindChannelSecret    Kind = "channel_secret"
+	KindMetricsToken     Kind = "metrics_token"
 )
 
 // KindOf returns the kind of the secret held in variable name, or "" for a name that isn't a secret variable.
@@ -375,6 +420,8 @@ func KindOf(name string) Kind {
 		return KindSessionKey
 	case name == VarLDAPBindPassword:
 		return KindLDAPBindPassword
+	case name == VarMetricsToken:
+		return KindMetricsToken
 	case strings.HasPrefix(name, instancePrefix) && strings.HasSuffix(name, instanceSuffix):
 		return KindInstancePassword
 	case strings.HasPrefix(name, channelPrefix) && strings.HasSuffix(name, channelSuffix):

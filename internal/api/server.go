@@ -27,6 +27,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
 	"github.com/Kate-0713/pihole-rbac/internal/logdestinations"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
@@ -79,8 +80,11 @@ type Options struct {
 	TrustedProxies []netip.Prefix
 	LoginByIP      *ratelimit.Limiter // failed logins per client address; nil disables
 	LoginByUser    *ratelimit.Limiter // failed logins per username; nil disables
-	Frontend       *spa.Handler       // the built SPA, served for every path outside /api/; nil serves a "not built" page
-	Logger         *slog.Logger
+	MetricsByIP    *ratelimit.Limiter // wrong GET /metrics tokens per client address; nil disables
+	// MetricsRegistry is what GET /metrics writes; nil writes nothing. The metrics token comes from Secrets.
+	MetricsRegistry *metrics.Registry
+	Frontend        *spa.Handler // the built SPA, served for every path outside /api/; nil serves a "not built" page
+	Logger          *slog.Logger
 	// Now returns the current time, for API token expiry and last use. nil means time.Now.
 	Now func() time.Time
 }
@@ -101,6 +105,8 @@ type Server struct {
 
 	expiredUses  tokenClock // when each expired API token's use was last audited
 	tokenTouches tokenClock // when each API token's last use was last written
+
+	m apiMetrics
 }
 
 func (s *Server) now() time.Time {
@@ -129,7 +135,7 @@ func New(o Options) *Server {
 			return o.Secrets.Cipher()
 		}}
 	}
-	s := &Server{Options: o, mux: http.NewServeMux(), pending: newPendingLogins(), csp: ContentSecurityPolicy}
+	s := &Server{Options: o, mux: http.NewServeMux(), pending: newPendingLogins(), csp: ContentSecurityPolicy, m: newAPIMetrics(o.MetricsRegistry)}
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  s.requestError,
 		ResponseErrorHandlerFunc: s.responseError,
@@ -152,7 +158,7 @@ func New(o Options) *Server {
 // Handler returns the server's http.Handler: security headers and the body cap around every route, the API and the
 // frontend alike.
 func (s *Server) Handler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Security-Policy", s.csp)
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -163,6 +169,7 @@ func (s *Server) Handler() http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 		s.mux.ServeHTTP(w, r)
 	})
+	return s.m.instrument(inner)
 }
 
 // reqInfo is what the gate learned about a request, for the handlers. Strict handlers only get a context, so it
@@ -227,6 +234,14 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Pattern == "GET /healthz" {
 			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Pattern == "GET /metrics" {
+			// Its own token, outside sessions, CSRF and the setup check: there is nothing to scrape before setup, but
+			// an empty answer is no reason to refuse a scraper that is already configured.
+			if s.metricsAuth(w, r) {
+				next.ServeHTTP(w, r)
+			}
 			return
 		}
 

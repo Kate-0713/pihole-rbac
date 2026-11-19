@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/api"
+	"github.com/Kate-0713/pihole-rbac/internal/appmetrics"
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
 	"github.com/Kate-0713/pihole-rbac/internal/auth"
 	"github.com/Kate-0713/pihole-rbac/internal/buildinfo"
@@ -25,6 +26,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/logdestinations"
 	"github.com/Kate-0713/pihole-rbac/internal/logging"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/notify"
 	"github.com/Kate-0713/pihole-rbac/internal/rbac"
@@ -170,7 +172,13 @@ func serve() error {
 	if err := announceSetup(ctx, st, logger); err != nil {
 		return err
 	}
+	// The metrics that GET /metrics writes, once PIHOLE_RBAC_METRICS_TOKEN is set. A collector that fails (a database
+	// read, say) costs its own series and nothing else, and is logged.
+	registry := metrics.New()
+	registry.ErrorFunc = func(err error) { logger.Warn("collecting metrics", "err", err) }
+	metrics.RegisterRuntime(registry, buildinfo.Version)
 	auditLog := audit.NewLogger(logs.Writer)
+	auditLog.SetMetrics(registry)
 
 	// The login methods, LDAP settings and bind password, and the login chain built from them. Saving them through the
 	// API rebuilds the chain and the recheck's directory without a restart.
@@ -187,7 +195,7 @@ func serve() error {
 	byIP, byUser := api.DefaultLoginLimits()
 	// One Pi-hole client per enabled instance. Closing the pool logs every client out of its Pi-hole, so sessions
 	// don't hold Pi-hole's API seats after a restart.
-	pool := instances.New(instances.Options{Passwords: sec, Logger: logger})
+	pool := instances.New(instances.Options{Passwords: sec, Logger: logger, Metrics: registry})
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -204,7 +212,7 @@ func serve() error {
 
 	// Notification channels: every audit entry reaches the notifier once its transaction has committed, and it sends
 	// to the channels that want it in the background. A guard message that can't be delivered is audited.
-	notifier := &notify.Notifier{Logger: logger}
+	notifier := &notify.Notifier{Logger: logger, Metrics: registry}
 	channels := &notifications.Service{Store: st, Audit: auditLog, Secrets: sec, Notifier: notifier, Logger: logger}
 	notifier.Failed = channels.GuardFailed
 	if err := channels.Reload(ctx); err != nil {
@@ -212,7 +220,7 @@ func serve() error {
 	}
 	// Log forwarding: a forwarder per enabled destination reads the audit log from its own cursor. The sink only
 	// nudges them, so nothing depends on it for delivery; a row nobody nudged for is found at the next poll.
-	logDests := &logdestinations.Service{Store: st, Audit: auditLog, Logger: logger}
+	logDests := &logdestinations.Service{Store: st, Audit: auditLog, Logger: logger, Metrics: registry}
 	if err := logDests.Start(ctx); err != nil {
 		return err
 	}
@@ -261,6 +269,23 @@ func serve() error {
 	}
 	go updateService.Run(ctx)
 
+	// What is read when Prometheus scrapes: instance health, drift, sessions, queues, forwarding lag, client reset
+	// runs and whether an update is known. The ones that need the database are cached for 10 seconds.
+	appmetrics.Register(registry, appmetrics.Sources{
+		Pool: pool, Report: drift.Report, Groups: instanceService.ListGroups, Destinations: logDests.List,
+		QueueLength: notifier.QueueLength, Store: st, Lifetimes: sessions.Lifetimes,
+		Update: func(ctx context.Context) (known, available bool, err error) {
+			if !updateService.CheckEnabled() {
+				return false, false, nil
+			}
+			av, err := updateService.LatestRelease(ctx)
+			if err != nil {
+				return false, false, err
+			}
+			return av.Latest != nil, av.UpdateAvailable, nil
+		},
+	})
+
 	server := api.New(api.Options{
 		Store:           st,
 		Sessions:        sessions,
@@ -281,6 +306,8 @@ func serve() error {
 		TrustedProxies:  cfg.TrustedProxies,
 		LoginByIP:       byIP,
 		LoginByUser:     byUser,
+		MetricsByIP:     api.DefaultMetricsLimit(),
+		MetricsRegistry: registry,
 		Frontend:        frontend,
 		Logger:          logger,
 		Restart:         stop, // the same clean shutdown as SIGTERM; systemd or Docker starts the app again

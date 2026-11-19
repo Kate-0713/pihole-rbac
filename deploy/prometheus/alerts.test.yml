@@ -1,0 +1,131 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Unit tests for alerts.example.yml: `promtool test rules alerts.test.yml`.
+
+rule_files:
+  - alerts.example.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      # alpha goes down at 10m; beta is up throughout; gamma has never been called (no series).
+      - series: 'pihole_rbac_instance_up{instance="alpha"}'
+        values: "1x9 0x30"
+      - series: 'pihole_rbac_instance_up{instance="beta"}'
+        values: "1x40"
+      - series: 'up{job="pihole-rbac", instance="app"}'
+        values: "1x40"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PiholeRbacInstanceDown
+        exp_alerts: [] # down for 2 minutes: pending
+      - eval_time: 16m
+        alertname: PiholeRbacInstanceDown
+        exp_alerts:
+          - exp_labels: {severity: critical, instance: alpha}
+            exp_annotations:
+              summary: "Pi-hole alpha is down"
+              description: "pihole-rbac has not been able to use alpha for 5 minutes: it is unreachable, refuses the password, or isn't set up. See Admin, Instances for the last error."
+      - eval_time: 16m
+        alertname: PiholeRbacDown
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="pihole-rbac", instance="app"}'
+        values: "1x5 0x20"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: PiholeRbacDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: PiholeRbacDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: pihole-rbac, instance: app}
+            exp_annotations:
+              summary: "pihole-rbac can't be scraped"
+              description: "Prometheus has not been able to scrape app for 5 minutes: the app is down, unreachable, or the metrics token is wrong or unset."
+
+  - interval: 1m
+    input_series:
+      # One item of drift that appears at 5m and stays; a second group that is in sync.
+      - series: 'pihole_rbac_group_drift_items{group="site", type="domains"}'
+        values: "0x4 1x40"
+      - series: 'pihole_rbac_group_drift_items{group="site", type="clients"}'
+        values: "0x44"
+      - series: 'pihole_rbac_group_drift_items{group="lab", type="domains"}'
+        values: "0x44"
+      - series: 'pihole_rbac_group_drift_last_check_timestamp_seconds{group="site"}'
+        values: "0x44"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PiholeRbacGroupDrift
+        exp_alerts: [] # drifted for 10 minutes: pending
+      - eval_time: 25m
+        alertname: PiholeRbacGroupDrift
+        exp_alerts:
+          - exp_labels: {severity: warning, group: site}
+            exp_annotations:
+              summary: "Mirrored group site has drifted"
+              description: "1 item(s) differ between the members of site and its primary. See Admin, Groups."
+
+  - interval: 1m
+    input_series:
+      - series: 'pihole_rbac_log_forward_behind{destination="Main"}'
+        values: "0x5 500x30"
+      - series: 'pihole_rbac_log_forward_behind{destination="Quiet"}'
+        values: "5x35"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PiholeRbacLogForwardBehind
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PiholeRbacLogForwardBehind
+        exp_alerts:
+          - exp_labels: {severity: warning, destination: Main}
+            exp_annotations:
+              summary: "Audit forwarding to Main is behind"
+              description: "500 audit rows have not reached Main. Nothing is lost while the collector is down, but the rows are late. See Admin, Log forwarding."
+
+  - interval: 1m
+    input_series:
+      - series: 'pihole_rbac_notifications_total{result="dropped"}'
+        values: "0x9 0+3x10 30x20"
+      - series: 'pihole_rbac_notifications_total{result="failed"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PiholeRbacNotificationsDropped
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: PiholeRbacNotificationsDropped
+        exp_alerts:
+          - exp_labels: {severity: warning, result: dropped}
+            exp_annotations:
+              summary: "pihole-rbac is dropping notifications"
+              description: "15 notification(s) were dropped in the last 15 minutes because the queue was full."
+      - eval_time: 40m
+        alertname: PiholeRbacNotificationsDropped
+        exp_alerts: [] # stopped: the increase has aged out of the window
+      - eval_time: 40m
+        alertname: PiholeRbacNotificationsFailing
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'pihole_rbac_update_available{instance="app"}'
+        values: "0x10 1x120"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PiholeRbacUpdateAvailable
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: PiholeRbacUpdateAvailable
+        exp_alerts:
+          - exp_labels: {severity: info, instance: app}
+            exp_annotations:
+              summary: "A new pihole-rbac release is available"
+              description: "app is running a version older than the latest release."

@@ -8,6 +8,7 @@ import {
 	bannerVersion,
 	describeReload,
 	describeSource,
+	secretKindLabel,
 	displayVersion,
 	finishedOutcome,
 	requestTarget,
@@ -126,5 +127,11 @@ describe('finishedOutcome', () => {
 	it('says nothing when no request was in progress', () => {
 		expect(finishedOutcome(null, status({ requests: [request(2, 'done')] }))).toBeNull();
 		expect(finishedOutcome(status({ requests: [request(1, 'done')] }), status({ requests: [request(1, 'done')] }))).toBeNull();
+	});
+});
+
+describe('secretKindLabel', () => {
+	it('names the metrics token', () => {
+		expect(secretKindLabel.metrics_token).toBe('Metrics token');
 	});
 });

@@ -99,6 +99,8 @@ SQLite database, shipped as one static binary.
   version doesn't come up healthy.
 - **Docker:** images for amd64 and arm64 (including Raspberry Pi), with the
   app telling you when a new release is out.
+- **Prometheus metrics** at `/metrics`, behind a token you choose and off until you set one, with example scrape
+  configuration and alert rules in `deploy/prometheus/`.
 - Guided first-run setup, light and dark themes, and an import command that
   brings users, roles, settings and notifications across from v1.
 
@@ -287,8 +289,11 @@ the release build fail unless it reports `frontend: embedded`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on Ubuntu and Windows:
 web type-check and build, `go vet`, `go test`, and a binary build that must
-embed the frontend. A GoReleaser snapshot job then builds the Linux amd64
-and arm64 release artifacts.
+embed the frontend. Separate jobs build and smoke-test the Docker image, run
+the LXC install script, forward to a real rsyslog and check the Prometheus
+examples and `/metrics` output with `promtool` and a real Prometheus. A
+GoReleaser snapshot job then builds the Linux amd64 and arm64 release
+artifacts.
 
 ## Copyright
 

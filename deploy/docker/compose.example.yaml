@@ -50,11 +50,15 @@ services:
       # PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD_FILE: /run/secrets/pihole1_password
       # PIHOLE_RBAC_LDAP_BIND_PASSWORD_FILE: /run/secrets/ldap_bind_password
       # PIHOLE_RBAC_LDAP_CA_FILE: /run/secrets/ldap_ca
+      # Optional: turns on GET /metrics for Prometheus; without a token it answers 404. 32 to 256 printable
+      # characters, no spaces (`openssl rand -base64 32`). See deploy/prometheus/README.md.
+      # PIHOLE_RBAC_METRICS_TOKEN_FILE: /run/secrets/metrics_token
     secrets:
       - pihole_rbac_secret_key
       # - pihole1_password
       # - ldap_bind_password
       # - ldap_ca
+      # - metrics_token
     volumes:
       # The SQLite database, the session signing key and the pre-migration backups. A new named volume takes the
       # image's owner (65532); a host directory mounted instead must be owned by 65532 (mode 0750).
@@ -77,6 +81,8 @@ secrets:
   #   file: ./secrets/ldap_bind_password
   # ldap_ca:
   #   file: ./secrets/ldap_ca.pem
+  # metrics_token:
+  #   file: ./secrets/metrics_token
 
 volumes:
   pihole-rbac-data:

@@ -97,3 +97,7 @@ WHERE s.public_id = ?;
 
 -- name: DeleteSessionByPublicID :execrows
 DELETE FROM sessions WHERE public_id = ?;
+
+-- Sessions that haven't expired or gone idle, as DeleteExpiredSessions counts them, for the metrics.
+-- name: CountLiveSessions :one
+SELECT count(*) FROM sessions WHERE expires_at > sqlc.arg(now) AND last_seen_at > sqlc.arg(idle_cutoff);

@@ -459,3 +459,24 @@ func TestForwarderNudgeDoesNotCutABackoffShort(t *testing.T) {
 		t.Errorf("%d failed passes within a 300ms backoff, want 1", n)
 	}
 }
+
+func TestForwarderCount(t *testing.T) {
+	c := syslogtest.NewTCP(t)
+	c.Stop()
+	st := newMem(3)
+	var mu sync.Mutex
+	got := map[string]int{}
+	f := fast(&Forwarder{Dest: dest(c, TransportTCP), Store: st, Count: func(result string, n int) {
+		mu.Lock()
+		got[result] += n
+		mu.Unlock()
+	}})
+	run(t, f)
+	count := func(r string) int { mu.Lock(); defer mu.Unlock(); return got[r] }
+	waitFor(t, "a failure", func() bool { return count("failed") > 0 })
+	if count("sent") != 0 {
+		t.Errorf("sent %d with the collector down", count("sent"))
+	}
+	c.Restart()
+	waitFor(t, "the rows", func() bool { return count("sent") == 3 })
+}

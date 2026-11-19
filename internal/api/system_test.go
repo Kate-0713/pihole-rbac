@@ -248,6 +248,7 @@ func TestSecretsListNeverShowsValues(t *testing.T) {
 		secrets.VarSecretKey:           {Name: secrets.VarSecretKey, Kind: "master_key", Set: false},
 		secrets.VarSessionKey:          {Name: secrets.VarSessionKey, Kind: "session_key", Set: true, Source: src("generated")},
 		secrets.VarLDAPBindPassword:    {Name: secrets.VarLDAPBindPassword, Kind: "ldap_bind_password", Set: true, Source: src("file")},
+		secrets.VarMetricsToken:        {Name: secrets.VarMetricsToken, Kind: "metrics_token", Set: false},
 		secrets.InstanceVar("PIHOLE1"): {Name: secrets.InstanceVar("PIHOLE1"), Kind: "instance_password", Set: true, Source: src("env")},
 		secrets.InstanceVar("PIHOLE2"): {Name: secrets.InstanceVar("PIHOLE2"), Kind: "instance_password", Set: false},
 	}

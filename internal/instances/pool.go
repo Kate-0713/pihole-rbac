@@ -12,9 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
 )
@@ -135,6 +137,8 @@ type Options struct {
 	// ProbeInterval is how often Run checks instances that haven't been called for that long (default 1m).
 	ProbeInterval time.Duration
 	Logger        *slog.Logger
+	// Metrics receives the pool's request counts and durations. nil keeps none.
+	Metrics *metrics.Registry
 }
 
 // Pool holds the clients of the enabled instances. It is safe for concurrent use.
@@ -145,6 +149,9 @@ type Pool struct {
 	probeEvery time.Duration
 	logger     *slog.Logger
 	now        func() time.Time
+
+	requests *metrics.Counter   // operations by instance and result; nil when there is no registry
+	duration *metrics.Histogram // operations that reached a Pi-hole, by instance
 
 	mu      sync.RWMutex
 	members map[int64]*member
@@ -178,6 +185,12 @@ func New(opts Options) *Pool {
 		now:        time.Now,
 		members:    map[int64]*member{},
 	}
+	p.requests = opts.Metrics.Counter("pihole_rbac_pihole_requests_total",
+		"Operations on a Pi-hole by instance and result: ok, rejected (Pi-hole refused the content), error (it answered but refused or garbled this request), down (unreachable, password refused, missing or misconfigured) or backoff (answered without calling it).",
+		"instance", "result")
+	p.duration = opts.Metrics.Histogram("pihole_rbac_pihole_request_duration_seconds",
+		"How long operations that reached a Pi-hole took, by instance, whatever their result.",
+		metrics.PiholeBuckets, "instance")
 	if p.timeout <= 0 {
 		p.timeout = piholeapi.DefaultTimeout
 	}
@@ -236,11 +249,20 @@ func (p *Pool) Put(inst Instance) bool {
 	// password, which nothing here can change.
 	if old != nil && old.sameConnection(inst, pw) && (old.client != nil || pw.IsZero()) {
 		old.mu.Lock()
+		was := old.name
 		old.name = inst.Name
 		old.mu.Unlock()
+		if was != inst.Name {
+			p.forget(was)
+		}
 		return false
 	}
 	p.members[inst.ID] = p.newMember(inst, pw, pwErr)
+	if old != nil {
+		if was := old.label(); was != inst.Name {
+			p.forget(was)
+		}
+	}
 	p.retire(old)
 	return true
 }
@@ -251,7 +273,64 @@ func (p *Pool) Remove(id int64) {
 	defer p.mu.Unlock()
 	old := p.members[id]
 	delete(p.members, id)
+	if old != nil {
+		p.forget(old.label())
+	}
 	p.retire(old)
+}
+
+// label is the instance's current name, as metrics name it.
+func (m *member) label() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.name
+}
+
+// forget drops the metric series of an instance name that no longer exists in the pool.
+func (p *Pool) forget(name string) {
+	p.requests.DeleteMatching("instance", name)
+	p.duration.DeleteMatching("instance", name)
+}
+
+// Results of an operation, as pihole_rbac_pihole_requests_total's result label has them.
+const (
+	resultOK       = "ok"
+	resultRejected = "rejected"
+	resultError    = "error"
+	resultDown     = "down"
+	resultBackoff  = "backoff"
+)
+
+// observe counts an operation that was made and timed. It counts nothing for one the caller cancelled or that failed
+// before reaching Pi-hole for a reason that says nothing about it, as record leaves health alone, nor for a member
+// that has left the pool, so a call finishing after its instance was removed can't bring its series back.
+func (p *Pool) observe(ctx context.Context, m *member, err error, took time.Duration) {
+	var result string
+	switch {
+	case err == nil:
+		result = resultOK
+	case ctx.Err() != nil || piholeapi.Kind(err) == "":
+		return
+	case errors.Is(err, piholeapi.ErrRejected):
+		result = resultRejected
+	case piholeapi.Down(err):
+		result = resultDown
+	default:
+		result = resultError
+	}
+	if p.get(m.inst.ID) != m {
+		return
+	}
+	name := m.label()
+	p.requests.Inc(name, result)
+	p.duration.Observe(took.Seconds(), name)
+}
+
+// count counts an operation that never reached Pi-hole, with its result.
+func (p *Pool) count(m *member, result string) {
+	if p.get(m.inst.ID) == m {
+		p.requests.Inc(m.label(), result)
+	}
 }
 
 func (m *member) sameConnection(inst Instance, pw secrets.Value) bool {
@@ -309,16 +388,20 @@ func (p *Pool) Do(ctx context.Context, id int64, fn func(context.Context, *pihol
 			return ErrNotFound
 		}
 		if m.setupErr != nil {
+			p.count(m, resultDown)
 			return m.setupErr
 		}
 		if err := m.backingOff(p.now()); err != nil {
+			p.count(m, resultBackoff)
 			return err
 		}
+		began := p.now()
 		err := fn(ctx, m.client)
 		// The instance was edited or disabled while fn ran, which closed the client. Try once with what replaced it.
 		if errors.Is(err, piholeapi.ErrClosed) && attempt == 0 {
 			continue
 		}
+		p.observe(ctx, m, err, p.now().Sub(began))
 		p.record(ctx, m, err)
 		return err
 	}
@@ -388,6 +471,27 @@ func (p *Pool) Health(id int64) (Health, bool) {
 	return m.health, true
 }
 
+// MemberState is one instance's name and health, for the metrics.
+type MemberState struct {
+	ID     int64
+	Name   string
+	Health Health
+}
+
+// States lists every instance in the pool, by name. Disabled instances aren't in the pool. It reads memory only.
+func (p *Pool) States() []MemberState {
+	p.mu.RLock()
+	out := make([]MemberState, 0, len(p.members))
+	for id, m := range p.members {
+		m.mu.Lock()
+		out = append(out, MemberState{ID: id, Name: m.name, Health: m.health})
+		m.mu.Unlock()
+	}
+	p.mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // Probe checks every instance that hasn't been called within the probe interval, in parallel, ignoring the backoff.
 func (p *Pool) Probe(ctx context.Context) {
 	cutoff := p.now().Add(-p.probeEvery)
@@ -411,7 +515,9 @@ func (p *Pool) Probe(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			began := p.now()
 			_, err := m.client.GetStatus(ctx)
+			p.observe(ctx, m, err, p.now().Sub(began))
 			p.record(ctx, m, err)
 		}()
 	}

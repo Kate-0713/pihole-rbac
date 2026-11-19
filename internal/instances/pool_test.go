@@ -6,6 +6,7 @@ package instances
 import (
 	"context"
 	"errors"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics/metricstest"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi/piholetest"
 	"github.com/Kate-0713/pihole-rbac/internal/secrets"
@@ -444,5 +446,103 @@ func TestCloseLogsOutEverything(t *testing.T) {
 	p.Put(inst(1, "PIHOLE1", up.URL))
 	if err := p.Do(ctx, 1, status); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Put after Close: %v", err)
+	}
+}
+
+// scrape renders a registry the way /metrics does.
+func scrape(t *testing.T, r *metrics.Registry) string {
+	t.Helper()
+	var b strings.Builder
+	if _, err := r.WriteTo(&b); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+func TestPoolMetrics(t *testing.T) {
+	ctx := context.Background()
+	reg := metrics.New()
+	pw := &fakePasswords{m: map[string]string{"PIHOLE1": password, "PIHOLE2": password, "NOPASS": ""}}
+	clk := &clock{t: time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)}
+	p := New(Options{Passwords: pw, Timeout: 2 * time.Second, Metrics: reg, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	p.now = clk.now
+	t.Cleanup(func() { p.Close(context.Background()) })
+
+	up := piholetest.New(t, password)
+	up.Handle(func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/api/domains":
+			http.Error(w, "nope", http.StatusInternalServerError)
+			return true
+		case "/api/groups":
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return true
+		}
+		return false
+	})
+	down, _ := countingDown(t)
+	p.Put(inst(1, "PIHOLE1", up.URL))
+	p.Put(inst(2, "PIHOLE2", down.URL))
+	nopass := inst(3, "NOPASS", up.URL)
+	p.Put(nopass)
+
+	_ = p.Do(ctx, 1, status)
+	_ = p.Do(ctx, 1, func(ctx context.Context, c *piholeapi.Client) error { _, err := c.ListDomains(ctx); return err })
+	_ = p.Do(ctx, 1, func(ctx context.Context, c *piholeapi.Client) error { _, err := c.ListGroups(ctx); return err })
+	_ = p.Do(ctx, 2, status) // down
+	_ = p.Do(ctx, 2, status) // in the backoff
+	_ = p.Do(ctx, 3, status) // no password
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	_ = p.Do(cctx, 1, status) // cancelled: not counted
+	_ = p.Do(ctx, 99, status) // unknown: not counted
+
+	out := scrape(t, reg)
+	for _, want := range []string{
+		`pihole_rbac_pihole_requests_total{instance="pihole1",result="ok"} 1`,
+		`pihole_rbac_pihole_requests_total{instance="pihole1",result="error"} 1`,
+		`pihole_rbac_pihole_requests_total{instance="pihole1",result="rejected"} 1`,
+		`pihole_rbac_pihole_requests_total{instance="pihole2",result="down"} 1`,
+		`pihole_rbac_pihole_requests_total{instance="pihole2",result="backoff"} 1`,
+		`pihole_rbac_pihole_requests_total{instance="nopass",result="down"} 1`,
+		`pihole_rbac_pihole_request_duration_seconds_count{instance="pihole1"} 3`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `result="ok"} 2`) || strings.Contains(out, `instance="pihole1",result="down"`) {
+		t.Errorf("a cancelled or unknown call was counted:\n%s", out)
+	}
+
+	// The probe is counted like any other call.
+	clk.advance(DefaultProbeInterval * 2)
+	p.Probe(ctx)
+	if out := scrape(t, reg); !strings.Contains(out, `pihole_rbac_pihole_requests_total{instance="pihole1",result="ok"} 2`) {
+		t.Errorf("probe not counted:\n%s", out)
+	}
+
+	// A rename moves the series; a removal drops them.
+	renamed := inst(1, "PIHOLE1", up.URL)
+	renamed.Name = "primary"
+	p.Put(renamed)
+	_ = p.Do(ctx, 1, status)
+	out = scrape(t, reg)
+	if strings.Contains(out, `instance="pihole1"`) || !strings.Contains(out, `instance="primary"`) {
+		t.Errorf("after rename:\n%s", out)
+	}
+	p.Remove(1)
+	if out := scrape(t, reg); strings.Contains(out, `instance="primary"`) {
+		t.Errorf("after remove:\n%s", out)
+	}
+	metricstest.Dump(t, reg)
+}
+
+func TestPoolWithoutMetrics(t *testing.T) {
+	p, _, _ := newPool(t)
+	up := piholetest.New(t, password)
+	p.Put(inst(1, "PIHOLE1", up.URL))
+	if err := p.Do(context.Background(), 1, status); err != nil {
+		t.Fatal(err)
 	}
 }

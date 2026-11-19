@@ -112,6 +112,13 @@ func (c *Collector) serveTCP(ln net.Listener) {
 			return
 		}
 		c.mu.Lock()
+		if c.ln != ln {
+			// Stop (or a restart) ran between Accept returning and here, so it didn't see this connection and
+			// won't close it, and Stop would wait for it for ever.
+			c.mu.Unlock()
+			_ = conn.Close()
+			return
+		}
 		c.conns[conn] = struct{}{}
 		c.mu.Unlock()
 		c.wg.Add(1)

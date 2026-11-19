@@ -271,6 +271,52 @@ func (q *Queries) ListClientResetRuns(ctx context.Context, arg ListClientResetRu
 	return items, nil
 }
 
+const listLastClientResetRuns = `-- name: ListLastClientResetRuns :many
+SELECT r.target, COALESCE(i.name, g.name) AS name, r.finished_at, r.status
+FROM client_reset_runs r
+LEFT JOIN instances i ON i.id = r.instance_id
+LEFT JOIN instance_groups g ON g.id = r.group_id
+WHERE r.status <> 'running'
+  AND (i.id IS NOT NULL OR g.id IS NOT NULL)
+  AND r.id = (SELECT max(id) FROM client_reset_runs WHERE target = r.target AND status <> 'running')
+`
+
+type ListLastClientResetRunsRow struct {
+	Target     string
+	Name       string
+	FinishedAt sql.NullInt64
+	Status     string
+}
+
+// The newest finished run of each target that still exists, for the metrics. name is the target's current name.
+func (q *Queries) ListLastClientResetRuns(ctx context.Context) ([]ListLastClientResetRunsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLastClientResetRuns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLastClientResetRunsRow{}
+	for rows.Next() {
+		var i ListLastClientResetRunsRow
+		if err := rows.Scan(
+			&i.Target,
+			&i.Name,
+			&i.FinishedAt,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const startClientResetRun = `-- name: StartClientResetRun :one
 INSERT INTO client_reset_runs (started_at, trigger, user_id, username, target, instance_id, group_id, target_name, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')

@@ -290,6 +290,7 @@ func Insert(ctx context.Context, q *db.Queries, e Entry) (int64, error) {
 type Logger struct {
 	l    *log.Logger
 	sink atomic.Pointer[func(Entry)]
+	m    atomic.Pointer[loggerMetrics]
 }
 
 // SetSink sets a function that receives every entry Log writes, after its transaction has committed. It must not
@@ -317,6 +318,9 @@ func (l *Logger) Log(e Entry) {
 		l.l.Printf("AUDIT user=%q action=%s target=%q result=failure error=%q", e.Username, e.Action, e.Target, e.Err.Error())
 	} else {
 		l.l.Printf("AUDIT user=%q action=%s target=%q result=success", e.Username, e.Action, e.Target)
+	}
+	if m := l.m.Load(); m != nil {
+		m.count(e)
 	}
 	if f := l.sink.Load(); f != nil {
 		(*f)(e)

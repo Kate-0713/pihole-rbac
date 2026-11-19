@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# An example Prometheus configuration that scrapes pihole-rbac. Copy it, change the target and the paths, and see
+# README.md in this directory. `promtool check config prometheus.example.yml` checks it (the credentials file and the
+# rule file must exist where it says).
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/pihole-rbac-alerts.yml
+
+scrape_configs:
+  - job_name: pihole-rbac
+    metrics_path: /metrics
+    # Scrape through the reverse proxy, which ends TLS: the app itself speaks plain HTTP, so a scrape straight to it
+    # sends the token in clear. On a trusted LAN you can accept that and use the app's own address and "http".
+    scheme: https
+    authorization:
+      type: Bearer
+      # A file holding only the token, readable by Prometheus. Prometheus re-reads it, so a rotated token needs no
+      # restart of either side (use "Reload secrets" in the app after changing PIHOLE_RBAC_METRICS_TOKEN_FILE).
+      credentials_file: /etc/prometheus/secrets/pihole_rbac_metrics_token
+    static_configs:
+      - targets: ["pihole-rbac.example.lan"]

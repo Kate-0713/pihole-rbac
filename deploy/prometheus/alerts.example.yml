@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Example alert rules for pihole-rbac. `promtool check rules alerts.example.yml` checks them and
+# `promtool test rules alerts.test.yml` tests them. Thresholds are starting points; change them to suit.
+
+groups:
+  - name: pihole-rbac
+    rules:
+      # The app itself. With no token set the endpoint answers 404, which also counts as a failed scrape.
+      - alert: PiholeRbacDown
+        expr: up{job="pihole-rbac"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "pihole-rbac can't be scraped"
+          description: "Prometheus has not been able to scrape {{ $labels.instance }} for 5 minutes: the app is down, unreachable, or the metrics token is wrong or unset."
+
+      # An instance that was reached and now isn't. A series is absent until the instance has been called, and right
+      # after a restart, so this never fires on an instance the app hasn't tried yet.
+      - alert: PiholeRbacInstanceDown
+        expr: pihole_rbac_instance_up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pi-hole {{ $labels.instance }} is down"
+          description: "pihole-rbac has not been able to use {{ $labels.instance }} for 5 minutes: it is unreachable, refuses the password, or isn't set up. See Admin, Instances for the last error."
+
+      # A mirrored group whose members differ from the primary. Drift is checked in the background, so it can lag a
+      # change by a few minutes; it must persist before alerting.
+      - alert: PiholeRbacGroupDrift
+        expr: sum by (group) (pihole_rbac_group_drift_items) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mirrored group {{ $labels.group }} has drifted"
+          description: "{{ $value }} item(s) differ between the members of {{ $labels.group }} and its primary. See Admin, Groups."
+
+      # The drift report is old, so the alert above can't be trusted.
+      - alert: PiholeRbacGroupDriftNotChecked
+        expr: time() - pihole_rbac_group_drift_last_check_timestamp_seconds > 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mirrored group {{ $labels.group }} hasn't been checked for drift"
+          description: "The last drift check of {{ $labels.group }} was over an hour ago. Its primary may be down."
+
+      # Audit forwarding (log destinations) is not keeping up.
+      - alert: PiholeRbacLogForwardBehind
+        expr: pihole_rbac_log_forward_behind > 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Audit forwarding to {{ $labels.destination }} is behind"
+          description: "{{ $value }} audit rows have not reached {{ $labels.destination }}. Nothing is lost while the collector is down, but the rows are late. See Admin, Log forwarding."
+
+      # Notifications are being dropped: the queue was full (or the app was stopping), and those messages are gone.
+      - alert: PiholeRbacNotificationsDropped
+        expr: increase(pihole_rbac_notifications_total{result="dropped"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "pihole-rbac is dropping notifications"
+          description: "{{ $value }} notification(s) were dropped in the last 15 minutes because the queue was full."
+
+      - alert: PiholeRbacNotificationsFailing
+        expr: increase(pihole_rbac_notifications_total{result="failed"}[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "pihole-rbac notifications are failing"
+          description: "{{ $value }} notification(s) failed after their retries in the last hour. Check the channels under Admin, Notifications."
+
+      # A newer release exists. The app never updates itself.
+      - alert: PiholeRbacUpdateAvailable
+        expr: pihole_rbac_update_available == 1
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "A new pihole-rbac release is available"
+          description: "{{ $labels.instance }} is running a version older than the latest release."

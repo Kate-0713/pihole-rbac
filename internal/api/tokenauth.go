@@ -98,12 +98,19 @@ func parseBearer(h string) (string, bool) {
 // user's user_roles, or the roles an LDAP user's token holds.
 func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqInfo {
 	ctx := r.Context()
+	// result is counted when the function returns; every exit that isn't a success or a named refusal is an error.
+	result := "error"
+	defer func() { s.m.tokens.Inc(result) }()
 	ip := ratelimit.ClientIP(r, s.TrustedProxies)
 	// guessed is for a token that doesn't check out: unknown, malformed, or the wrong secret. Only those count against
 	// the login limit, since only they could be someone guessing. A revoked token, or one whose owner is disabled, has
 	// the right secret, so it is refused with the same answer but not counted: a script left running with it would
 	// otherwise lock out everyone behind the same address, logins included.
 	reject := func(guessed bool) *reqInfo {
+		result = "revoked"
+		if guessed {
+			result = "invalid"
+		}
 		if guessed && s.LoginByIP.Fail(ip) {
 			s.Logger.Warn("API token attempts from one address reached the login limit", "ip", ip)
 		}
@@ -112,6 +119,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 		return nil
 	}
 	if ok, wait := s.LoginByIP.Allow(ip); !ok {
+		result = "rate_limited"
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
 		writeError(w, http.StatusTooManyRequests, "rate_limited", msgTokenRateLimited)
 		return nil
@@ -159,6 +167,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 				s.Logger.Error("recording token_expired_use", "err", err)
 			}
 		}
+		result = "expired"
 		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 		writeError(w, http.StatusUnauthorized, "token_expired", msgTokenExpired)
 		return nil
@@ -171,6 +180,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 	if ldap {
 		checked = store.FromMillis(row.RolesCheckedAt.Int64)
 		if rbac.RolesStale(checked, now, s.Sessions.RolesValidFor()) {
+			result = "suspended"
 			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 			writeError(w, http.StatusUnauthorized, "token_suspended", msgTokenSuspended)
 			return nil
@@ -178,6 +188,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 	}
 
 	if !tokenRoutes[r.Pattern] {
+		result = "not_allowed"
 		writeError(w, http.StatusForbidden, "token_not_allowed", msgTokenNotAllowed)
 		return nil
 	}
@@ -201,6 +212,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 		return nil
 	}
 	if hold {
+		result = "totp_setup_required"
 		writeError(w, http.StatusForbidden, "totp_setup_required", msgTOTPSetupRequired)
 		return nil
 	}
@@ -218,6 +230,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 	if !owner.CanGlobal(rbac.TokensUse) {
 		// Answered by the gate once the request carries ri, so a refused write is audited like any other.
 		ri.tokenRefusal = rbac.Forbidden(rbac.TokensUse)
+		result = "forbidden"
 		return ri
 	}
 	grants, err := tokenGrants(ctx, q, row.ID)
@@ -238,6 +251,7 @@ func (s *Server) authenticateToken(w http.ResponseWriter, r *http.Request) *reqI
 			s.Logger.Warn("recording an API token's last use", "err", err)
 		}
 	}
+	result = "ok"
 	return ri
 }
 

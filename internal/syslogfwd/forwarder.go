@@ -102,6 +102,10 @@ type Forwarder struct {
 	OnFailing   func(Outage)
 	OnRecovered func(Outage)
 
+	// Count, when set, is told how a pass went: ("sent", rows) for rows written to the collector (a row sent again
+	// counts again) and ("failed", 1) for each failed pass.
+	Count func(result string, n int)
+
 	initOnce sync.Once
 	nudge    chan struct{}
 	passMu   sync.Mutex // one pass at a time, whether from Run or Drain
@@ -272,6 +276,9 @@ func (f *Forwarder) pass(ctx context.Context, upTo int64) (int, error) {
 		f.mu.Lock()
 		f.st.LastSentAt, f.st.Sent = now, f.st.Sent+int64(len(rows))
 		f.mu.Unlock()
+		if f.Count != nil {
+			f.Count("sent", len(rows))
+		}
 		total += len(rows)
 		if err := f.Store.SetCursor(ctx, f.Dest.ID, last, now); err != nil {
 			// The rows are written, but not recorded, so they are sent again: at least once.
@@ -304,6 +311,9 @@ func (f *Forwarder) failed(err error) {
 		f.notified = true
 	}
 	f.mu.Unlock()
+	if f.Count != nil {
+		f.Count("failed", 1)
+	}
 	f.log().Warn("log forwarding failed", "destination", f.Dest.Name, "code", code, "attempts", o.Attempts)
 	if notify && f.OnFailing != nil {
 		f.OnFailing(o)

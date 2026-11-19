@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prometheus metrics
+         * @description The app's own metrics in the Prometheus text format, for a monitoring system to scrape. Outside `/api/v1` and outside sessions, CSRF and Origin checks, like `/healthz`. It needs `Authorization: Bearer <token>`, where the token is the one in `PIHOLE_RBAC_METRICS_TOKEN`: a single shared secret for scraping, not a personal API token, and it opens nothing else. While no token is set the answer is 404, so nothing is exposed until someone chooses to. Wrong tokens are counted per client address by a limiter of their own, which answers 429 with `Retry-After` and never touches the login limits. Instance, group and destination names appear as label values; no secret, session or request input ever does. Available before first-run setup is complete.
+         */
+        get: operations["metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/about": {
         parameters: {
             query?: never;
@@ -2474,7 +2494,7 @@ export interface components {
             /** @description The environment variable, without a _FILE suffix. */
             name: string;
             /** @enum {string} */
-            kind: "master_key" | "session_key" | "ldap_bind_password" | "instance_password" | "channel_secret";
+            kind: "master_key" | "session_key" | "ldap_bind_password" | "instance_password" | "channel_secret" | "metrics_token";
             set: boolean;
             /**
              * @description Where the value came from. Absent when the secret isn't set. Only `file` can change on a reload.
@@ -5126,6 +5146,53 @@ export interface operations {
                 };
                 content: {
                     "text/plain": "ok";
+                };
+            };
+        };
+    };
+    metrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The metrics, in the Prometheus text exposition format, version 0.0.4. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description The Authorization header is missing, isn't a bearer token, or has the wrong token (code `invalid_token`). Carries `WWW-Authenticate: Bearer`. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No metrics token is set, so metrics are off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many wrong tokens from this address (code `rate_limited`). Carries `Retry-After`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

@@ -244,7 +244,7 @@ func TestInstanceDiscovery(t *testing.T) {
 	for _, s := range m.Status() {
 		names = append(names, s.Name)
 	}
-	want := []string{VarSecretKey, VarSessionKey, VarLDAPBindPassword,
+	want := []string{VarSecretKey, VarSessionKey, VarLDAPBindPassword, VarMetricsToken,
 		"PIHOLE_RBAC_INSTANCE_EMPTY_PASSWORD", "PIHOLE_RBAC_INSTANCE_PIHOLE1_PASSWORD", "PIHOLE_RBAC_INSTANCE_PIHOLE2_PASSWORD"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("Status names = %v, want %v", names, want)
@@ -487,6 +487,117 @@ func TestKindOf(t *testing.T) {
 	for _, tt := range tests {
 		if got := KindOf(tt.name); got != tt.want {
 			t.Errorf("KindOf(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestMetricsToken(t *testing.T) {
+	good := strings.Repeat("a", MinMetricsTokenLen)
+	tests := []struct {
+		name    string
+		token   string
+		wantSet bool
+		wantErr string
+	}{
+		{name: "unset", token: ""},
+		{name: "minimum length", token: good, wantSet: true},
+		{name: "maximum length", token: strings.Repeat("a", MaxMetricsTokenLen), wantSet: true},
+		{name: "openssl rand -base64 32", token: "J3kq0Zr7yq4n2YhH8mYw5gO8x1k0tYb0bC3nQ9v2m4A=", wantSet: true},
+		{name: "every printable character", token: "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~Aa09", wantSet: true},
+		{name: "too short", token: strings.Repeat("a", MinMetricsTokenLen-1), wantErr: "must be 32 to 256 characters"},
+		{name: "too long", token: strings.Repeat("a", MaxMetricsTokenLen+1), wantErr: "must be 32 to 256 characters"},
+		{name: "space inside", token: good + " " + good, wantErr: "printable ASCII"},
+		{name: "tab inside", token: good + "\t" + good, wantErr: "printable ASCII"},
+		{name: "newline inside", token: good + "\n" + good, wantErr: "printable ASCII"},
+		{name: "control character", token: good + "\x01", wantErr: "printable ASCII"},
+		{name: "non-ASCII", token: good + "é", wantErr: "printable ASCII"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := load(t, testEnv{VarMetricsToken: tt.token})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Load error = %v, want one containing %q", err, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), VarMetricsToken) {
+					t.Errorf("the error doesn't name the variable: %v", err)
+				}
+				if tt.token != "" && strings.Contains(err.Error(), tt.token) {
+					t.Errorf("the error repeats the token: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, ok := m.MetricsToken()
+			if ok != tt.wantSet || (ok && v.Reveal() != tt.token) {
+				t.Errorf("MetricsToken() = %q, %v; want set %v", v.Reveal(), ok, tt.wantSet)
+			}
+		})
+	}
+}
+
+func TestMetricsTokenFromFileAndReload(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "metrics")
+	first, second := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	writeFile(t, f, first+"\n")
+	m := mustLoad(t, testEnv{VarMetricsToken + "_FILE": f})
+	if v, ok := m.MetricsToken(); !ok || v.Reveal() != first {
+		t.Fatalf("MetricsToken() = %q, %v", v.Reveal(), ok)
+	}
+
+	writeFile(t, f, second+"\n")
+	if res := m.Reload(); !slices.Equal(res.Changed, []string{VarMetricsToken}) || len(res.Failed) != 0 {
+		t.Fatalf("Reload = %+v", res)
+	}
+	if v, _ := m.MetricsToken(); v.Reveal() != second {
+		t.Fatalf("after a reload the token is %q", v.Reveal())
+	}
+
+	// A token that is no good keeps the one in use, and is reported without its value.
+	writeFile(t, f, "short\n")
+	res := m.Reload()
+	if len(res.Changed) != 0 || len(res.Failed) != 1 || res.Failed[0].Name != VarMetricsToken {
+		t.Fatalf("Reload = %+v", res)
+	}
+	if strings.Contains(res.Failed[0].Err.Error(), "short") {
+		t.Errorf("the failure repeats the value: %v", res.Failed[0].Err)
+	}
+	if v, _ := m.MetricsToken(); v.Reveal() != second {
+		t.Fatalf("a bad file replaced the token: %q", v.Reveal())
+	}
+
+	// An empty file is an error as for every secret.
+	writeFile(t, f, "")
+	if res := m.Reload(); len(res.Failed) != 1 {
+		t.Fatalf("Reload with an empty file = %+v", res)
+	}
+}
+
+func TestMetricsTokenInStatusAndKind(t *testing.T) {
+	m := mustLoad(t, testEnv{VarMetricsToken: strings.Repeat("a", 40)})
+	var found bool
+	for _, st := range m.Status() {
+		if st.Name == VarMetricsToken {
+			found = true
+			if !st.Set || st.Source != SourceEnv {
+				t.Errorf("Status = %+v", st)
+			}
+		}
+	}
+	if !found {
+		t.Error("the metrics token isn't in Status")
+	}
+	if got := KindOf(VarMetricsToken); got != "metrics_token" {
+		t.Errorf("KindOf = %q", got)
+	}
+	// Unset it is still listed, as the LDAP bind password is, so the System page can say what to define.
+	m = mustLoad(t, testEnv{})
+	for _, st := range m.Status() {
+		if st.Name == VarMetricsToken && st.Set {
+			t.Error("an unset token is reported as set")
 		}
 	}
 }

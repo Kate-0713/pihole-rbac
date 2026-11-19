@@ -219,6 +219,38 @@ jobs:
           export PIHOLE_RBAC_RSYSLOGD="$RUNNER_TEMP/rsyslogd"
           go test -count=1 -v -run Rsyslog ./internal/syslogfwd/
 
+  prometheus:
+    name: prometheus
+    runs-on: ubuntu-26.04
+    env:
+      CGO_ENABLED: "0"
+      PROMETHEUS_VERSION: "3.5.0"
+      PROMETHEUS_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Install Prometheus (pinned, checksum verified)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/prometheus.tar.gz" \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          echo "${PROMETHEUS_SHA256}  $RUNNER_TEMP/prometheus.tar.gz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/prometheus"
+          tar -xzf "$RUNNER_TEMP/prometheus.tar.gz" -C "$RUNNER_TEMP/prometheus" --strip-components=1
+
+      # Without the frontend: /metrics doesn't need it, and the app serves a placeholder page instead.
+      - name: Build the binary
+        run: go build -trimpath -o bin/pihole-rbac ./cmd/pihole-rbac
+
+      - name: Check the Prometheus examples and the /metrics output
+        run: bash deploy/prometheus/check.sh bin/pihole-rbac "$RUNNER_TEMP/prometheus"
+
   snapshot:
     name: goreleaser snapshot
     runs-on: ubuntu-26.04

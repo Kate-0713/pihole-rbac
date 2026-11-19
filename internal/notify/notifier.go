@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Kate-0713/pihole-rbac/internal/audit"
+	"github.com/Kate-0713/pihole-rbac/internal/metrics"
 )
 
 // Route is one enabled channel and the events it receives.
@@ -58,12 +59,15 @@ type Notifier struct {
 	Delays    []time.Duration
 	// Failed is called, from a worker, for a guard message that gave up: refused, or still failing after its retries.
 	Failed func(Job, Result)
+	// Metrics receives pihole_rbac_notifications_total. nil counts nothing.
+	Metrics *metrics.Registry
 
-	once    sync.Once
-	queue   chan Job
-	routes  atomic.Pointer[[]Route]
-	stopped atomic.Bool
-	dropped atomic.Int64
+	sent, failed, dropCount *metrics.Counter // one family, by result; nil without Metrics
+	once                    sync.Once
+	queue                   chan Job
+	routes                  atomic.Pointer[[]Route]
+	stopped                 atomic.Bool
+	dropped                 atomic.Int64
 }
 
 func (n *Notifier) init() {
@@ -73,6 +77,12 @@ func (n *Notifier) init() {
 			size = DefaultQueueSize
 		}
 		n.queue = make(chan Job, size)
+		if n.Metrics != nil {
+			c := n.Metrics.Counter("pihole_rbac_notifications_total",
+				"Notification messages by result: sent, failed (gave up after its retries, or refused) or dropped (the queue was full or the app was stopping). A test message isn't counted.",
+				"result")
+			n.sent, n.failed, n.dropCount = c, c, c
+		}
 		if n.Sender == nil {
 			n.Sender = &Sender{}
 		}
@@ -122,6 +132,7 @@ func (n *Notifier) Enqueue(j Job) bool {
 		}
 	}
 	// Log the first drop and every hundredth after it, so a storm of events can't flood the log as well.
+	n.dropCount.Inc("dropped")
 	if d := n.dropped.Add(1); d == 1 || d%100 == 0 {
 		n.log().Warn("notification dropped: the queue is full", "channel", j.Destination.Name, "event", j.Event, "dropped", d)
 	}
@@ -136,6 +147,12 @@ type queueError string
 func (e queueError) Error() string { return string(e) }
 
 const errQueueFull = queueError("the notification queue is full")
+
+// QueueLength is how many messages are waiting.
+func (n *Notifier) QueueLength() int {
+	n.init()
+	return len(n.queue)
+}
 
 // Send makes one attempt now and waits for it, for Send test. It doesn't use the queue or retry.
 func (n *Notifier) Send(ctx context.Context, d Destination, m *Message) Result {
@@ -175,6 +192,7 @@ func (n *Notifier) attempt(ctx context.Context, j Job) {
 	r := n.Sender.Send(sctx, j.Destination, j.Message)
 	cancel()
 	if r.OK() {
+		n.sent.Inc("sent")
 		if j.attempt > 0 {
 			n.log().Info("notification sent after retrying", "channel", j.Destination.Name, "event", j.Event, "attempts", j.attempt+1)
 		}
@@ -195,6 +213,7 @@ func (n *Notifier) attempt(ctx context.Context, j Job) {
 		})
 		return
 	}
+	n.failed.Inc("failed")
 	n.log().Warn("notification failed", "channel", j.Destination.Name, "kind", j.Destination.Kind, "event", j.Event,
 		"attempts", j.attempt+1, "status", r.Status, "err", r.Err)
 	if j.Guard && n.Failed != nil {

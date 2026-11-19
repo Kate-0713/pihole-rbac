@@ -1719,6 +1719,7 @@ const (
 	SecretStatusKindInstancePassword SecretStatusKind = "instance_password"
 	SecretStatusKindLdapBindPassword SecretStatusKind = "ldap_bind_password"
 	SecretStatusKindMasterKey        SecretStatusKind = "master_key"
+	SecretStatusKindMetricsToken     SecretStatusKind = "metrics_token"
 	SecretStatusKindSessionKey       SecretStatusKind = "session_key"
 )
 
@@ -1732,6 +1733,8 @@ func (e SecretStatusKind) Valid() bool {
 	case SecretStatusKindLdapBindPassword:
 		return true
 	case SecretStatusKindMasterKey:
+		return true
+	case SecretStatusKindMetricsToken:
 		return true
 	case SecretStatusKindSessionKey:
 		return true
@@ -6366,6 +6369,9 @@ type ServerInterface interface {
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(w http.ResponseWriter, r *http.Request)
+	// Metrics Prometheus metrics
+	// (GET /metrics)
+	Metrics(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -10682,6 +10688,20 @@ func (siw *ServerInterfaceWrapper) Healthz(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// Metrics operation middleware
+func (siw *ServerInterfaceWrapper) Metrics(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Metrics(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -10803,6 +10823,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.Healthz)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/metrics", wrapper.Metrics)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/about", wrapper.GetAbout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/csrf", wrapper.GetCSRFToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/setup/status", wrapper.GetSetupStatus)
@@ -26113,6 +26134,66 @@ func (response Healthz200TextResponse) VisitHealthzResponse(w http.ResponseWrite
 	return err
 }
 
+type MetricsRequestObject struct {
+}
+
+type MetricsResponseObject interface {
+	VisitMetricsResponse(w http.ResponseWriter) error
+}
+
+type Metrics200TextResponse string
+
+func (response Metrics200TextResponse) VisitMetricsResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(200)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type Metrics401JSONResponse Error
+
+func (response Metrics401JSONResponse) VisitMetricsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Metrics404JSONResponse Error
+
+func (response Metrics404JSONResponse) VisitMetricsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Metrics429JSONResponse Error
+
+func (response Metrics429JSONResponse) VisitMetricsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetAbout Source code location and licence
@@ -26565,6 +26646,9 @@ type StrictServerInterface interface {
 	// Healthz Liveness check
 	// (GET /healthz)
 	Healthz(ctx context.Context, request HealthzRequestObject) (HealthzResponseObject, error)
+	// Metrics Prometheus metrics
+	// (GET /metrics)
+	Metrics(ctx context.Context, request MetricsRequestObject) (MetricsResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -30867,6 +30951,30 @@ func (sh *strictHandler) Healthz(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(HealthzResponseObject); ok {
 		if err := validResponse.VisitHealthzResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Metrics operation middleware
+func (sh *strictHandler) Metrics(w http.ResponseWriter, r *http.Request) {
+	var request MetricsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Metrics(ctx, request.(MetricsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Metrics")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MetricsResponseObject); ok {
+		if err := validResponse.VisitMetricsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

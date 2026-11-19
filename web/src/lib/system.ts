@@ -112,7 +112,8 @@ export const secretKindLabel: Record<SecretStatus['kind'], string> = {
 	session_key: 'Session key',
 	ldap_bind_password: 'LDAP bind password',
 	instance_password: 'Instance password',
-	channel_secret: 'Notification channel secret'
+	channel_secret: 'Notification channel secret',
+	metrics_token: 'Metrics token'
 };
 
 // describeSource says where a secret came from, and so what a change to it needs.

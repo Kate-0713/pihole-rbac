@@ -48,6 +48,23 @@ func (q *Queries) ClearSessionRolesForUser(ctx context.Context, userID int64) er
 	return err
 }
 
+const countLiveSessions = `-- name: CountLiveSessions :one
+SELECT count(*) FROM sessions WHERE expires_at > ?1 AND last_seen_at > ?2
+`
+
+type CountLiveSessionsParams struct {
+	Now        int64
+	IdleCutoff int64
+}
+
+// Sessions that haven't expired or gone idle, as DeleteExpiredSessions counts them, for the metrics.
+func (q *Queries) CountLiveSessions(ctx context.Context, arg CountLiveSessionsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLiveSessions, arg.Now, arg.IdleCutoff)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSession = `-- name: CreateSession :exec
 
 INSERT INTO sessions (id_hash, public_id, user_id, created_at, expires_at, last_seen_at, roles_checked_at, ip, user_agent)
