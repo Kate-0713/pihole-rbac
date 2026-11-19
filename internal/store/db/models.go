@@ -137,6 +137,27 @@ type InstanceGroupMember struct {
 	InstanceID int64
 }
 
+type LogDestination struct {
+	ID        int64
+	Name      string
+	Host      string
+	Port      int64
+	Transport string
+	TlsMode   string
+	CaFile    sql.NullString
+	Enabled   bool
+	CreatedAt int64
+	CreatedBy string
+	UpdatedAt int64
+	UpdatedBy string
+}
+
+type LogDestinationCursor struct {
+	DestinationID int64
+	LastID        int64
+	UpdatedAt     int64
+}
+
 type NotificationChannel struct {
 	ID               int64
 	Kind             string

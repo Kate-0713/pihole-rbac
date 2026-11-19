@@ -25,6 +25,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
 	"github.com/Kate-0713/pihole-rbac/internal/gravity"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/logdestinations"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
 	"github.com/Kate-0713/pihole-rbac/internal/ratelimit"
@@ -66,6 +67,7 @@ type Options struct {
 	TOTP            *totp.Service            // two-factor login; New makes one from Store, Audit and Secrets when nil
 	LoginSettings   *loginsettings.Service   // login methods, LDAP settings and bind password; nil in tests that don't need them
 	Notifications   *notifications.Service   // notification channels; nil in tests that don't need them
+	LogDestinations *logdestinations.Service // log forwarding destinations; nil in tests that don't need them
 	ClientReset     *clientreset.Service     // client reset rules and runs; nil in tests that don't need them
 	Schedules       *schedules.Service       // blocking and Pi-hole group schedules; nil in tests that don't need them
 	ClientOverrides *clientoverrides.Service // temporary client group changes; nil in tests that don't need them

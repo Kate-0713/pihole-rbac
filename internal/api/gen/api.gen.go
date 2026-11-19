@@ -978,6 +978,87 @@ func (e LocalDNSMark) Valid() bool {
 	}
 }
 
+// Defines values for LogDestinationStatusDelivery.
+const (
+	AtLeastOnce LogDestinationStatusDelivery = "at_least_once"
+	BestEffort  LogDestinationStatusDelivery = "best_effort"
+)
+
+// Valid indicates whether the value is a known member of the LogDestinationStatusDelivery enum.
+func (e LogDestinationStatusDelivery) Valid() bool {
+	switch e {
+	case AtLeastOnce:
+		return true
+	case BestEffort:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LogDestinationStatusState.
+const (
+	LogDestinationStatusStateDisabled LogDestinationStatusState = "disabled"
+	LogDestinationStatusStateFailing  LogDestinationStatusState = "failing"
+	LogDestinationStatusStateIdle     LogDestinationStatusState = "idle"
+	LogDestinationStatusStateOk       LogDestinationStatusState = "ok"
+)
+
+// Valid indicates whether the value is a known member of the LogDestinationStatusState enum.
+func (e LogDestinationStatusState) Valid() bool {
+	switch e {
+	case LogDestinationStatusStateDisabled:
+		return true
+	case LogDestinationStatusStateFailing:
+		return true
+	case LogDestinationStatusStateIdle:
+		return true
+	case LogDestinationStatusStateOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LogTLSMode.
+const (
+	LogTLSModeInsecure LogTLSMode = "insecure"
+	LogTLSModeVerify   LogTLSMode = "verify"
+)
+
+// Valid indicates whether the value is a known member of the LogTLSMode enum.
+func (e LogTLSMode) Valid() bool {
+	switch e {
+	case LogTLSModeInsecure:
+		return true
+	case LogTLSModeVerify:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LogTransport.
+const (
+	Tcp LogTransport = "tcp"
+	Tls LogTransport = "tls"
+	Udp LogTransport = "udp"
+)
+
+// Valid indicates whether the value is a known member of the LogTransport enum.
+func (e LogTransport) Valid() bool {
+	switch e {
+	case Tcp:
+		return true
+	case Tls:
+		return true
+	case Udp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LoginMethodsMethods.
 const (
 	LoginMethodsMethodsLdap  LoginMethodsMethods = "ldap"
@@ -3696,6 +3777,86 @@ type LocalDNSWriteResults struct {
 	Results []LocalDNSWriteResult `json:"results"`
 }
 
+// LogDestination defines model for LogDestination.
+type LogDestination struct {
+	CaFile    *string              `json:"ca_file,omitempty"`
+	CreatedAt time.Time            `json:"created_at"`
+	CreatedBy string               `json:"created_by"`
+	Enabled   bool                 `json:"enabled"`
+	Host      string               `json:"host"`
+	Id        int64                `json:"id"`
+	Name      string               `json:"name"`
+	Port      int                  `json:"port"`
+	Status    LogDestinationStatus `json:"status"`
+
+	// TlsMode `insecure` doesn't check the collector's certificate at all. For labs. Only with `tls`.
+	TlsMode LogTLSMode `json:"tls_mode"`
+
+	// Transport `tls` and `tcp` frame each message with its length (RFC 6587 octet counting) on one connection; `udp` sends one datagram per message, with a longer detail cut to a marker, and can't tell whether it arrived.
+	Transport LogTransport `json:"transport"`
+	UpdatedAt time.Time    `json:"updated_at"`
+	UpdatedBy string       `json:"updated_by"`
+}
+
+// LogDestinationInput defines model for LogDestinationInput.
+type LogDestinationInput struct {
+	// CaFile An absolute path to PEM certificates to trust as well as the system's, read on every connection. Only with `tls` and `tls_mode` verify.
+	CaFile  *string `json:"ca_file,omitempty"`
+	Enabled bool    `json:"enabled"`
+
+	// Host A host name or an address, with no scheme or port.
+	Host string `json:"host"`
+	Name string `json:"name"`
+	Port int    `json:"port"`
+
+	// TlsMode `insecure` doesn't check the collector's certificate at all. For labs. Only with `tls`.
+	TlsMode *LogTLSMode `json:"tls_mode,omitempty"`
+
+	// Transport `tls` and `tcp` frame each message with its length (RFC 6587 octet counting) on one connection; `udp` sends one datagram per message, with a longer detail cut to a marker, and can't tell whether it arrived.
+	Transport *LogTransport `json:"transport,omitempty"`
+}
+
+// LogDestinationList defines model for LogDestinationList.
+type LogDestinationList struct {
+	Destinations []LogDestination `json:"destinations"`
+}
+
+// LogDestinationStatus defines model for LogDestinationStatus.
+type LogDestinationStatus struct {
+	// Behind Audit rows after the destination's position, not yet sent.
+	Behind       int64                        `json:"behind"`
+	Delivery     LogDestinationStatusDelivery `json:"delivery"`
+	FailingSince *time.Time                   `json:"failing_since,omitempty"`
+
+	// LastError The code of the latest failure while failing: invalid_config, ca_file_invalid, dial_failed, tls_failed, timeout, write_failed, read_failed, cursor_failed or cursor_missing.
+	LastError  *string    `json:"last_error,omitempty"`
+	LastSentAt *time.Time `json:"last_sent_at,omitempty"`
+
+	// SkippedPruned Rows the retention deleted before they were sent, since the app started.
+	SkippedPruned *int64                    `json:"skipped_pruned,omitempty"`
+	State         LogDestinationStatusState `json:"state"`
+}
+
+// LogDestinationStatusDelivery defines model for LogDestinationStatus.Delivery.
+type LogDestinationStatusDelivery string
+
+// LogDestinationStatusState defines model for LogDestinationStatus.State.
+type LogDestinationStatusState string
+
+// LogDestinationTestResult defines model for LogDestinationTestResult.
+type LogDestinationTestResult struct {
+	// Code The failure's code when `ok` is false.
+	Code    *string `json:"code,omitempty"`
+	Message string  `json:"message"`
+	Ok      bool    `json:"ok"`
+}
+
+// LogTLSMode `insecure` doesn't check the collector's certificate at all. For labs. Only with `tls`.
+type LogTLSMode string
+
+// LogTransport `tls` and `tcp` frame each message with its length (RFC 6587 octet counting) on one connection; `udp` sends one datagram per message, with a longer detail cut to a marker, and can't tell whether it arrived.
+type LogTransport string
+
 // LoginMethods defines model for LoginMethods.
 type LoginMethods struct {
 	// Methods The enabled methods in the order they are tried. Must include local.
@@ -5147,6 +5308,9 @@ type GroupID = int64
 // InstanceID defines model for InstanceID.
 type InstanceID = int64
 
+// LogDestinationID defines model for LogDestinationID.
+type LogDestinationID = int64
+
 // MappingID defines model for MappingID.
 type MappingID = int64
 
@@ -5311,13 +5475,13 @@ type ListClientResetRunsParams struct {
 
 // SetRoleGrantsParams defines parameters for SetRoleGrants.
 type SetRoleGrantsParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // RemoveLDAPMappingParams defines parameters for RemoveLDAPMapping.
 type RemoveLDAPMappingParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5331,6 +5495,18 @@ type ListSessionsParams struct {
 
 	// Mine Only the caller's own sessions, even with sessions.manage.
 	Mine *bool `form:"mine,omitempty" json:"mine,omitempty"`
+}
+
+// CreateLogDestinationParams defines parameters for CreateLogDestination.
+type CreateLogDestinationParams struct {
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// UpdateLogDestinationParams defines parameters for UpdateLogDestination.
+type UpdateLogDestinationParams struct {
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // SetBlockingParams defines parameters for SetBlocking.
@@ -5356,7 +5532,7 @@ type UpdateClientParams struct {
 
 // UpdateDHCPSettingsParams defines parameters for UpdateDHCPSettings.
 type UpdateDHCPSettingsParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5401,7 +5577,7 @@ type DeletePiholeGroupParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5410,7 +5586,7 @@ type UpdatePiholeGroupParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5455,7 +5631,7 @@ type UpdateCNAMEParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5464,7 +5640,7 @@ type AddCNAMEParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5479,7 +5655,7 @@ type UpdateDNSRecordParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5488,7 +5664,7 @@ type AddDNSRecordParams struct {
 	// Members Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member.
 	Members *Members `form:"members,omitempty" json:"members,omitempty"`
 
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5536,19 +5712,19 @@ type ListQueriesParamsResult string
 
 // DeleteUserParams defines parameters for DeleteUser.
 type DeleteUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // DisableUserParams defines parameters for DisableUser.
 type DisableUserParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
 // SetUserRolesParams defines parameters for SetUserRoles.
 type SetUserRolesParams struct {
-	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+	// Confirm Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
 	Confirm *Confirm `form:"confirm,omitempty" json:"confirm,omitempty"`
 }
 
@@ -5635,6 +5811,12 @@ type SetGeneralSettingsJSONRequestBody = GeneralSettingsInput
 
 // SetLDAPSettingsJSONRequestBody defines body for SetLDAPSettings for application/json ContentType.
 type SetLDAPSettingsJSONRequestBody = LDAPSettingsInput
+
+// CreateLogDestinationJSONRequestBody defines body for CreateLogDestination for application/json ContentType.
+type CreateLogDestinationJSONRequestBody = LogDestinationInput
+
+// UpdateLogDestinationJSONRequestBody defines body for UpdateLogDestination for application/json ContentType.
+type UpdateLogDestinationJSONRequestBody = LogDestinationInput
 
 // CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
 type CompleteSetupJSONRequestBody = SetupRequest
@@ -5941,6 +6123,24 @@ type ServerInterface interface {
 	// SetLDAPSettings Save the LDAP settings
 	// (PUT /api/v1/settings/ldap)
 	SetLDAPSettings(w http.ResponseWriter, r *http.Request)
+	// ListLogDestinations List the log forwarding destinations
+	// (GET /api/v1/settings/log-destinations)
+	ListLogDestinations(w http.ResponseWriter, r *http.Request)
+	// CreateLogDestination Add a log forwarding destination
+	// (POST /api/v1/settings/log-destinations)
+	CreateLogDestination(w http.ResponseWriter, r *http.Request, params CreateLogDestinationParams)
+	// DeleteLogDestination Delete a log forwarding destination
+	// (DELETE /api/v1/settings/log-destinations/{id})
+	DeleteLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID)
+	// GetLogDestination One log forwarding destination
+	// (GET /api/v1/settings/log-destinations/{id})
+	GetLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID)
+	// UpdateLogDestination Change a log forwarding destination
+	// (PUT /api/v1/settings/log-destinations/{id})
+	UpdateLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID, params UpdateLogDestinationParams)
+	// TestLogDestination Send a test message to a log forwarding destination
+	// (POST /api/v1/settings/log-destinations/{id}/test)
+	TestLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID)
 	// CompleteSetup Complete first-run setup
 	// (POST /api/v1/setup)
 	CompleteSetup(w http.ResponseWriter, r *http.Request)
@@ -7808,6 +8008,173 @@ func (siw *ServerInterfaceWrapper) SetLDAPSettings(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SetLDAPSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListLogDestinations operation middleware
+func (siw *ServerInterfaceWrapper) ListLogDestinations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLogDestinations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateLogDestination operation middleware
+func (siw *ServerInterfaceWrapper) CreateLogDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateLogDestinationParams
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateLogDestination(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteLogDestination operation middleware
+func (siw *ServerInterfaceWrapper) DeleteLogDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id LogDestinationID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteLogDestination(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLogDestination operation middleware
+func (siw *ServerInterfaceWrapper) GetLogDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id LogDestinationID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLogDestination(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateLogDestination operation middleware
+func (siw *ServerInterfaceWrapper) UpdateLogDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id LogDestinationID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateLogDestinationParams
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateLogDestination(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestLogDestination operation middleware
+func (siw *ServerInterfaceWrapper) TestLogDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id LogDestinationID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestLogDestination(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10510,6 +10877,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/account/tokens/{public_id}", wrapper.RevokeMyToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/tokens", wrapper.ListTokens)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/tokens/{public_id}", wrapper.RevokeToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/log-destinations", wrapper.ListLogDestinations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/settings/log-destinations", wrapper.CreateLogDestination)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/settings/log-destinations/{id}", wrapper.DeleteLogDestination)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/log-destinations/{id}", wrapper.GetLogDestination)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/settings/log-destinations/{id}", wrapper.UpdateLogDestination)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/settings/log-destinations/{id}/test", wrapper.TestLogDestination)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/notifications/channels", wrapper.ListChannels)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/notifications/channels", wrapper.CreateChannel)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/notifications/channels/{id}", wrapper.DeleteChannel)
@@ -16815,6 +17188,530 @@ func (response SetLDAPSettings502JSONResponse) VisitSetLDAPSettingsResponse(w ht
 type SetLDAPSettings503JSONResponse struct{ SetupRequiredJSONResponse }
 
 func (response SetLDAPSettings503JSONResponse) VisitSetLDAPSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLogDestinationsRequestObject struct {
+}
+
+type ListLogDestinationsResponseObject interface {
+	VisitListLogDestinationsResponse(w http.ResponseWriter) error
+}
+
+type ListLogDestinations200JSONResponse LogDestinationList
+
+func (response ListLogDestinations200JSONResponse) VisitListLogDestinationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLogDestinations401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListLogDestinations401JSONResponse) VisitListLogDestinationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLogDestinations403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListLogDestinations403JSONResponse) VisitListLogDestinationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLogDestinations503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response ListLogDestinations503JSONResponse) VisitListLogDestinationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLogDestinationRequestObject struct {
+	Params CreateLogDestinationParams
+	Body   *CreateLogDestinationJSONRequestBody
+}
+
+type CreateLogDestinationResponseObject interface {
+	VisitCreateLogDestinationResponse(w http.ResponseWriter) error
+}
+
+type CreateLogDestination201JSONResponse LogDestination
+
+func (response CreateLogDestination201JSONResponse) VisitCreateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLogDestination400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response CreateLogDestination400JSONResponse) VisitCreateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLogDestination401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateLogDestination401JSONResponse) VisitCreateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLogDestination403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateLogDestination403JSONResponse) VisitCreateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLogDestination409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateLogDestination409JSONResponse) VisitCreateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLogDestination415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response CreateLogDestination415JSONResponse) VisitCreateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLogDestination503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response CreateLogDestination503JSONResponse) VisitCreateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLogDestinationRequestObject struct {
+	Id LogDestinationID `json:"id"`
+}
+
+type DeleteLogDestinationResponseObject interface {
+	VisitDeleteLogDestinationResponse(w http.ResponseWriter) error
+}
+
+type DeleteLogDestination204Response struct {
+}
+
+func (response DeleteLogDestination204Response) VisitDeleteLogDestinationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteLogDestination401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteLogDestination401JSONResponse) VisitDeleteLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLogDestination403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteLogDestination403JSONResponse) VisitDeleteLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLogDestination404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteLogDestination404JSONResponse) VisitDeleteLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLogDestination503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response DeleteLogDestination503JSONResponse) VisitDeleteLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLogDestinationRequestObject struct {
+	Id LogDestinationID `json:"id"`
+}
+
+type GetLogDestinationResponseObject interface {
+	VisitGetLogDestinationResponse(w http.ResponseWriter) error
+}
+
+type GetLogDestination200JSONResponse LogDestination
+
+func (response GetLogDestination200JSONResponse) VisitGetLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLogDestination401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetLogDestination401JSONResponse) VisitGetLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLogDestination403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetLogDestination403JSONResponse) VisitGetLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLogDestination404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetLogDestination404JSONResponse) VisitGetLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLogDestination503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response GetLogDestination503JSONResponse) VisitGetLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestinationRequestObject struct {
+	Id     LogDestinationID `json:"id"`
+	Params UpdateLogDestinationParams
+	Body   *UpdateLogDestinationJSONRequestBody
+}
+
+type UpdateLogDestinationResponseObject interface {
+	VisitUpdateLogDestinationResponse(w http.ResponseWriter) error
+}
+
+type UpdateLogDestination200JSONResponse LogDestination
+
+func (response UpdateLogDestination200JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestination400JSONResponse struct{ ValidationFailedJSONResponse }
+
+func (response UpdateLogDestination400JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestination401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateLogDestination401JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestination403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateLogDestination403JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestination404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateLogDestination404JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestination409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateLogDestination409JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestination415JSONResponse struct {
+	UnsupportedMediaTypeJSONResponse
+}
+
+func (response UpdateLogDestination415JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLogDestination503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response UpdateLogDestination503JSONResponse) VisitUpdateLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLogDestinationRequestObject struct {
+	Id LogDestinationID `json:"id"`
+}
+
+type TestLogDestinationResponseObject interface {
+	VisitTestLogDestinationResponse(w http.ResponseWriter) error
+}
+
+type TestLogDestination200JSONResponse LogDestinationTestResult
+
+func (response TestLogDestination200JSONResponse) VisitTestLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLogDestination401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response TestLogDestination401JSONResponse) VisitTestLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLogDestination403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response TestLogDestination403JSONResponse) VisitTestLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLogDestination404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response TestLogDestination404JSONResponse) VisitTestLogDestinationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestLogDestination503JSONResponse struct{ SetupRequiredJSONResponse }
+
+func (response TestLogDestination503JSONResponse) VisitTestLogDestinationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -25425,6 +26322,24 @@ type StrictServerInterface interface {
 	// SetLDAPSettings Save the LDAP settings
 	// (PUT /api/v1/settings/ldap)
 	SetLDAPSettings(ctx context.Context, request SetLDAPSettingsRequestObject) (SetLDAPSettingsResponseObject, error)
+	// ListLogDestinations List the log forwarding destinations
+	// (GET /api/v1/settings/log-destinations)
+	ListLogDestinations(ctx context.Context, request ListLogDestinationsRequestObject) (ListLogDestinationsResponseObject, error)
+	// CreateLogDestination Add a log forwarding destination
+	// (POST /api/v1/settings/log-destinations)
+	CreateLogDestination(ctx context.Context, request CreateLogDestinationRequestObject) (CreateLogDestinationResponseObject, error)
+	// DeleteLogDestination Delete a log forwarding destination
+	// (DELETE /api/v1/settings/log-destinations/{id})
+	DeleteLogDestination(ctx context.Context, request DeleteLogDestinationRequestObject) (DeleteLogDestinationResponseObject, error)
+	// GetLogDestination One log forwarding destination
+	// (GET /api/v1/settings/log-destinations/{id})
+	GetLogDestination(ctx context.Context, request GetLogDestinationRequestObject) (GetLogDestinationResponseObject, error)
+	// UpdateLogDestination Change a log forwarding destination
+	// (PUT /api/v1/settings/log-destinations/{id})
+	UpdateLogDestination(ctx context.Context, request UpdateLogDestinationRequestObject) (UpdateLogDestinationResponseObject, error)
+	// TestLogDestination Send a test message to a log forwarding destination
+	// (POST /api/v1/settings/log-destinations/{id}/test)
+	TestLogDestination(ctx context.Context, request TestLogDestinationRequestObject) (TestLogDestinationResponseObject, error)
 	// CompleteSetup Complete first-run setup
 	// (POST /api/v1/setup)
 	CompleteSetup(ctx context.Context, request CompleteSetupRequestObject) (CompleteSetupResponseObject, error)
@@ -27603,6 +28518,175 @@ func (sh *strictHandler) SetLDAPSettings(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetLDAPSettingsResponseObject); ok {
 		if err := validResponse.VisitSetLDAPSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListLogDestinations operation middleware
+func (sh *strictHandler) ListLogDestinations(w http.ResponseWriter, r *http.Request) {
+	var request ListLogDestinationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLogDestinations(ctx, request.(ListLogDestinationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLogDestinations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLogDestinationsResponseObject); ok {
+		if err := validResponse.VisitListLogDestinationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateLogDestination operation middleware
+func (sh *strictHandler) CreateLogDestination(w http.ResponseWriter, r *http.Request, params CreateLogDestinationParams) {
+	var request CreateLogDestinationRequestObject
+
+	request.Params = params
+
+	var body CreateLogDestinationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateLogDestination(ctx, request.(CreateLogDestinationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateLogDestination")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateLogDestinationResponseObject); ok {
+		if err := validResponse.VisitCreateLogDestinationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteLogDestination operation middleware
+func (sh *strictHandler) DeleteLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID) {
+	var request DeleteLogDestinationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteLogDestination(ctx, request.(DeleteLogDestinationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteLogDestination")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteLogDestinationResponseObject); ok {
+		if err := validResponse.VisitDeleteLogDestinationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLogDestination operation middleware
+func (sh *strictHandler) GetLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID) {
+	var request GetLogDestinationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLogDestination(ctx, request.(GetLogDestinationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLogDestination")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLogDestinationResponseObject); ok {
+		if err := validResponse.VisitGetLogDestinationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateLogDestination operation middleware
+func (sh *strictHandler) UpdateLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID, params UpdateLogDestinationParams) {
+	var request UpdateLogDestinationRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body UpdateLogDestinationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateLogDestination(ctx, request.(UpdateLogDestinationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateLogDestination")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateLogDestinationResponseObject); ok {
+		if err := validResponse.VisitUpdateLogDestinationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TestLogDestination operation middleware
+func (sh *strictHandler) TestLogDestination(w http.ResponseWriter, r *http.Request, id LogDestinationID) {
+	var request TestLogDestinationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TestLogDestination(ctx, request.(TestLogDestinationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TestLogDestination")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TestLogDestinationResponseObject); ok {
+		if err := validResponse.VisitTestLogDestinationResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

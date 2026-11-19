@@ -187,6 +187,16 @@ const (
 	// retries. Written by the app, as SystemUser, with who made the change.
 	ActionNotificationFailed = "notification_failed"
 
+	// Audit log forwarding destinations, since v2.10.0. The detail lists what changed, never more than the destination's
+	// settings: it has no secret. logdest_failed and logdest_recovered are the app's own (SystemUser): a destination
+	// that has been failing for five minutes, and the same one working again, or a warning to a destination's old
+	// place that couldn't be delivered.
+	ActionLogDestCreate    = "logdest_create"
+	ActionLogDestUpdate    = "logdest_update"
+	ActionLogDestDelete    = "logdest_delete"
+	ActionLogDestFailed    = "logdest_failed"
+	ActionLogDestRecovered = "logdest_recovered"
+
 	// Audit rows, or finished client reset runs, older than the retention were deleted; the detail has how many of
 	// each and the cutoff. Written only when something was deleted.
 	ActionAuditPrune = "audit_prune"

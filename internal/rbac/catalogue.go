@@ -41,6 +41,7 @@ const (
 	InstancesManage    Permission = "instances.manage"
 	SettingsManage     Permission = "settings.manage"
 	NotifyManage       Permission = "notifications.manage"
+	LoggingManage      Permission = "logging.manage"
 	UsersManage        Permission = "users.manage"
 	RolesManage        Permission = "roles.manage"
 	SessionsManage     Permission = "sessions.manage"
@@ -108,6 +109,7 @@ var catalogue = []Info{
 	{InstancesManage, ClassGlobal, "Add, edit and group instances"},
 	{SettingsManage, ClassGlobal, "LDAP, client-reset schedule and general settings"},
 	{NotifyManage, ClassGlobal, "Notification channels and rules"},
+	{LoggingManage, ClassGlobal, "Syslog destinations the audit log is forwarded to"},
 	{UsersManage, ClassGlobal, "Local users and their roles"},
 	{RolesManage, ClassGlobal, "Roles, grants and LDAP group mappings"},
 	{SessionsManage, ClassGlobal, "View and revoke other users' sessions"},

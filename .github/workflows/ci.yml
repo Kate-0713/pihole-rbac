@@ -186,6 +186,39 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends minisign
           sudo bash deploy/lxc/test-update.sh bin/test-2.0.0 bin/test-2.0.1
 
+  # Log forwarding against a real rsyslog: that it parses the RFC 5424 messages and the octet-counted framing over TCP
+  # and TLS, and the datagrams over UDP, which the fake collector in the unit tests can't show. rsyslogd is copied out of
+  # /usr/sbin so the distribution's AppArmor profile, which stops it reading the test's files, doesn't apply to it.
+  rsyslog:
+    name: rsyslog
+    runs-on: ubuntu-26.04
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Install rsyslog with its TLS module
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends rsyslog rsyslog-gnutls
+          sudo systemctl stop rsyslog || true
+          cp /usr/sbin/rsyslogd "$RUNNER_TEMP/rsyslogd"
+          "$RUNNER_TEMP/rsyslogd" -v | head -1
+
+      - name: Forward to rsyslog over TCP, TLS and UDP
+        env:
+          PIHOLE_RBAC_TEST_RSYSLOG: "1"
+        run: |
+          export PIHOLE_RBAC_RSYSLOGD="$RUNNER_TEMP/rsyslogd"
+          go test -count=1 -v -run Rsyslog ./internal/syslogfwd/
+
   snapshot:
     name: goreleaser snapshot
     runs-on: ubuntu-26.04

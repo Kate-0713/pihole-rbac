@@ -37,6 +37,7 @@ var releasedMigrations = map[string]string{
 	"00011_api_tokens.sql":                   "1d0a803a56da1f85b968a03b65ab2cab93838fe4c8ff8d0a49e7bf7738559d9b", // v2.9.0
 	"00012_api_token_roles.sql":              "0121e51b26bb964e46b38519b2936c73ad4d8388b622fbda072aaee7538c17b1", // v2.9.0
 	"00013_api_token_revoked_by.sql":         "3bd6a1e5871b5c26ec0f11665de7b19ff234b46c46fd42e36f6ef87139ddad0f", // v2.9.0
+	"00014_log_destinations.sql":             "60d80598566f6b149f20338d60832022347cbca0ae48aa589292d4506c43acf6", // v2.10.0
 }
 
 func TestReleasedMigrationsUnchanged(t *testing.T) {
@@ -456,7 +457,7 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 		t.Fatal(err)
 	}
 	var grantsBefore int
-	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%' AND permission <> 'tokens.use'`).Scan(&grantsBefore); err != nil {
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%' AND permission NOT IN ('tokens.use', 'logging.manage')`).Scan(&grantsBefore); err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
@@ -474,7 +475,7 @@ func TestUpgradeFromV2_5_0(t *testing.T) {
 		t.Fatalf("upgrade: %v", err)
 	}
 	var grantsAfter int
-	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%' AND permission <> 'tokens.use'`).Scan(&grantsAfter); err != nil || grantsAfter != grantsBefore {
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE permission NOT LIKE 'dhcp.%' AND permission NOT IN ('tokens.use', 'logging.manage')`).Scan(&grantsAfter); err != nil || grantsAfter != grantsBefore {
 		t.Errorf("the upgrade changed grants: %d before, %d after, %v", grantsBefore, grantsAfter, err)
 	}
 
@@ -618,7 +619,7 @@ func TestUpgradeFromV2_7_0(t *testing.T) {
 		for _, table := range []string{"users", "roles", "role_grants", "user_roles", "sessions", "session_roles"} {
 			q := `SELECT count(*) FROM ` + table
 			if table == "role_grants" {
-				q += ` WHERE permission <> 'tokens.use'` // added to the builtin admin by a later migration
+				q += ` WHERE permission NOT IN ('tokens.use', 'logging.manage')` // added to the builtin admin by a later migration
 			}
 			var n int
 			if err := st.r.QueryRow(q).Scan(&n); err != nil {
@@ -793,7 +794,7 @@ func TestUpgradeFromV2_8_0(t *testing.T) {
 		for _, table := range []string{"users", "roles", "role_grants", "user_roles", "sessions", "user_totp"} {
 			q := `SELECT count(*) FROM ` + table
 			if table == "role_grants" {
-				q += ` WHERE permission <> 'tokens.use'`
+				q += ` WHERE permission NOT IN ('tokens.use', 'logging.manage')`
 			}
 			var n int
 			if err := s.r.QueryRow(q).Scan(&n); err != nil {
@@ -1099,5 +1100,234 @@ func TestUpgradeFrom00012(t *testing.T) {
 	}
 	if _, err := p.Up(ctx); err != nil {
 		t.Fatalf("up again: %v", err)
+	}
+}
+
+// TestUpgradeFromV2_9_0: a database as v2.9.0 left it (version 13) gets logging.manage on the builtin admin role only,
+// and the two log forwarding tables, with no other change to its users, roles or grants. audit_log is rebuilt: its
+// rows keep their IDs, content and indexes, and an ID is never used twice, even after every row is deleted (a cursor
+// is an ID, so a reused one would be passed over). A destination needs a name unique ignoring case, a port from 1 to
+// 65535, a known transport and TLS mode, and a CA file only with TLS and verify. A cursor goes with its destination.
+// Migrating down to 13 removes the tables and logging.manage everywhere, leaves the builtin admin's grants
+// protected and the audit rows in place, and up again restores them.
+func TestUpgradeFromV2_9_0(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := openAt(t, dir, migrationsUpTo(t, 13))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO users (id, username, source, password_hash, created_at) VALUES (5, 'alice', 'local', 'x', 1)`,
+		`INSERT INTO roles (id, name, created_at) VALUES (10, 'operators', 1)`,
+		`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'domains.edit', 'all')`,
+		`INSERT INTO user_roles (user_id, role_id) VALUES (5, 1), (5, 10)`,
+		`INSERT INTO instances (id, name, base_url, created_at) VALUES (7, 'pihole1', 'https://pihole1', 1)`,
+		`INSERT INTO audit_log (id, at, user_id, username, action, target, instance_id, instance_name, result, detail, ip)
+		 VALUES (3, 100, 5, 'alice', 'domain_add', 'i-7', 7, 'pihole1', 'success', '{"domain":"a.example"}', '10.0.0.5'),
+		        (9, 200, NULL, 'ghost', 'login', '', NULL, '', 'failure', '{"error":"bad password"}', '10.0.0.6')`,
+	} {
+		if _, err := s.w.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	counts := func() string {
+		t.Helper()
+		var out []string
+		for _, table := range []string{"users", "roles", "role_grants", "user_roles", "sessions", "api_tokens"} {
+			q := `SELECT count(*) FROM ` + table
+			if table == "role_grants" {
+				q += ` WHERE permission <> 'logging.manage'`
+			}
+			var n int
+			if err := s.r.QueryRow(q).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, fmt.Sprintf("%s=%d", table, n))
+		}
+		return strings.Join(out, " ")
+	}
+	auditRows := func() string {
+		t.Helper()
+		rows, err := s.r.Query(`SELECT id, at, ifnull(user_id, 0), username, action, target, ifnull(instance_id, 0), instance_name, result, detail, ip FROM audit_log ORDER BY id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var id, at, uid, iid int64
+			var user, action, target, iname, result, detail, ip string
+			if err := rows.Scan(&id, &at, &uid, &user, &action, &target, &iid, &iname, &result, &detail, &ip); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, fmt.Sprint(id, at, uid, user, action, target, iid, iname, result, detail, ip))
+		}
+		return strings.Join(out, "|")
+	}
+	before, auditBefore := counts(), auditRows()
+	s.Close()
+
+	s, err = openAt(t, dir, migrations.FS)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	if after := counts(); after != before {
+		t.Errorf("the upgrade changed existing rows: %s before, %s after", before, after)
+	}
+	if after := auditRows(); after != auditBefore {
+		t.Errorf("the upgrade changed the audit rows:\n before %s\n after  %s", auditBefore, after)
+	}
+	loggingManage := func(when string, want map[int]int) {
+		t.Helper()
+		for role, n := range want {
+			var got int
+			q := `SELECT count(*) FROM role_grants WHERE role_id = ? AND permission = 'logging.manage' AND scope_type = 'all'`
+			if err := s.r.QueryRow(q, role).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != n {
+				t.Errorf("%s: role %d has %d logging.manage grants, want %d", when, role, got, n)
+			}
+		}
+	}
+	loggingManage("after upgrading", map[int]int{1: 1, 10: 0})
+
+	exec := func(q string, args ...any) error {
+		_, err := s.w.Exec(q, args...)
+		return err
+	}
+	// The rebuilt table keeps its indexes and its foreign keys: a user or instance that goes leaves the row, as before.
+	for _, index := range []string{"audit_log_at", "audit_log_user", "audit_log_action", "audit_log_instance"} {
+		var n int
+		if err := s.r.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = ? AND tbl_name = 'audit_log'`, index).Scan(&n); err != nil || n != 1 {
+			t.Errorf("index %s on audit_log: %d, %v", index, n, err)
+		}
+	}
+	if err := exec(`DELETE FROM users WHERE id = 5`); err != nil {
+		t.Fatalf("deleting a user named by an audit row: %v", err)
+	}
+	var uid sql.NullInt64
+	if err := s.r.QueryRow(`SELECT user_id FROM audit_log WHERE id = 3`).Scan(&uid); err != nil || uid.Valid {
+		t.Errorf("an audit row after its user was deleted: user_id %v, %v, want NULL", uid, err)
+	}
+	// An ID is never used twice: new rows continue after the highest ID there was, even once every row is gone.
+	insert := `INSERT INTO audit_log (at, username, action, result) VALUES (300, 'system', 'audit_prune', 'success')`
+	if err := exec(insert); err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	if err := s.r.QueryRow(`SELECT max(id) FROM audit_log`).Scan(&id); err != nil || id != 10 {
+		t.Errorf("the first row after the upgrade has ID %d, %v, want 10 (after the highest, 9)", id, err)
+	}
+	if err := exec(`DELETE FROM audit_log`); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec(insert); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.r.QueryRow(`SELECT max(id) FROM audit_log`).Scan(&id); err != nil || id != 11 {
+		t.Errorf("the first row after every row was deleted has ID %d, %v, want 11: an ID was used twice", id, err)
+	}
+
+	const dest = `INSERT INTO log_destinations (id, name, host, port, transport, tls_mode, ca_file, enabled, created_at, updated_at) VALUES `
+	if err := exec(dest + `(1, 'Graylog', 'graylog.lab', 6514, 'tls', 'verify', '/etc/ssl/lab-ca.pem', 1, 1, 1),
+		(2, 'rsyslog', '10.0.0.9', 514, 'udp', 'verify', NULL, 1, 1, 1),
+		(3, 'wazuh', 'wazuh.lab', 6514, 'tls', 'insecure', NULL, 0, 1, 1)`); err != nil {
+		t.Fatalf("destinations: %v", err)
+	}
+	var transport, tlsMode string
+	if err := s.r.QueryRow(`SELECT transport, tls_mode FROM log_destinations WHERE id = 1`).Scan(&transport, &tlsMode); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec(`INSERT INTO log_destinations (name, host, port, created_at, updated_at) VALUES ('defaults', 'h', 6514, 1, 1)`); err != nil {
+		t.Fatalf("a destination with only the required fields: %v", err)
+	}
+	if err := s.r.QueryRow(`SELECT transport, tls_mode FROM log_destinations WHERE name = 'defaults'`).Scan(&transport, &tlsMode); err != nil || transport != "tls" || tlsMode != "verify" {
+		t.Errorf("defaults: transport %q and TLS mode %q, %v, want tls and verify", transport, tlsMode, err)
+	}
+	for name, values := range map[string]string{
+		"a name used twice, in other case": `(10, 'GRAYLOG', 'h', 6514, 'tls', 'verify', NULL, 1, 1, 1)`,
+		"an empty name":                    `(10, '', 'h', 6514, 'tls', 'verify', NULL, 1, 1, 1)`,
+		"an empty host":                    `(10, 'x', '', 6514, 'tls', 'verify', NULL, 1, 1, 1)`,
+		"port 0":                           `(10, 'x', 'h', 0, 'tls', 'verify', NULL, 1, 1, 1)`,
+		"port 65536":                       `(10, 'x', 'h', 65536, 'tls', 'verify', NULL, 1, 1, 1)`,
+		"an unknown transport":             `(10, 'x', 'h', 514, 'http', 'verify', NULL, 1, 1, 1)`,
+		"an unknown TLS mode":              `(10, 'x', 'h', 6514, 'tls', 'skip', NULL, 1, 1, 1)`,
+		"a CA file with insecure":          `(10, 'x', 'h', 6514, 'tls', 'insecure', '/ca.pem', 1, 1, 1)`,
+		"a CA file without TLS":            `(10, 'x', 'h', 514, 'tcp', 'verify', '/ca.pem', 1, 1, 1)`,
+		"an empty CA file":                 `(10, 'x', 'h', 6514, 'tls', 'verify', '', 1, 1, 1)`,
+		"enabled as 2":                     `(10, 'x', 'h', 6514, 'tls', 'verify', NULL, 2, 1, 1)`,
+		"no creation time":                 `(10, 'x', 'h', 6514, 'tls', 'verify', NULL, 1, NULL, 1)`,
+	} {
+		if err := exec(dest + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+
+	const cursor = `INSERT INTO log_destination_cursors (destination_id, last_id, updated_at) VALUES `
+	if err := exec(cursor + `(1, 11, 5), (2, 0, 5)`); err != nil {
+		t.Fatalf("cursors: %v", err)
+	}
+	for name, values := range map[string]string{
+		"a second cursor for one destination": `(1, 12, 6)`,
+		"a cursor for no destination":         `(99, 1, 6)`,
+		"a negative cursor":                   `(3, -1, 6)`,
+	} {
+		if err := exec(cursor + values); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if err := exec(`DELETE FROM log_destinations WHERE id = 2`); err != nil {
+		t.Fatal(err)
+	}
+	var cursors int
+	if err := s.r.QueryRow(`SELECT count(*) FROM log_destination_cursors`).Scan(&cursors); err != nil || cursors != 1 {
+		t.Errorf("cursors after deleting a destination: %d, %v, want 1", cursors, err)
+	}
+
+	// A grant on another role, so the Down section's first DELETE has something to remove.
+	if err := exec(`INSERT INTO role_grants (role_id, permission, scope_type) VALUES (10, 'logging.manage', 'all')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec(`INSERT INTO audit_log (at, username, action, result) VALUES (400, 'system', 'audit_prune', 'success')`); err != nil {
+		t.Fatal(err)
+	}
+	downAudit := auditRows()
+	p, err := goose.NewProvider(goose.DialectSQLite3, s.w, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 13); err != nil {
+		t.Fatalf("down to 13: %v", err)
+	}
+	for _, table := range []string{"log_destinations", "log_destination_cursors"} {
+		if ok, err := s.tableExists(ctx, table); err != nil || ok {
+			t.Errorf("after migrating down: %s still exists (%v)", table, err)
+		}
+	}
+	loggingManage("after migrating down", map[int]int{1: 0, 10: 0})
+	if after := auditRows(); after != downAudit {
+		t.Errorf("migrating down changed the audit rows:\n before %s\n after  %s", downAudit, after)
+	}
+	var edits int
+	if err := s.r.QueryRow(`SELECT count(*) FROM role_grants WHERE role_id = 10 AND permission = 'domains.edit'`).Scan(&edits); err != nil || edits != 1 {
+		t.Errorf("migrating down touched other grants: %d domains.edit grants on role 10, %v", edits, err)
+	}
+	if err := exec(`DELETE FROM role_grants WHERE role_id = 1 AND permission = 'domains.view'`); err == nil {
+		t.Error("the builtin admin's grants can be deleted after migrating down: the trigger wasn't recreated")
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	loggingManage("after migrating up again", map[int]int{1: 1, 10: 0})
+	if after := auditRows(); after != downAudit {
+		t.Errorf("migrating up again changed the audit rows:\n before %s\n after  %s", downAudit, after)
+	}
+	for _, table := range []string{"log_destinations", "log_destination_cursors"} {
+		var n int
+		if err := s.r.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil || n != 0 {
+			t.Errorf("after migrating up again: %s has %d rows, %v", table, n, err)
+		}
 	}
 }

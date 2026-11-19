@@ -23,6 +23,7 @@ const (
 	GroupAccess        = "Users, roles and LDAP"
 	GroupSettings      = "Settings and system"
 	GroupNotifications = "Notifications"
+	GroupLogForwarding = "Log forwarding"
 )
 
 // actions lists every action an audit row can have, in the order a page shows them. TestActionsListed checks it
@@ -132,6 +133,11 @@ var actions = []ActionInfo{
 	{ActionChannelDelete, GroupNotifications, "A notification channel deleted"},
 	{ActionProtectedGroups, GroupNotifications, "The protected Pi-hole groups changed"},
 	{ActionNotificationFailed, GroupNotifications, "A warning to a channel's old destination couldn't be delivered"},
+	{ActionLogDestCreate, GroupLogForwarding, "A log forwarding destination added"},
+	{ActionLogDestUpdate, GroupLogForwarding, "A log forwarding destination changed, enabled or disabled"},
+	{ActionLogDestDelete, GroupLogForwarding, "A log forwarding destination deleted"},
+	{ActionLogDestFailed, GroupLogForwarding, "A log forwarding destination has been failing for five minutes, or a warning to its old place couldn't be delivered"},
+	{ActionLogDestRecovered, GroupLogForwarding, "A log forwarding destination that had been failing works again"},
 }
 
 // Actions returns every action, grouped, in display order.

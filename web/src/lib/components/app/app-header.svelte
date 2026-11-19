@@ -48,6 +48,7 @@
 			{ href: '/admin/ldap', label: 'LDAP', show: canAnyGlobal('roles.manage', 'settings.manage') },
 			{ href: '/admin/sessions', label: 'Sessions', show: can('sessions.manage') },
 			{ href: '/admin/notifications', label: 'Notifications', show: can('notifications.manage') },
+			{ href: '/admin/log-forwarding', label: 'Log forwarding', show: can('logging.manage') },
 			{ href: '/admin/audit', label: 'Audit log', show: can('audit.view') },
 			{ href: '/admin/client-reset', label: 'Client reset', show: can('settings.manage') },
 			{ href: '/admin/settings', label: 'Settings', show: can('settings.manage') },

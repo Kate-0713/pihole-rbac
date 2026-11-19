@@ -11,6 +11,7 @@ export type GlobalPermission =
 	| 'instances.manage'
 	| 'settings.manage'
 	| 'notifications.manage'
+	| 'logging.manage'
 	| 'users.manage'
 	| 'roles.manage'
 	| 'sessions.manage'

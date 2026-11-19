@@ -22,6 +22,7 @@ import (
 	"github.com/Kate-0713/pihole-rbac/internal/clientreset"
 	"github.com/Kate-0713/pihole-rbac/internal/config"
 	"github.com/Kate-0713/pihole-rbac/internal/instances"
+	"github.com/Kate-0713/pihole-rbac/internal/logdestinations"
 	"github.com/Kate-0713/pihole-rbac/internal/logging"
 	"github.com/Kate-0713/pihole-rbac/internal/loginsettings"
 	"github.com/Kate-0713/pihole-rbac/internal/notifications"
@@ -209,7 +210,16 @@ func serve() error {
 	if err := channels.Reload(ctx); err != nil {
 		return err
 	}
-	auditLog.SetSink(notifier.Notify)
+	// Log forwarding: a forwarder per enabled destination reads the audit log from its own cursor. The sink only
+	// nudges them, so nothing depends on it for delivery; a row nobody nudged for is found at the next poll.
+	logDests := &logdestinations.Service{Store: st, Audit: auditLog, Logger: logger}
+	if err := logDests.Start(ctx); err != nil {
+		return err
+	}
+	auditLog.SetSink(func(e audit.Entry) {
+		notifier.Notify(e)
+		logDests.Nudge()
+	})
 	go notifier.Run(ctx)
 
 	// Client reset. A run the app was in the middle of when it last stopped is marked failed first, since only one
@@ -257,6 +267,7 @@ func serve() error {
 		Auth:            login.Authenticator(),
 		LoginSettings:   login,
 		Notifications:   channels,
+		LogDestinations: logDests,
 		ClientReset:     resets,
 		Schedules:       scheduleService,
 		ClientOverrides: overrideService,

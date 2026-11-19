@@ -1307,6 +1307,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/log-destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the log forwarding destinations
+         * @description Every syslog destination the audit log is forwarded to, by name, with how it is doing: `state` (ok, failing, disabled, or idle until something has been sent since the app started), when a row was last sent, the code of the latest failure, and how many audit rows are still to send. A restart resets the in-memory parts of the status.
+         */
+        get: operations["listLogDestinations"];
+        put?: never;
+        /**
+         * Add a log forwarding destination
+         * @description Adds a syslog collector. Every audit row from now on is sent to it as an RFC 5424 message whose text is the row as JSON; rows from before it was added are not. `tls` (the default) verifies the collector's certificate against the system CAs and `ca_file`. `tcp` and `udp` send the log unencrypted and answer 409 confirmation_required until sent again with confirm=true. At most 10 destinations. Audited as logdest_create.
+         */
+        post: operations["createLogDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/log-destinations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The log forwarding destination's ID. */
+                id: components["parameters"]["LogDestinationID"];
+            };
+            cookie?: never;
+        };
+        /** One log forwarding destination */
+        get: operations["getLogDestination"];
+        /**
+         * Change a log forwarding destination
+         * @description Replaces the destination's settings. When an enabled destination's host, port, transport, TLS mode or CA file changes, or it is disabled, the place it was sending to is first sent everything it hasn't had, up to and including this change's own audit row, from the old settings, so it hears about the change; if that can't be delivered within about ten seconds, the app audits logdest_failed. A destination that moves starts again at that row, so the new place gets what happens after the change. Changing the transport to `tcp` or `udp` needs confirm=true. Audited as logdest_update.
+         */
+        put: operations["updateLogDestination"];
+        post?: never;
+        /**
+         * Delete a log forwarding destination
+         * @description Deletes the destination and its position in the log. One that was sending is first sent everything up to and including the deletion. Audited as logdest_delete.
+         */
+        delete: operations["deleteLogDestination"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/log-destinations/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The log forwarding destination's ID. */
+                id: components["parameters"]["LogDestinationID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test message to a log forwarding destination
+         * @description Connects to the destination's saved settings and sends one message (MSGID `test`), waiting for the write. It works for a disabled destination and isn't audited. The result gives a code, never anything the collector said. UDP can only say the datagram was handed to the network.
+         */
+        post: operations["testLogDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notifications/channels": {
         parameters: {
             query?: never;
@@ -3338,6 +3413,78 @@ export interface components {
             errcode?: string;
             message: string;
         };
+        LogDestinationInput: {
+            name: string;
+            /** @description A host name or an address, with no scheme or port. */
+            host: string;
+            port: number;
+            transport?: components["schemas"]["LogTransport"];
+            tls_mode?: components["schemas"]["LogTLSMode"];
+            /** @description An absolute path to PEM certificates to trust as well as the system's, read on every connection. Only with `tls` and `tls_mode` verify. */
+            ca_file?: string;
+            enabled: boolean;
+        };
+        /**
+         * @description `tls` and `tcp` frame each message with its length (RFC 6587 octet counting) on one connection; `udp` sends one datagram per message, with a longer detail cut to a marker, and can't tell whether it arrived.
+         * @default tls
+         * @enum {string}
+         */
+        LogTransport: "tls" | "tcp" | "udp";
+        /**
+         * @description `insecure` doesn't check the collector's certificate at all. For labs. Only with `tls`.
+         * @default verify
+         * @enum {string}
+         */
+        LogTLSMode: "verify" | "insecure";
+        LogDestinationStatus: {
+            /** @enum {string} */
+            state: "ok" | "failing" | "disabled" | "idle";
+            /** Format: date-time */
+            last_sent_at?: string;
+            /** @description The code of the latest failure while failing: invalid_config, ca_file_invalid, dial_failed, tls_failed, timeout, write_failed, read_failed, cursor_failed or cursor_missing. */
+            last_error?: string;
+            /** Format: date-time */
+            failing_since?: string;
+            /**
+             * Format: int64
+             * @description Audit rows after the destination's position, not yet sent.
+             */
+            behind: number;
+            /**
+             * Format: int64
+             * @description Rows the retention deleted before they were sent, since the app started.
+             */
+            skipped_pruned?: number;
+            /** @enum {string} */
+            delivery: "at_least_once" | "best_effort";
+        };
+        LogDestination: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            host: string;
+            port: number;
+            transport: components["schemas"]["LogTransport"];
+            tls_mode: components["schemas"]["LogTLSMode"];
+            ca_file?: string;
+            enabled: boolean;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_by: string;
+            status: components["schemas"]["LogDestinationStatus"];
+        };
+        LogDestinationList: {
+            destinations: components["schemas"]["LogDestination"][];
+        };
+        LogDestinationTestResult: {
+            ok: boolean;
+            /** @description The failure's code when `ok` is false. */
+            code?: string;
+            message: string;
+        };
         NotificationEvent: {
             name: string;
             group: string;
@@ -4936,6 +5083,8 @@ export interface components {
         AuditTo: string;
         /** @description The notification channel's ID. */
         ChannelID: number;
+        /** @description The log forwarding destination's ID. */
+        LogDestinationID: number;
         /** @description The instance's ID. */
         InstanceID: number;
         /** @description The instance group's ID. */
@@ -4946,7 +5095,7 @@ export interface components {
         Members: number[];
         /** @description The role's ID. */
         RoleID: number;
-        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+        /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
         Confirm: boolean;
         /** @description The user's ID. */
         UserID: number;
@@ -6273,7 +6422,7 @@ export interface operations {
     setRoleGrants: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -6405,7 +6554,7 @@ export interface operations {
     removeLDAPMapping: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -6516,7 +6665,7 @@ export interface operations {
     deleteUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -6572,7 +6721,7 @@ export interface operations {
     disableUser: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -6696,7 +6845,7 @@ export interface operations {
     setUserRoles: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -7096,6 +7245,178 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    listLogDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The destinations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogDestinationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    createLogDestination: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogDestinationInput"];
+            };
+        };
+        responses: {
+            /** @description The new destination. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogDestination"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    getLogDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The log forwarding destination's ID. */
+                id: components["parameters"]["LogDestinationID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The destination. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogDestination"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    updateLogDestination: {
+        parameters: {
+            query?: {
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                confirm?: components["parameters"]["Confirm"];
+            };
+            header?: never;
+            path: {
+                /** @description The log forwarding destination's ID. */
+                id: components["parameters"]["LogDestinationID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogDestinationInput"];
+            };
+        };
+        responses: {
+            /** @description The destination as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogDestination"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    deleteLogDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The log forwarding destination's ID. */
+                id: components["parameters"]["LogDestinationID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["SetupRequired"];
+        };
+    };
+    testLogDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The log forwarding destination's ID. */
+                id: components["parameters"]["LogDestinationID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How the test went. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogDestinationTestResult"];
+                };
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
@@ -8181,7 +8502,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -8230,7 +8551,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -8604,7 +8925,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -8700,7 +9021,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -8749,7 +9070,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -8845,7 +9166,7 @@ export interface operations {
             query?: {
                 /** @description Only for a mirrored group: send the write to these members alone (instance IDs, each an enabled member of the group), to retry the members that failed last time. The results list only them, and the write is still made through the group: it is audited with the group as its target, and the group's rules apply (the primary's Pi-hole group IDs, and the check that the primary has the entry). A 400 for an instance target, or for an ID that isn't an enabled member. */
                 members?: components["parameters"]["Members"];
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
@@ -9122,7 +9443,7 @@ export interface operations {
     updateDHCPSettings: {
         parameters: {
             query?: {
-                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
+                /** @description Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule. */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;

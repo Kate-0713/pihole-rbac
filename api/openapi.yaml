@@ -2255,6 +2255,175 @@ paths:
         "503":
           $ref: "#/components/responses/SetupRequired"
 
+  /api/v1/settings/log-destinations:
+    get:
+      summary: List the log forwarding destinations
+      description: >-
+        Every syslog destination the audit log is forwarded to, by name, with how it is doing: `state` (ok, failing,
+        disabled, or idle until something has been sent since the app started), when a row was last sent, the code of
+        the latest failure, and how many audit rows are still to send. A restart resets the in-memory parts of the
+        status.
+      operationId: listLogDestinations
+      x-permission: logging.manage
+      responses:
+        "200":
+          description: The destinations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogDestinationList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    post:
+      summary: Add a log forwarding destination
+      description: >-
+        Adds a syslog collector. Every audit row from now on is sent to it as an RFC 5424 message whose text is the
+        row as JSON; rows from before it was added are not. `tls` (the default) verifies the collector's certificate
+        against the system CAs and `ca_file`. `tcp` and `udp` send the log unencrypted and answer 409
+        confirmation_required until sent again with confirm=true. At most 10 destinations. Audited as
+        logdest_create.
+      operationId: createLogDestination
+      x-permission: logging.manage
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogDestinationInput"
+      responses:
+        "201":
+          description: The new destination.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogDestination"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/settings/log-destinations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/LogDestinationID"
+    get:
+      summary: One log forwarding destination
+      operationId: getLogDestination
+      x-permission: logging.manage
+      responses:
+        "200":
+          description: The destination.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogDestination"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    put:
+      summary: Change a log forwarding destination
+      description: >-
+        Replaces the destination's settings. When an enabled destination's host, port, transport, TLS mode or CA file
+        changes, or it is disabled, the place it was sending to is first sent everything it hasn't had, up to and
+        including this change's own audit row, from the old settings, so it hears about the change; if that can't be
+        delivered within about ten seconds, the app audits logdest_failed. A destination that moves starts again at
+        that row, so the new place gets what happens after the change. Changing the transport to `tcp` or `udp` needs
+        confirm=true. Audited as logdest_update.
+      operationId: updateLogDestination
+      x-permission: logging.manage
+      parameters:
+        - $ref: "#/components/parameters/Confirm"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogDestinationInput"
+      responses:
+        "200":
+          description: The destination as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogDestination"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+    delete:
+      summary: Delete a log forwarding destination
+      description: >-
+        Deletes the destination and its position in the log. One that was sending is first sent everything up to and
+        including the deletion. Audited as logdest_delete.
+      operationId: deleteLogDestination
+      x-permission: logging.manage
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
+  /api/v1/settings/log-destinations/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/LogDestinationID"
+    post:
+      summary: Send a test message to a log forwarding destination
+      description: >-
+        Connects to the destination's saved settings and sends one message (MSGID `test`), waiting for the write. It
+        works for a disabled destination and isn't audited. The result gives a code, never anything the collector
+        said. UDP can only say the datagram was handed to the network.
+      operationId: testLogDestination
+      x-permission: logging.manage
+      responses:
+        "200":
+          description: How the test went.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogDestinationTestResult"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SetupRequired"
+
   /api/v1/notifications/channels:
     get:
       summary: List the notification channels
@@ -5175,6 +5344,16 @@ components:
         format: int64
         minimum: 1
 
+    LogDestinationID:
+      name: id
+      in: path
+      required: true
+      description: The log forwarding destination's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
     InstanceID:
       name: id
       in: path
@@ -5241,7 +5420,7 @@ components:
       description: >-
         Go ahead with a change that answered 409 confirmation_required: one that would take away the caller's own
         roles.manage or users.manage, or disable or delete their own account; or a Pi-hole group change that renames
-        or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
+        or deletes a group the app refers to, or disables the Default group; a local DNS name under a directory domain; a log forwarding destination that sends unencrypted (tcp or udp); or a DHCP settings change that turns DHCP on or off or changes its address range, router, netmask or unknown-client rule.
       schema:
         type: boolean
         default: false
@@ -7572,6 +7751,138 @@ components:
         errcode:
           type: string
           description: Matrix's errcode, such as M_FORBIDDEN, when it sent one.
+        message:
+          type: string
+
+    LogDestinationInput:
+      type: object
+      additionalProperties: false
+      required: [name, host, port, enabled]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        host:
+          type: string
+          maxLength: 253
+          description: A host name or an address, with no scheme or port.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        transport:
+          $ref: "#/components/schemas/LogTransport"
+        tls_mode:
+          $ref: "#/components/schemas/LogTLSMode"
+        ca_file:
+          type: string
+          maxLength: 4096
+          description: >-
+            An absolute path to PEM certificates to trust as well as the system's, read on every connection. Only with
+            `tls` and `tls_mode` verify.
+        enabled:
+          type: boolean
+
+    LogTransport:
+      type: string
+      default: tls
+      enum: [tls, tcp, udp]
+      description: >-
+        `tls` and `tcp` frame each message with its length (RFC 6587 octet counting) on one connection; `udp` sends one
+        datagram per message, with a longer detail cut to a marker, and can't tell whether it arrived.
+
+    LogTLSMode:
+      type: string
+      default: verify
+      enum: [verify, insecure]
+      description: "`insecure` doesn't check the collector's certificate at all. For labs. Only with `tls`."
+
+    LogDestinationStatus:
+      type: object
+      additionalProperties: false
+      required: [state, behind, delivery]
+      properties:
+        state:
+          type: string
+          enum: [ok, failing, disabled, idle]
+        last_sent_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+          description: >-
+            The code of the latest failure while failing: invalid_config, ca_file_invalid, dial_failed, tls_failed,
+            timeout, write_failed, read_failed, cursor_failed or cursor_missing.
+        failing_since:
+          type: string
+          format: date-time
+        behind:
+          type: integer
+          format: int64
+          description: Audit rows after the destination's position, not yet sent.
+        skipped_pruned:
+          type: integer
+          format: int64
+          description: Rows the retention deleted before they were sent, since the app started.
+        delivery:
+          type: string
+          enum: [at_least_once, best_effort]
+
+    LogDestination:
+      type: object
+      additionalProperties: false
+      required: [id, name, host, port, transport, tls_mode, enabled, created_at, created_by, updated_at, updated_by, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        transport:
+          $ref: "#/components/schemas/LogTransport"
+        tls_mode:
+          $ref: "#/components/schemas/LogTLSMode"
+        ca_file:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: string
+        status:
+          $ref: "#/components/schemas/LogDestinationStatus"
+
+    LogDestinationList:
+      type: object
+      additionalProperties: false
+      required: [destinations]
+      properties:
+        destinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogDestination"
+
+    LogDestinationTestResult:
+      type: object
+      additionalProperties: false
+      required: [ok, message]
+      properties:
+        ok:
+          type: boolean
+        code:
+          type: string
+          description: The failure's code when `ok` is false.
         message:
           type: string
 
