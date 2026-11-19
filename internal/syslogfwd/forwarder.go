@@ -33,6 +33,8 @@ const (
 	DefaultBackoffMin = time.Second
 	DefaultBackoffMax = time.Minute
 	DefaultFailAfter  = 5 * time.Minute
+
+	saveTimeout = 5 * time.Second // the longest a cursor save may take once rows have been written
 )
 
 // Codes of a failure that isn't a send.
@@ -280,7 +282,12 @@ func (f *Forwarder) pass(ctx context.Context, upTo int64) (int, error) {
 			f.Count("sent", len(rows))
 		}
 		total += len(rows)
-		if err := f.Store.SetCursor(ctx, f.Dest.ID, last, now); err != nil {
+		// The rows are on the wire, so saving the cursor mustn't be undone by the caller stopping us: a cancel landing
+		// here would leave the cursor behind rows the collector already has, and a drain after the stop sends them again.
+		saveCtx, cancelSave := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
+		err = f.Store.SetCursor(saveCtx, f.Dest.ID, last, now)
+		cancelSave()
+		if err != nil {
 			// The rows are written, but not recorded, so they are sent again: at least once.
 			return total, &Error{CodeCursor, err}
 		}
