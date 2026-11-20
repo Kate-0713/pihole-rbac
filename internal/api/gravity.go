@@ -33,6 +33,11 @@ func (s *Server) StartGravity(ctx context.Context, req gen.StartGravityRequestOb
 	}
 	ri := info(ctx)
 	snap, err := s.Gravity.Start(ctx, tg.t.String(), ri.user.Username, members, gravity.Hooks{
+		// Before the run sends anything, so gravity_start always precedes its gravity_run rows, and a run that was
+		// started is recorded as soon as it exists.
+		Started: func(ctx context.Context, runID string) {
+			s.auditPihole(ctx, tg.main, audit.ActionGravityStart, nil, map[string]any{"run_id": runID, "instances": names})
+		},
 		Finished: func(ctx context.Context, runID string, r gravity.Result) {
 			detail := map[string]any{"run_id": runID, "outcome": r.Status, "duration_ms": r.Duration.Milliseconds()}
 			if r.Status == gravity.InstanceOK {
@@ -60,7 +65,6 @@ func (s *Server) StartGravity(ctx context.Context, req gen.StartGravityRequestOb
 	if err != nil {
 		return nil, err
 	}
-	s.auditPihole(ctx, tg.main, audit.ActionGravityStart, nil, map[string]any{"run_id": snap.ID, "instances": names})
 	return gen.StartGravity202JSONResponse(gravityJSON(snap)), nil
 }
 

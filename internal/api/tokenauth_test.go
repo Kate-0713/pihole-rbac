@@ -425,13 +425,14 @@ func TestLDAPToken(t *testing.T) {
 	})
 	mustStatus(t, res, http.StatusCreated)
 	nt := decode[gen.NewAPIToken](t, res)
-	tokenID := func() int64 {
-		row, err := e.st.Read().GetAPITokenForAuth(t.Context(), nt.ApiToken.PublicId)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return row.ID
-	}()
+	tokenRow, err := e.st.Read().GetAPITokenForAuth(t.Context(), nt.ApiToken.PublicId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenID := tokenRow.ID
+	// The token starts from when its session's roles were last confirmed. The sessions use the real clock, not the
+	// test's, so that moment is a little after the test's own start, and by more the slower the machine is.
+	rolesChecked := store.FromMillis(tokenRow.RolesCheckedAt.Int64)
 	get := func(path string) response {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		r.RemoteAddr = "10.0.0.60:1"
@@ -452,7 +453,7 @@ func TestLDAPToken(t *testing.T) {
 
 	// Past the recheck interval plus the grace period without a recheck: suspended, more often than the login limit
 	// allows failures, since it isn't one.
-	now = now.Add(auth.DefaultRecheckInterval + auth.DefaultRecheckGrace + time.Second)
+	now = rolesChecked.Add(auth.DefaultRecheckInterval + auth.DefaultRecheckGrace + time.Second)
 	for range 6 {
 		wantError(t, get("/api/v1/audit"), http.StatusUnauthorized, "token_suspended")
 	}

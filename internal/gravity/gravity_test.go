@@ -400,3 +400,57 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// TestStartedHookComesFirst: Started runs on the caller's goroutine, with the caller's context, before the run sends
+// anything, so a record made there always precedes the ones Finished makes; a refused run doesn't call it.
+func TestStartedHookComesFirst(t *testing.T) {
+	e := newEnv(t, "alpha", "beta")
+	type key struct{}
+	ctx := context.WithValue(context.Background(), key{}, "who")
+	var mu sync.Mutex
+	var events []string
+	note := func(s string) { mu.Lock(); events = append(events, s); mu.Unlock() }
+	hooks := Hooks{
+		Started: func(ctx context.Context, id string) {
+			if ctx.Value(key{}) != "who" {
+				t.Error("Started didn't get the caller's context")
+			}
+			// Slow, as a database write can be: if the run were already going, it would finish first.
+			time.Sleep(20 * time.Millisecond)
+			note("started:" + id)
+		},
+		Finished: func(_ context.Context, id string, r Result) { note("finished:" + id + ":" + r.Name) },
+	}
+	for range 5 {
+		mu.Lock()
+		events = nil
+		mu.Unlock()
+		snap, err := e.svc.Start(ctx, "g-1", "admin", e.list("alpha", "beta"), hooks)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.finish("g-1", snap.ID)
+		mu.Lock()
+		got := slices.Clone(events)
+		mu.Unlock()
+		if want := []string{"started:" + snap.ID, "finished:" + snap.ID + ":alpha", "finished:" + snap.ID + ":beta"}; !slices.Equal(got, want) {
+			t.Fatalf("events %v, want %v", got, want)
+		}
+	}
+
+	// A run refused because an instance is busy isn't started, so nothing is recorded for it.
+	hold := make(chan struct{})
+	e.ph["alpha"].SetGravity(piholetest.GravityRun{Hold: hold})
+	first, err := e.svc.Start(ctx, "i-1", "admin", e.list("alpha"), Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	_, err = e.svc.Start(ctx, "g-1", "admin", e.list("alpha", "beta"), Hooks{Started: func(context.Context, string) { called = true }})
+	var busy *BusyError
+	if !errors.As(err, &busy) || called {
+		t.Errorf("busy start: err %v, Started called %v", err, called)
+	}
+	close(hold)
+	e.finish("i-1", first.ID)
+}

@@ -114,8 +114,12 @@ func (e *BusyError) Error() string {
 	return "gravity is already running on an instance this run would cover"
 }
 
-// Hooks are called from a run's goroutine.
+// Hooks let the caller record a run. Started is called on the caller's goroutine, Finished from the run's.
 type Hooks struct {
+	// Started is called with the run's ID once the run is registered and before anything is sent to an instance, on
+	// the goroutine that called Start and with its context. So whatever it records comes before anything Finished
+	// does, however quickly the run goes. It isn't called for a run that was refused.
+	Started func(ctx context.Context, runID string)
 	// Finished is called when an instance's part ends, ok or failed, but not for a skipped one, with the run's ID.
 	Finished func(ctx context.Context, runID string, r Result)
 }
@@ -188,6 +192,9 @@ func (s *Service) Start(ctx context.Context, target, startedBy string, members [
 	snap := r.served(0)
 	s.mu.Unlock()
 
+	if hooks.Started != nil {
+		hooks.Started(ctx, id)
+	}
 	s.wg.Go(func() {
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), RunLimit)
 		defer cancel()
