@@ -111,7 +111,7 @@ jobs:
 
       # 1.2.3 and 1.2 for a release, plus latest; only 1.2.3-rc.1 for a prerelease.
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           flavor: latest=auto
