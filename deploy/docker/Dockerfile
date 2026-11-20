@@ -9,7 +9,7 @@
 # The frontend and Go stages run on the build machine's platform and Go cross-compiles for the target, so an arm64
 # image builds without emulation. Only the final stage is per-platform.
 
-ARG GO_VERSION=1.27.3
+ARG GO_VERSION=1.27.4
 # GO_VERSION follows go.mod. NODE_VERSION follows CI.
 ARG NODE_VERSION=24
 
