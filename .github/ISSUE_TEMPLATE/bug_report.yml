@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Bug report
+description: Something doesn't work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. **If you think it is a security problem, please don't use this form:** report it
+        privately through the Security tab (see SECURITY.md).
+
+        Only the latest release is supported, so please check it still happens there.
+  - type: checkboxes
+    attributes:
+      label: Before you start
+      options:
+        - label: This is not a security vulnerability
+          required: true
+        - label: I'm running the latest release
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `pihole-rbac version`, or the image tag.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How is it deployed?
+      options:
+        - Debian LXC (systemd)
+        - Docker
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: pihole
+    attributes:
+      label: Pi-hole version
+      description: The Pi-hole v6 version, if the problem involves a Pi-hole instance.
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Login method involved
+      options:
+        - Local account
+        - LDAP
+        - API token
+        - Not relevant
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Log in as ...
+        2. Go to ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, error messages or screenshots
+      description: |
+        **Remove passwords, tokens, session cookies, webhook URLs and the master key before pasting.** The app doesn't
+        log secrets, but what you paste is your responsibility.
+      render: text

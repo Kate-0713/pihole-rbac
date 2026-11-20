@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Whoever is listed here is asked to review every pull request that touches the matching paths. The last matching
+# pattern wins, so the sensitive paths are listed again to make it plain that they matter most.
+
+*                       @Kate-0713
+
+# Updates, signing and installation: what runs as root or decides what code a release contains.
+/internal/updater/      @Kate-0713
+/minisign.pub           @Kate-0713
+/deploy/                @Kate-0713
+/.github/workflows/     @Kate-0713
+/.goreleaser.yaml       @Kate-0713
+
+# Authorisation, authentication and the database schema.
+/internal/rbac/         @Kate-0713
+/internal/auth/         @Kate-0713
+/migrations/            @Kate-0713
+/api/openapi.yaml       @Kate-0713

@@ -117,7 +117,7 @@ release-check: ## Run every check a release needs, in order, stopping at the fir
 	echo "Still to do by hand:"; \
 	echo "  - CI is green on this commit (the LXC install and update, rsyslog and Prometheus jobs need a systemd host"; \
 	echo "    or downloads, so they run only there)"; \
-	echo "  - security-sensitive changes since the last release are reviewed (QUALITY.md, Release checks)"; \
+	echo "  - security-sensitive changes since the last release are reviewed (CONTRIBUTING.md, Release checks)"; \
 	echo "  - both deployments are tried by hand if the installer, updater or image changed"
 
 generate: web/node_modules ## Regenerate internal/store/db (sqlc), internal/api/gen (oapi-codegen) and web/src/lib/api/schema.d.ts (openapi-typescript)

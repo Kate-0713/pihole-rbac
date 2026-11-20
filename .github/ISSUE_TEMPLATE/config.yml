@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Kate-0713/pihole-rbac/security/advisories/new
+    about: Please report vulnerabilities privately here, never in a public issue. See SECURITY.md for what is in scope.

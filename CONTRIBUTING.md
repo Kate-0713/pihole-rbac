@@ -1,6 +1,29 @@
-# Quality Policy
+# Contributing and quality policy
 
-This is how changes to pihole-rbac are built, checked and released. It applies to everyone who contributes, the maintainer included. The security properties it protects are described in [SECURITY.md](SECURITY.md).
+Thank you for helping with pihole-rbac. This is how changes are made, checked and released. It applies to everyone who contributes, the maintainer included. The security properties it protects are described in [SECURITY.md](SECURITY.md); **please report suspected vulnerabilities privately, never in an issue or a pull request.**
+
+This is a solo-maintained project, so response times vary, and a change that is small, tested and focused is far more likely to be merged quickly.
+
+## Getting started
+
+You need the Go version in `go.mod`, Node 24 with npm 11, and either `make` (Linux) or Windows PowerShell (`.\build.ps1`, with the same task names). The README has the install notes and the full task table. The tasks you will use most:
+
+```sh
+make test         # go vet and go test
+make web-check    # type-check the frontend
+make web-test     # frontend unit tests
+make e2e          # browser tests; downloads Chromium on the first run
+make generate     # after changing a migration, a query or api/openapi.yaml
+make dev-api      # run the API on :8080 (and make dev-web for the frontend)
+```
+
+Before opening a pull request, run at least `test`, `web-check` and `web-test`, and `e2e` for anything the browser sees. `make release-check` runs everything the maintainer runs before a release; it is not required for a pull request.
+
+Found a bug or have an idea? Open an issue with one of the templates. For anything that changes the data model, the API or a security rule, agree it in an issue before writing code (see below).
+
+## Licence
+
+pihole-rbac is licensed under AGPL-3.0-or-later, and contributions are accepted under the same licence. New hand-written files carry the two-line SPDX header that existing files have.
 
 ## Principles
 
@@ -64,16 +87,6 @@ Every push to `master` and every pull request runs these jobs, and a release is 
 - **rsyslog** and **prometheus**: log forwarding and the metrics output checked against the real programs.
 - **snapshot**: the release configuration still builds the Linux artifacts and the third-party notices.
 
-## Release checks
-
-Before tagging, the maintainer runs `make release-check` (or `.\build.ps1 release-check`). It runs, in order, a clean-tree check, `gofmt`, the generated-code check, `go vet` and `go test`, the race detector, `govulncheck`, `npm audit`, `svelte-check`, Vitest, the browser tests (which build the binary and check the frontend is embedded), ShellCheck, the Docker smoke test and the GoReleaser snapshot, and stops at the first failure. A check can be skipped only by naming it in `RELEASE_CHECK_SKIP`, and skipped checks are listed at the end.
-
-Some things need a person, and the command ends by listing them:
-
-- CI is green on the release commit, including the jobs that need a systemd host or downloads (the LXC install and update tests, rsyslog and Prometheus);
-- security-sensitive changes since the last release have been reviewed;
-- both deployments (LXC and Docker) are tried by hand when the installer, updater or image changed.
-
 ## Reviewing a change
 
 Reviewers look at, in this order:
@@ -95,14 +108,32 @@ Security findings in review are fixed in the pull request, not deferred.
 - Pin tool versions (`tools/go.mod`) so that generated code is reproducible.
 - Keep the Go toolchain, Node and the runtime base image current; a security update to any of them does not wait for a feature release.
 
-## Releases
+## Documentation
+
+The README, the OpenAPI spec and this policy are kept current with the code. A change that makes any of them wrong includes the correction.
+
+## For the maintainer
+
+These sections describe how releases are made and how problems are triaged.
+
+### Release checks
+
+Before tagging, the maintainer runs `make release-check` (or `.\build.ps1 release-check`). It runs, in order, a clean-tree check, `gofmt`, the generated-code check, `go vet` and `go test`, the race detector, `govulncheck`, `npm audit`, `svelte-check`, Vitest, the browser tests (which build the binary and check the frontend is embedded), ShellCheck, the Docker smoke test and the GoReleaser snapshot, and stops at the first failure. A check can be skipped only by naming it in `RELEASE_CHECK_SKIP`, and skipped checks are listed at the end.
+
+Some things need a person, and the command ends by listing them:
+
+- CI is green on the release commit, including the jobs that need a systemd host or downloads (the LXC install and update tests, rsyslog and Prometheus);
+- security-sensitive changes since the last release have been reviewed;
+- both deployments (LXC and Docker) are tried by hand when the installer, updater or image changed.
+
+### Releases
 
 - One repository, one version, one release: the Go binary and the embedded web app always ship together, as Semantic Versions.
 - A release is cut from a tagged commit by the release workflow, which runs CI in full, builds the Linux amd64 and arm64 binaries and the multi-architecture images, and signs `checksums.txt` with minisign.
 - Release notes say what changed, call out security fixes, any upgrade step (for example a systemd unit change that needs `install.sh` run again) and any permission or behaviour change that needs an admin's attention.
 - Migrations run on startup after a `VACUUM INTO` backup, and the updater rolls back automatically when a new version fails its health check.
 
-## Bugs
+### Bugs
 
 | Severity | Examples | Handling |
 | --- | --- | --- |
@@ -112,10 +143,6 @@ Security findings in review are fixed in the pull request, not deferred.
 | Low | Cosmetic issues, rough edges, documentation | Fixed as time allows. |
 
 Every bug fix includes a test that would have caught it.
-
-## Documentation
-
-The README, the OpenAPI spec and this policy are kept current with the code. A change that makes any of them wrong includes the correction.
 
 ## Changing this policy
 

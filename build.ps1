@@ -182,7 +182,7 @@ try {
             Write-Host 'Still to do by hand:'
             Write-Host '  - CI is green on this commit (the LXC install and update, rsyslog and Prometheus jobs need a systemd host'
             Write-Host '    or downloads, so they run only there)'
-            Write-Host '  - security-sensitive changes since the last release are reviewed (QUALITY.md, Release checks)'
+            Write-Host '  - security-sensitive changes since the last release are reviewed (CONTRIBUTING.md, Release checks)'
             Write-Host '  - both deployments are tried by hand if the installer, updater or image changed'
         }
         'generate' {
