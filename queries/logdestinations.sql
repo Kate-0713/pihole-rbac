@@ -52,4 +52,8 @@ SELECT count(*) FROM audit_log WHERE id > ?;
 
 -- name: AdvanceLogCursor :exec
 -- Moves a cursor forward and never back, so a delayed write can't make a destination send rows again.
-UPDATE log_destination_cursors SET last_id = max(last_id, CAST(sqlc.arg(last_id) AS INTEGER)), updated_at = ? WHERE destination_id = ?;
+-- Every parameter is named: sqlc numbers a named parameter that comes before bare ones wrongly, which left the
+-- statement expecting more arguments than it was given.
+UPDATE log_destination_cursors
+SET last_id = max(last_id, CAST(sqlc.arg(last_id) AS INTEGER)), updated_at = sqlc.arg(updated_at)
+WHERE destination_id = sqlc.arg(destination_id);

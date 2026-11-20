@@ -11,7 +11,9 @@ import (
 )
 
 const advanceLogCursor = `-- name: AdvanceLogCursor :exec
-UPDATE log_destination_cursors SET last_id = max(last_id, CAST(?3 AS INTEGER)), updated_at = ? WHERE destination_id = ?
+UPDATE log_destination_cursors
+SET last_id = max(last_id, CAST(?1 AS INTEGER)), updated_at = ?2
+WHERE destination_id = ?3
 `
 
 type AdvanceLogCursorParams struct {
@@ -21,6 +23,8 @@ type AdvanceLogCursorParams struct {
 }
 
 // Moves a cursor forward and never back, so a delayed write can't make a destination send rows again.
+// Every parameter is named: sqlc numbers a named parameter that comes before bare ones wrongly, which left the
+// statement expecting more arguments than it was given.
 func (q *Queries) AdvanceLogCursor(ctx context.Context, arg AdvanceLogCursorParams) error {
 	_, err := q.db.ExecContext(ctx, advanceLogCursor, arg.LastID, arg.UpdatedAt, arg.DestinationID)
 	return err

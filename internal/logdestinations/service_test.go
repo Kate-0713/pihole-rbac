@@ -328,6 +328,46 @@ func TestMovingTellsOldPlaceAndStartsNewAtTheChange(t *testing.T) {
 	}
 }
 
+// The cursor query has to run against a real database, and only ever moves a cursor forward. Its generated SQL once
+// asked for more arguments than it was given, which nothing here noticed and only showed up as an error in the log of
+// a browser test.
+func TestAdvanceLogCursorOnlyMovesForward(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	in := tcp("Cursor", syslogtest.NewTCP(t))
+	in.Enabled = false // no forwarder, so nothing else moves the cursor
+	d, err := e.svc.Create(ctx, e.admin, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor := func() int64 {
+		t.Helper()
+		c, err := e.st.Read().GetLogCursor(ctx, d.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.LastID
+	}
+	advance := func(to int64) {
+		t.Helper()
+		err := e.st.WithTx(ctx, func(q *db.Queries) error {
+			return q.AdvanceLogCursor(ctx, db.AdvanceLogCursorParams{LastID: to, UpdatedAt: 1, DestinationID: d.ID})
+		})
+		if err != nil {
+			t.Fatalf("advancing to %d: %v", to, err)
+		}
+	}
+	start := cursor()
+	advance(start + 10)
+	if got := cursor(); got != start+10 {
+		t.Fatalf("cursor after advancing: %d, want %d", got, start+10)
+	}
+	advance(start + 3) // behind it: ignored
+	if got := cursor(); got != start+10 {
+		t.Fatalf("cursor moved back to %d", got)
+	}
+}
+
 func TestDisablingTellsOldPlaceAndKeepsPosition(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
