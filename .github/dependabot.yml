@@ -1,11 +1,49 @@
 # SPDX-FileCopyrightText: 2026 Kate O'Grady
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Keeps the runtime base image in deploy/docker/Dockerfile current (and its digest, once one is pinned). The node and
-# golang build stages take their versions from ARGs, which Dependabot leaves alone: Go follows go.mod and Node
-# follows CI.
+# Weekly update pull requests, grouped so a week's minor and patch bumps arrive as one PR per ecosystem. Each PR runs
+# the full CI suite. Major versions stay separate, so each gets its own review. Security updates are raised straight
+# away, outside this schedule.
+#
+# The docker entry keeps the runtime base image in deploy/docker/Dockerfile current (and its digest, once one is
+# pinned). The node and golang build stages take their versions from ARGs, which Dependabot leaves alone: Go follows
+# go.mod and Node follows CI.
 version: 2
 updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+
+  # The dev tools module (sqlc, oapi-codegen, go-licenses, govulncheck). A bump here can break generation or the
+  # notices step, so CI and the Docker job are what to watch on these PRs.
+  - package-ecosystem: gomod
+    directory: /tools
+    schedule:
+      interval: weekly
+    groups:
+      tools-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
   - package-ecosystem: docker
     directory: /deploy/docker
     schedule:

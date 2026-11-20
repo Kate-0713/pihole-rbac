@@ -109,7 +109,7 @@ The signature's trusted comment reads `pihole-rbac <tag>`, which ties it to one 
 - Go and npm dependencies are locked (`go.sum`, `package-lock.json`), and each new dependency has to be justified in its pull request, with the standard-library alternative stated.
 - Release builds are produced by the release workflow from a tagged commit, after the full CI suite passes, and list their third-party licences in `THIRD_PARTY_NOTICES.txt`.
 - `govulncheck` (Go dependencies and standard library, reachable code only) and `npm audit` (frontend, failing on high or critical) run in CI on every push and pull request, before every release, and weekly on their own, since new advisories appear without any change to the code. Anything they report is fixed, or explained in the release notes.
-- The runtime base image is tracked by Dependabot.
+- Dependabot raises weekly update pull requests for the Go modules, the frontend packages, the GitHub Actions and the runtime base image, and security updates as soon as an advisory is published. Each one runs the full CI suite before it is merged.
 
 ## Past security fixes
 
