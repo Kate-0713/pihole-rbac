@@ -63,6 +63,16 @@ jobs:
       - name: Build web
         run: npm --prefix web run build
 
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt (gofmt -w):" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
       - name: go vet
         run: go vet ./...
 
@@ -96,6 +106,31 @@ jobs:
             web/playwright-report
             web/test-results
           retention-days: 7
+
+  # The race detector, which needs cgo (so a C compiler) where the rest of the build has it off.
+  race:
+    name: race detector
+    runs-on: ubuntu-26.04
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: go test -race
+        run: go test -race ./...
+
+  # govulncheck and npm audit. A separate workflow so it can also run weekly, and so the release workflow, which runs
+  # all of this one first, is held back by a known vulnerability too.
+  vulncheck:
+    name: vulnerability check
+    uses: ./.github/workflows/vulncheck.yml
 
   # The image for both architectures, built on every push but never pushed (the release workflow publishes it). The
   # amd64 image is smoke-tested; the arm64 one only has to build, since its final stage runs nothing.

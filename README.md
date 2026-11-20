@@ -336,6 +336,14 @@ The same tasks exist on both platforms:
 | Task | Debian/Ubuntu | Windows | What it does |
 | --- | --- | --- | --- |
 | test | `make test` | `.\build.ps1 test` | `go vet` and `go test` |
+| tree-check | `make tree-check` | `.\build.ps1 tree-check` | Fail if there are uncommitted changes |
+| fmt-check | `make fmt-check` | `.\build.ps1 fmt-check` | Fail if a tracked Go file isn't `gofmt`-formatted |
+| race | `make race` | `.\build.ps1 race` | `go test -race`; needs a C compiler (`gcc`), because the race detector needs cgo |
+| vulncheck | `make vulncheck` | `.\build.ps1 vulncheck` | `govulncheck` on the Go dependencies and standard library |
+| audit | `make audit` | `.\build.ps1 audit` | `npm audit` on the frontend dependencies; fails on high or critical |
+| shellcheck | `make shellcheck` | `.\build.ps1 shellcheck` | ShellCheck on the deploy scripts |
+| docker-smoke | `make docker-smoke` | `.\build.ps1 docker-smoke` | Build the image, then smoke-test it (needs Docker, bash, curl and openssl) |
+| release-check | `make release-check` | `.\build.ps1 release-check` | Every check above that a release needs, in order, stopping at the first failure (see below) |
 | web | `make web` | `.\build.ps1 web` | Build the SvelteKit app into `web/build/app` |
 | web-check | `make web-check` | `.\build.ps1 web-check` | Type-check the SvelteKit app |
 | web-test | `make web-test` | `.\build.ps1 web-test` | Run the frontend unit tests (Vitest) |
@@ -349,6 +357,25 @@ The same tasks exist on both platforms:
 | docker | `make docker` | `.\build.ps1 docker` | Build the Docker image for this machine's platform as `pihole-rbac:dev` |
 | snapshot | `make snapshot` | `.\build.ps1 snapshot` | GoReleaser snapshot of the Linux release artifacts into `dist/` |
 | clean | `make clean` | `.\build.ps1 clean` | Remove `bin/`, `dist/` and `web/build/app` |
+
+### Before a release
+
+`release-check` runs, in this order: `tree-check`, `fmt-check`, `generate-check`, `test`, `race`, `vulncheck`,
+`audit`, `web-check`, `web-test`, `e2e`, `shellcheck`, `docker-smoke` and `snapshot`. It stops at the first failure and
+ends with a reminder of what only a person can check. A check whose tool isn't installed fails rather than being
+passed over; to leave one out on purpose, name it, and it's listed as skipped at the end:
+
+```sh
+RELEASE_CHECK_SKIP="race docker-smoke" make release-check
+```
+
+```powershell
+$env:RELEASE_CHECK_SKIP = 'race docker-smoke'; .\build.ps1 release-check
+```
+
+The LXC install and update tests, the rsyslog test and the Prometheus test need a systemd host or downloads, so they
+run only in CI. `vulncheck` runs `govulncheck` from `tools/go.mod`, like the other dev tools; add it once with
+`go get -modfile=tools/go.mod -tool golang.org/x/vuln/cmd/govulncheck@latest`.
 
 Plain Go commands work too, with no frontend build needed:
 

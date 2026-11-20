@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Looks for known vulnerabilities in the Go code's dependencies and standard library (govulncheck, which reports only
+# those the code can reach) and in the frontend's npm dependencies (npm audit, failing on high or critical).
+#
+# CI runs it on every push and pull request, and so does every release, through ci.yml. It also runs weekly on its own,
+# because new advisories appear without any change to the code, and the app never updates itself, so a fix has to be
+# noticed here.
+
+name: Vulnerability check
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  vulncheck:
+    name: govulncheck and npm audit
+    runs-on: ubuntu-26.04
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # govulncheck is pinned in tools/go.mod with the other dev tools. The Go version comes from go.mod, so a
+      # standard-library fix released after it shows up here as a reason to raise it.
+      - name: govulncheck
+        run: go tool "-modfile=tools/go.mod" govulncheck ./...
+
+      - name: npm audit
+        run: npm --prefix web audit --audit-level=high

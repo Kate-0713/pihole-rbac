@@ -14,7 +14,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'web', 'web-check', 'web-test', 'e2e', 'build', 'check-embedded', 'test', 'generate', 'generate-check', 'dev-api', 'dev-web', 'docker', 'snapshot', 'clean')]
+    [ValidateSet('help', 'web', 'web-check', 'web-test', 'e2e', 'build', 'check-embedded', 'test', 'tree-check', 'fmt-check', 'race', 'vulncheck', 'audit', 'shellcheck', 'docker-smoke', 'release-check', 'generate', 'generate-check', 'dev-api', 'dev-web', 'docker', 'snapshot', 'clean')]
     [string]$Task = 'help'
 )
 
@@ -28,6 +28,11 @@ $Oapi = @('tool', '-modfile=tools/go.mod', 'oapi-codegen', '-config', 'api/oapi-
 # openapi-typescript generates the frontend's API types from the same spec.
 $WebGen = @('--prefix', 'web', 'run', '--silent', 'generate')
 $ApiGen = @('internal\api\gen\api.gen.go', 'web\src\lib\api\schema.d.ts')
+# The deploy scripts ShellCheck covers (the same list as the CI install job).
+$ShellScripts = @('deploy/lxc/install.sh', 'deploy/lxc/test-install.sh', 'deploy/lxc/test-update.sh', 'deploy/docker/smoke-test.sh')
+# The checks release-check runs, in this order: quick ones first, slow ones last. Skip some with
+# $env:RELEASE_CHECK_SKIP = 'race docker-smoke' (space or comma separated); skipped checks are listed at the end.
+$ReleaseChecks = @('tree-check', 'fmt-check', 'generate-check', 'test', 'race', 'vulncheck', 'audit', 'web-check', 'web-test', 'e2e', 'shellcheck', 'docker-smoke', 'snapshot')
 $Pkg = 'github.com/Kate-0713/pihole-rbac/internal/buildinfo'
 $env:CGO_ENABLED = '0'
 if (-not $env:PIHOLE_RBAC_DATA_DIR) {
@@ -70,7 +75,7 @@ function Test-Embedded {
 try {
     switch ($Task) {
         'help' {
-            Write-Host 'Tasks: web, web-check, web-test, e2e, build, check-embedded, test, generate, generate-check, dev-api, dev-web, docker, snapshot, clean'
+            Write-Host 'Tasks: web, web-check, web-test, e2e, build, check-embedded, test, tree-check, fmt-check, race, vulncheck, audit, shellcheck, docker-smoke, release-check, generate, generate-check, dev-api, dev-web, docker, snapshot, clean'
         }
         'web' {
             Install-WebDeps
@@ -105,6 +110,80 @@ try {
         'test' {
             Invoke-Native 'go' @('vet', './...')
             Invoke-Native 'go' @('test', './...')
+        }
+        'tree-check' {
+            $dirty = & git status --porcelain
+            if ($LASTEXITCODE -ne 0) { throw 'git status failed' }
+            if ($dirty) { $dirty | Write-Host; throw 'the working tree has uncommitted changes' }
+        }
+        'fmt-check' {
+            # In batches, to stay inside Windows' command-line length limit.
+            $files = @(& git ls-files '*.go')
+            if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed' }
+            $bad = @()
+            for ($i = 0; $i -lt $files.Count; $i += 100) {
+                $last = [Math]::Min($i + 99, $files.Count - 1)
+                $bad += @(& gofmt -l @($files[$i..$last]))
+                if ($LASTEXITCODE -ne 0) { throw 'gofmt failed' }
+            }
+            if ($bad.Count -gt 0) { $bad | Write-Host; throw 'these files need gofmt (gofmt -w)' }
+        }
+        'race' {
+            # The race detector needs cgo, so a C compiler, unlike the rest of the build.
+            if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+                throw 'the race detector needs a C compiler (gcc on PATH, for example from MSYS2 or WinLibs); to skip it, set RELEASE_CHECK_SKIP=race'
+            }
+            $env:CGO_ENABLED = '1'
+            try { Invoke-Native 'go' @('test', '-race', './...') } finally { $env:CGO_ENABLED = '0' }
+        }
+        'vulncheck' {
+            # govulncheck is pinned in tools/go.mod with the other dev tools.
+            Invoke-Native 'go' @('tool', '-modfile=tools/go.mod', 'govulncheck', './...')
+        }
+        'audit' {
+            Invoke-Native 'npm' @('--prefix', 'web', 'audit', '--audit-level=high')
+        }
+        'shellcheck' {
+            if (-not (Get-Command shellcheck -ErrorAction SilentlyContinue)) { throw 'shellcheck is not installed' }
+            Invoke-Native 'shellcheck' $ShellScripts
+        }
+        'docker-smoke' {
+            # The smoke test is a bash script (Git Bash or WSL) and needs Docker, curl and openssl.
+            & $PSCommandPath 'docker'
+            Invoke-Native 'bash' @('deploy/docker/smoke-test.sh', 'pihole-rbac:dev')
+        }
+        'release-check' {
+            $skip = @($env:RELEASE_CHECK_SKIP -split '[\s,]+' | Where-Object { $_ })
+            foreach ($name in $skip) {
+                if ($ReleaseChecks -notcontains $name) {
+                    throw "RELEASE_CHECK_SKIP names an unknown check '$name' (checks: $($ReleaseChecks -join ' '))"
+                }
+            }
+            $n = 0
+            $skipped = @()
+            foreach ($check in $ReleaseChecks) {
+                $n++
+                Write-Host ''
+                if ($skip -contains $check) {
+                    Write-Host "==> [$n/$($ReleaseChecks.Count)] ${check}: SKIPPED"
+                    $skipped += $check
+                    continue
+                }
+                Write-Host "==> [$n/$($ReleaseChecks.Count)] $check"
+                & $PSCommandPath $check
+            }
+            Write-Host ''
+            if ($skipped.Count -gt 0) {
+                Write-Host "release-check: passed, but these were SKIPPED: $($skipped -join ' ')" -ForegroundColor Yellow
+            } else {
+                Write-Host "release-check: all $($ReleaseChecks.Count) checks passed" -ForegroundColor Green
+            }
+            Write-Host ''
+            Write-Host 'Still to do by hand:'
+            Write-Host '  - CI is green on this commit (the LXC install and update, rsyslog and Prometheus jobs need a systemd host'
+            Write-Host '    or downloads, so they run only there)'
+            Write-Host '  - security-sensitive changes since the last release are reviewed (QUALITY.md, Release checks)'
+            Write-Host '  - both deployments are tried by hand if the installer, updater or image changed'
         }
         'generate' {
             Install-WebDeps
