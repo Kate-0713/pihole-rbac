@@ -128,9 +128,12 @@ func run(t *testing.T, f *Forwarder) (stop func()) {
 	return stop
 }
 
+// waitFor polls cond until it is true. The limit is generous because it only matters when a test is about to fail: a
+// refused connection takes a second or two on Windows, and a busy machine slows everything further, and a limit near
+// that made outage tests fail now and then.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
@@ -230,7 +233,7 @@ func TestForwarderCollectorDownThenUp(t *testing.T) {
 	}
 
 	c.Restart()
-	if got := ids(t, c.Wait(5, 3*time.Second)); !slices.Equal(got, seq(1, 5)) {
+	if got := ids(t, c.Wait(5, 15*time.Second)); !slices.Equal(got, seq(1, 5)) {
 		t.Errorf("after the collector came back: %v", got)
 	}
 	waitFor(t, "recovery", func() bool { return f.Status().State == StateOK })
@@ -305,7 +308,7 @@ func TestForwarderOutageCallbacks(t *testing.T) {
 	mu.Unlock()
 
 	c.Restart()
-	c.Wait(2, 3*time.Second)
+	c.Wait(2, 15*time.Second)
 	waitFor(t, "OnRecovered", func() bool { mu.Lock(); defer mu.Unlock(); return len(recovered) == 1 })
 	time.Sleep(50 * time.Millisecond)
 	mu.Lock()
@@ -327,7 +330,7 @@ func TestForwarderShortOutageIsQuiet(t *testing.T) {
 	run(t, f)
 	waitFor(t, "a failure", func() bool { return f.Status().State == StateFailing })
 	c.Restart()
-	c.Wait(1, 3*time.Second)
+	c.Wait(1, 15*time.Second)
 	waitFor(t, "recovery", func() bool { return f.Status().State == StateOK })
 	mu.Lock()
 	defer mu.Unlock()
