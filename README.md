@@ -20,9 +20,27 @@ SQLite database, shipped as one static binary.
     restart DNS.
   - **Domains:** add and remove allow and deny entries, and change their
     groups and comments.
-  - **Clients:** change a client's groups and comment.
-  - **Query log:** search and filter recent queries.
-- People only see the pages and buttons they're allowed to use.
+  - **Clients:** change a client's groups and comment, or move a client into
+    other groups for a set time and have the app put it back afterwards.
+  - **Query log:** filter by domain, client, status, type and time range, in
+    numbered pages, back through Pi-hole's long-term history.
+  - **Pi-hole groups:** create, rename, comment, enable, disable and delete
+    them. The app warns before a change would break something that refers to
+    a group by name, and keeps its own references up to date when one is
+    renamed.
+  - **Lists and gravity:** add, change, enable and delete adlists, see each
+    one's status, and run a gravity update with its output shown live.
+  - **Local DNS:** local DNS records and CNAMEs. Names are checked before they
+    reach Pi-hole, and the app warns when one sits under your directory's
+    domain, where it would hide the real name.
+  - **DHCP:** see and delete leases, manage static leases, and change the
+    DHCP settings. Changes that affect the whole network ask for
+    confirmation first.
+  - **Schedules:** turn blocking off at set times, or switch a Pi-hole group
+    on for a window (a `bedtime` group, say), weekly or once.
+- People only see the pages and buttons they're allowed to use. Viewing and
+  changing are separate permissions, and the heavier actions have their own:
+  running gravity, and DHCP's network-wide settings.
 
 ### Roles you define, scoped to where they apply
 
@@ -50,6 +68,24 @@ SQLite database, shipped as one static binary.
 - Users can see and end their own sessions; admins can see and revoke
   anyone's.
 
+### Two-factor login and API tokens
+
+- **Two-factor login** with any authenticator app (TOTP), for local and LDAP
+  accounts, with single-use recovery codes. A role, or a single user, can be
+  required to use it: someone who must and hasn't set it up is held on the
+  setup page until they have. Resetting an admin from the command line
+  removes their second factor, so the break-glass account stays reachable.
+- **Personal API tokens** for scripts and integrations, such as a button that
+  turns blocking off for ten minutes. A token carries only the permissions
+  you choose, never more than you hold, and works only while its owner still
+  holds them, so taking away a role limits the tokens at once. Tokens expire
+  within a year, are shown once and stored only as a hash, and can use Pi-hole
+  actions and read the audit log, but not manage users, roles or settings.
+  Creating one asks for your password again, and a TOTP code if you use one.
+- Tokens belonging to LDAP users are rechecked like sessions. If the
+  directory can't be reached for too long they are suspended rather than
+  ended, and resume once it can be. Admins can see and revoke anyone's.
+
 ### Several Pi-holes from one place
 
 - Add any number of Pi-hole v6 instances, each with its own health shown in
@@ -61,6 +97,12 @@ SQLite database, shipped as one static binary.
   never hidden and can be retried. Drift between members is detected
   automatically, and **Reconcile** brings them back in line with the group's
   primary, item by item or all at once.
+- Domains, clients, Pi-hole groups, adlists and local DNS records are all
+  mirrored. A gravity update, or a change that restarts Pi-hole's DNS, goes
+  through a group one member at a time and stops if one fails, so the group
+  is never restarted all at once. DHCP is deliberately not mirrored, since
+  only one server should hand out leases: its changes go to one instance at
+  a time.
 
 ### Client reset
 
@@ -70,7 +112,25 @@ SQLite database, shipped as one static binary.
 - A preview shows exactly which clients a run would change before it runs,
   and the history shows what every run did.
 
-### Audit log and notifications
+### Schedules and temporary changes
+
+- **Blocking windows** turn blocking off for a set time, such as the lab
+  Pi-hole on weekday mornings. Pi-hole's own timer turns it back on, so a
+  window still ends if the app is down. **Group windows** switch a Pi-hole
+  group on or off for a time, for the common "bedtime" rule. Both can repeat
+  weekly or run once, and apply to one Pi-hole or a mirrored group.
+- A change made by hand during a window stays until the next start or end,
+  and a member that couldn't be reached is retried. Each run's results are
+  kept on the schedule.
+- **Temporary client changes** move one client into other Pi-hole groups for
+  a time you choose, and put it back afterwards. The put-back undoes only the
+  change the app made, so anything someone else changed in the meantime is
+  kept, and a failed put-back is retried until it works. Client reset leaves
+  clients with an active change alone.
+- Admins set the longest a group window or temporary change can last, and
+  whether temporary changes (and local DNS edits) need a reason.
+
+### Audit log, notifications and monitoring
 
 - Every change is recorded: who did what, where, from which address, and
   whether it worked, with per-instance results for mirrored groups. Filter
@@ -79,14 +139,32 @@ SQLite database, shipped as one static binary.
   an alert when a client is added to a protected Pi-hole group.
 - A notification channel can't be silenced quietly: changing, disabling or
   deleting one sends a warning to its old destination first.
+- **Forward the audit log** to a syslog collector such as Graylog, Wazuh,
+  Loki or rsyslog, over TLS (the default), plain TCP or UDP. Every entry is
+  sent in RFC 5424 format with the full record as JSON. A collector that is
+  down catches up when it is back, so nothing is lost, and every message
+  carries the entry's `id` so duplicates can be dropped. Changing or removing
+  a destination tells the old one first, and sending unencrypted has to be
+  confirmed.
+- **Prometheus metrics** at `/metrics`, behind a token you choose and off
+  until you set one. They cover each instance's health, drift in mirrored
+  groups, logins, notifications, log forwarding lag and whether an update is
+  waiting. Example scrape configuration and alert rules are in
+  `deploy/prometheus/`.
 
 ### Security built in
 
 - Server-side sessions, CSRF protection on every change, a strict Content
   Security Policy and no externally loaded scripts, fonts or styles.
 - Login rate limiting, and stored secrets (Pi-hole passwords, the LDAP bind
-  password, notification credentials) encrypted at rest and never shown
-  again once saved.
+  password, notification credentials, two-factor secrets) encrypted at rest
+  and never shown again once saved.
+- Values that go to Pi-hole are checked first. DNS and DHCP entries are built
+  by the app from validated fields rather than passed through as text,
+  adlists are limited to `http` and `https` addresses (`file:` lists only if
+  an admin allows them), and webhook addresses are checked.
+- API tokens work only through the `Authorization` header, never through
+  cookies, and can't reach the routes that manage accounts or settings.
 
 ### Simple to run and keep up to date
 
@@ -99,8 +177,6 @@ SQLite database, shipped as one static binary.
   version doesn't come up healthy.
 - **Docker:** images for amd64 and arm64 (including Raspberry Pi), with the
   app telling you when a new release is out.
-- **Prometheus metrics** at `/metrics`, behind a token you choose and off until you set one, with example scrape
-  configuration and alert rules in `deploy/prometheus/`.
 - Guided first-run setup, light and dark themes, and an import command that
   brings users, roles, settings and notifications across from v1.
 
@@ -174,7 +250,13 @@ cover the other settings.
    (Docker).
 2. Under **Admin → Instances**, add each Pi-hole with its address and app
    password, test the connection, and enable it. New instances start
-   disabled.
+   disabled. To change local DNS records or DHCP, a Pi-hole also needs
+   `webserver.api.app_sudo` turned on (`pihole-FTL --config
+   webserver.api.app_sudo true`), because Pi-hole refuses configuration
+   changes from an app password otherwise. Reading works without it, and the
+   Local DNS and DHCP pages and the connection test say which Pi-holes have
+   it off. Turning it also lets the app password change any other Pi-hole
+   setting, so only do it for Pi-holes you want the app to manage fully.
 3. Under **Admin → Roles** and **Admin → Users**, set up roles and accounts,
    and under **Admin → LDAP** connect your directory if you use one.
 
@@ -211,6 +293,7 @@ web/                  SvelteKit app; web/embed.go embeds web/build/app
 deploy/lxc/           install.sh, systemd units (app and updater) and the env template
 deploy/docker/        Dockerfile, compose.example.yaml and the image smoke test
 deploy/notices/       builds THIRD_PARTY_NOTICES.txt for releases
+deploy/prometheus/    example scrape config and alert rules (checked in CI)
 tools/                pinned code generators and checkers (sqlc, oapi-codegen, go-licenses)
 .github/workflows/    CI and release
 .goreleaser.yaml      release build: archives, checksums and minisign signature
