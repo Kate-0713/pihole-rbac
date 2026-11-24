@@ -305,7 +305,7 @@ Makefile / build.ps1  build tasks for Linux / Windows (same task names)
 
 - Go: the version in `go.mod` (currently 1.27.4). With an older Go installed,
   the default `GOTOOLCHAIN=auto` downloads the right one automatically.
-- Node.js 22.17 or later (24 LTS recommended) with npm.
+- Node.js 22.17 or later (26 LTS recommended) with npm.
 - Git.
 - No C compiler: everything builds with `CGO_ENABLED=0`.
 - Optional: [GoReleaser](https://goreleaser.com) v2 for `snapshot`, and

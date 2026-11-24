@@ -6,7 +6,7 @@ This is a solo-maintained project, so response times vary, and a change that is 
 
 ## Getting started
 
-You need the Go version in `go.mod`, Node 24 with npm 11, and either `make` (Linux) or Windows PowerShell (`.\build.ps1`, with the same task names). The README has the install notes and the full task table. The tasks you will use most:
+You need the Go version in `go.mod`, Node 26 with npm 11 or later, and either `make` (Linux) or Windows PowerShell (`.\build.ps1`, with the same task names). The README has the install notes and the full task table. The tasks you will use most:
 
 ```sh
 make test         # go vet and go test
