@@ -8,7 +8,7 @@ ignore ./web/node_modules
 require (
 	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-ldap/ldap/v3 v3.4.15
-	github.com/oapi-codegen/runtime v1.9.0
+	github.com/oapi-codegen/runtime v1.9.1
 	github.com/pressly/goose/v3 v3.30.1
 	golang.org/x/crypto v0.59.0
 	golang.org/x/term v0.48.0
