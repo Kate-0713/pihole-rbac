@@ -21,8 +21,8 @@ OAPI     := go tool -modfile=tools/go.mod oapi-codegen -config api/oapi-codegen.
 WEBGEN   := npm --prefix web run --silent generate
 API_GEN  := internal/api/gen/api.gen.go web/src/lib/api/schema.d.ts
 
-# The deploy scripts ShellCheck covers (the same list as the CI install job).
-SHELL_SCRIPTS := deploy/lxc/install.sh deploy/lxc/test-install.sh deploy/lxc/test-update.sh deploy/docker/smoke-test.sh
+# The shell scripts ShellCheck covers (the same list as the CI install job).
+SHELL_SCRIPTS := deploy/lxc/install.sh deploy/lxc/test-install.sh deploy/lxc/test-update.sh deploy/docker/smoke-test.sh internal/piholeapi/contract/run-pihole.sh
 
 # The checks release-check runs, in this order: quick ones first, slow ones last. Skip some with
 # RELEASE_CHECK_SKIP="race docker-smoke" (space or comma separated); skipped checks are listed at the end.
@@ -89,7 +89,7 @@ vulncheck: ## govulncheck on the Go dependencies and standard library
 audit: ## npm audit on the frontend dependencies (fails on high or critical)
 	npm --prefix web audit --audit-level=high
 
-shellcheck: ## ShellCheck on the deploy scripts
+shellcheck: ## ShellCheck on the shell scripts
 	@command -v shellcheck >/dev/null || { echo "error: shellcheck is not installed" >&2; exit 1; }
 	shellcheck $(SHELL_SCRIPTS)
 
@@ -115,8 +115,8 @@ release-check: ## Run every check a release needs, in order, stopping at the fir
 	else echo "release-check: all $$total checks passed"; fi; \
 	echo; \
 	echo "Still to do by hand:"; \
-	echo "  - CI is green on this commit (the LXC install and update, rsyslog and Prometheus jobs need a systemd host"; \
-	echo "    or downloads, so they run only there)"; \
+	echo "  - CI is green on this commit (the LXC install and update, rsyslog, Prometheus and Pi-hole contract jobs need"; \
+	echo "    a systemd host, Docker or downloads, so they run only there)"; \
 	echo "  - security-sensitive changes since the last release are reviewed (CONTRIBUTING.md, Release checks)"; \
 	echo "  - both deployments are tried by hand if the installer, updater or image changed"
 

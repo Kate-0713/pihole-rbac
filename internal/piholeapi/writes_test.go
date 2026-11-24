@@ -27,13 +27,25 @@ func TestRejections(t *testing.T) {
 		wantItem string
 	}{
 		{
-			name: "duplicate add is listed under processed.errors",
+			name: "duplicate add is a 400 database_error",
 			call: func(c *piholeapi.Client) error {
 				d := piholeapi.DomainEntry{Domain: "ads.example", Type: "deny", Kind: "exact"}
 				if _, err := c.AddDomain(ctx, d); err != nil {
 					t.Fatalf("first add: %v", err)
 				}
 				_, err := c.AddDomain(ctx, d)
+				return err
+			},
+			wantMsg: "Could not add to gravity database (The item is already present)",
+		},
+		{
+			name: "an item listed under processed.errors, as FTL answers when only some items failed",
+			handler: func(w http.ResponseWriter, r *http.Request) bool {
+				_, _ = io.WriteString(w, `{"processed":{"errors":[{"item":"ads.example","error":"UNIQUE constraint failed: domainlist.domain, domainlist.type"}],"success":[{"item":"other.example"}]}}`)
+				return true
+			},
+			call: func(c *piholeapi.Client) error {
+				_, err := c.AddDomain(ctx, piholeapi.DomainEntry{Domain: "ads.example", Type: "deny", Kind: "exact"})
 				return err
 			},
 			wantMsg: "UNIQUE constraint failed", wantItem: "ads.example",

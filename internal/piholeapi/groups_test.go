@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Kate-0713/pihole-rbac/internal/piholeapi"
@@ -15,7 +16,7 @@ import (
 )
 
 // TestGroupWrites covers renaming and deleting Pi-hole groups against the fake, which answers as FTL does: a rename
-// is a PUT on the old name carrying the new one, renaming a missing group changes nothing and succeeds, a taken name
+// is a PUT on the old name carrying the new one, renaming a missing group is refused ("Group not found"), a taken name
 // is refused, and a delete takes the group off everything, with Default recreated empty.
 func TestGroupWrites(t *testing.T) {
 	ctx := context.Background()
@@ -60,13 +61,14 @@ func TestGroupWrites(t *testing.T) {
 			},
 		},
 		{
-			name: "renaming a group that doesn't exist changes nothing and succeeds",
+			name: "renaming a group that doesn't exist is rejected and changes nothing",
 			call: func(c *piholeapi.Client, _ int) error {
 				return c.RenameGroup(ctx, "nobody", piholeapi.Group{Name: "someone", Enabled: true})
 			},
 			check: func(t *testing.T, ph *piholetest.Server, _ int, err error) {
-				if err != nil {
-					t.Fatal(err)
+				var re *piholeapi.RejectedError
+				if !errors.As(err, &re) || !strings.Contains(re.Message, "Group not found") {
+					t.Fatalf("err = %v, want a RejectedError saying Group not found", err)
 				}
 				if hasGroup(ph, "someone") || len(ph.Groups()) != 3 {
 					t.Errorf("groups %+v", ph.Groups())

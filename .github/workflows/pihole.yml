@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: 2026 Kate O'Grady
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The Pi-hole contract tests (internal/piholeapi/contract) against real Pi-holes, in throwaway containers. The same
+# tests run against the fake Pi-hole in every go test; this shows the fake still matches FTL.
+#
+# CI runs it on every push and pull request, and so does every release, through ci.yml, against pinned images: the
+# oldest Pi-hole the app supports and the newest release (today the same one). A new Pi-hole release is a deliberate
+# change to the list below. It also runs weekly on its own against the newest image, unpinned, as the earliest
+# warning that a Pi-hole release changed something the app relies on; that run doesn't hold back a release.
+
+name: Pi-hole contract tests
+
+on:
+  schedule:
+    - cron: "43 5 * * 1"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned:
+    name: pihole (${{ matrix.name }})
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-26.04
+    env:
+      CGO_ENABLED: "0"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported Pi-hole, and the newest release while no newer one is listed: FTL v6.9. To find a
+          # digest: docker buildx imagetools inspect pihole/pihole:<tag> --format '{{json .Manifest.Digest}}'
+          - name: "2026.11.0, FTL v6.9"
+            image: pihole/pihole:2026.11.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Contract tests against ${{ matrix.image }}
+        run: bash internal/piholeapi/contract/run-pihole.sh "${{ matrix.image }}"
+
+  newest:
+    name: pihole (newest, unpinned)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - name: Contract tests against pihole/pihole:latest
+        run: |
+          docker pull --quiet pihole/pihole:latest
+          bash internal/piholeapi/contract/run-pihole.sh pihole/pihole:latest

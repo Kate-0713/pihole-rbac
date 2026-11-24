@@ -403,12 +403,12 @@ func TestDomains(t *testing.T) {
 	if res.Code != http.StatusBadRequest || res.errorCode() != "pihole_rejected" {
 		t.Fatalf("duplicate: %d %s", res.Code, res.Body)
 	}
-	if d := errorDetails(t, res); d["instance"] != "pihole1" || !strings.Contains(d["pihole_message"].(string), "UNIQUE") {
+	if d := errorDetails(t, res); d["instance"] != "pihole1" || !strings.Contains(d["pihole_message"].(string), "already present") {
 		t.Errorf("details %v", d)
 	}
 	if rs := failedResults(t, res); len(rs) != 1 || rs[0]["instance"] != "pihole1" || rs[0]["status"] != "failed" || rs[0]["entry"] != nil {
 		t.Errorf("results %v", rs)
-	} else if e := rs[0]["error"].(map[string]any); e["code"] != "pihole_rejected" || !strings.Contains(e["pihole_message"].(string), "UNIQUE") {
+	} else if e := rs[0]["error"].(map[string]any); e["code"] != "pihole_rejected" || !strings.Contains(e["pihole_message"].(string), "already present") {
 		t.Errorf("result error %v", e)
 	}
 	if row, detail := te.lastAudit(); row.Action != audit.ActionDomainAdd || row.Result != audit.ResultFailure || detail["error_code"] != "pihole_rejected" {

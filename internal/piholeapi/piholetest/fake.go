@@ -3,8 +3,9 @@
 
 // Package piholetest is a fake Pi-hole v6 API for tests. It implements login, logout and session checks, and keeps
 // blocking, domains, clients, groups, lists, gravity, local DNS and the query log in memory, with the Pi-hole behaviours the app has to cope
-// with: PUT creates an entry that doesn't exist, PUT without "enabled" enables the entry, a duplicate add is a 2xx
-// with the item under processed.errors, and malformed input is a 400 with an error body. Tests add or override
+// with: PUT creates an entry that doesn't exist, PUT without "enabled" enables the entry, a duplicate add is a 400
+// database_error (as FTL v6.9 answers a write whose every item failed), and malformed input is a 400 with an error
+// body. The contract tests (internal/piholeapi/contract) run against both this fake and a real Pi-hole. Tests add or override
 // anything else with Handle.
 package piholetest
 
@@ -538,13 +539,7 @@ func (s *Server) postDomain(w http.ResponseWriter, r *http.Request, listType, ki
 		return
 	}
 	if s.findDomain(in.Domain, listType, kind) >= 0 {
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"domains": []Domain{},
-			"processed": map[string]any{
-				"success": []any{},
-				"errors":  []any{map[string]string{"item": in.Domain, "error": "UNIQUE constraint failed: domainlist.domain, domainlist.type"}},
-			},
-		})
+		writeDBError(w, hintPresent)
 		return
 	}
 	d := Domain{
@@ -657,13 +652,24 @@ func errBody(key, message string) map[string]any {
 	return map[string]any{"error": map[string]any{"key": key, "message": message, "hint": nil}}
 }
 
+// hintPresent is FTL's hint when a gravity database write breaks a UNIQUE constraint.
+const hintPresent = "The item is already present"
+
+// writeDBError answers as FTL v6.9 does when every item of a gravity database write failed: 400 database_error, with
+// the reason for the last item as the hint, rather than a 2xx listing the items under processed.errors.
+func writeDBError(w http.ResponseWriter, hint string) {
+	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
+		"key": "database_error", "message": "Could not add to gravity database", "hint": hint,
+	}})
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// postClient is called with s.mu held. A client that already exists is listed under processed.errors, as Pi-hole does.
+// postClient is called with s.mu held. A client that already exists is a 400 database_error, as FTL v6.9 answers.
 func (s *Server) postClient(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Client  string `json:"client"`
@@ -675,11 +681,7 @@ func (s *Server) postClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if slices.ContainsFunc(s.clients, func(c Client) bool { return c.Client == in.Client }) {
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"clients": []Client{},
-			"processed": map[string]any{"success": []any{},
-				"errors": []any{map[string]string{"item": in.Client, "error": "UNIQUE constraint failed: client.ip"}}},
-		})
+		writeDBError(w, hintPresent)
 		return
 	}
 	groups := in.Groups
@@ -694,10 +696,10 @@ func (s *Server) postClient(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// putGroup is called with s.mu held. It answers as FTL's group writes do. POST (create) refuses a name already
+// putGroup is called with s.mu held. It answers as FTL v6.9's group writes do. POST (create) refuses a name already
 // taken. PUT with no name in the body, or the same one, updates the group called name, creating it if it doesn't
 // exist. PUT with a different name renames, as FTL's UPDATE ... WHERE name = :item does: a group that doesn't exist
-// changes nothing and still answers 200, and a new name already taken fails the UNIQUE constraint with a 400. A
+// is a 400 "Group not found", and a new name already taken fails the UNIQUE constraint with a 400. A
 // body without enabled sets it to true, and one without a comment clears it. Newlines are refused in any name.
 func (s *Server) putGroup(w http.ResponseWriter, r *http.Request, name string, create bool) {
 	var in struct {
@@ -724,20 +726,18 @@ func (s *Server) putGroup(w http.ResponseWriter, r *http.Request, name string, c
 	i := s.groupIndex(name)
 	switch {
 	case create && i >= 0:
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"groups": []Group{},
-			"processed": map[string]any{"success": []any{},
-				"errors": []any{map[string]string{"item": in.Name, "error": "UNIQUE constraint failed: group.name"}}},
-		})
+		writeDBError(w, hintPresent)
 		return
 	case newName != name:
-		if i >= 0 && s.groupIndex(newName) >= 0 {
-			writeJSON(w, http.StatusBadRequest, errBody("database_error", "Could not add to gravity database"))
+		switch {
+		case i < 0:
+			writeDBError(w, "Group not found")
+			return
+		case s.groupIndex(newName) >= 0:
+			writeDBError(w, hintPresent)
 			return
 		}
-		if i >= 0 {
-			s.groups[i].Name, s.groups[i].Comment, s.groups[i].Enabled = newName, in.Comment, enabled
-		}
+		s.groups[i].Name, s.groups[i].Comment, s.groups[i].Enabled = newName, in.Comment, enabled
 	default:
 		if i < 0 {
 			s.groups = append(s.groups, Group{ID: s.id(), Name: name})
@@ -805,7 +805,7 @@ type listBody struct {
 }
 
 // writeList is called with s.mu held. It answers as FTL's list writes do. Every write needs ?type=block or allow.
-// POST adds and refuses an address already on that type (a 400 database_error, as recent FTL answers when every item
+// POST adds and refuses an address already on that type (a 400 database_error, as FTL v6.9 answers when every item
 // failed). PUT is an upsert: it creates a list that doesn't exist, enables it unless the body says otherwise, clears a
 // comment that's left out, and keeps the groups when they're left out. Only the address, enabled flag and comment move
 // date_modified, as Pi-hole's tr_adlist_update trigger does. DELETE answers 204, or 404 with an empty body. Spaces,
@@ -865,7 +865,7 @@ func (s *Server) writeList(w http.ResponseWriter, r *http.Request, seg []string)
 	status := http.StatusOK
 	switch {
 	case post && i >= 0:
-		writeJSON(w, http.StatusBadRequest, errBody("database_error", "Could not add to gravity database"))
+		writeDBError(w, hintPresent)
 		return
 	case i < 0:
 		s.lists = append(s.lists, List{ID: s.id(), Address: address, Type: listType, Groups: []int{0}, DateAdded: s.now, DateModified: s.now})

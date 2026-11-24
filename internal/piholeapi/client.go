@@ -409,8 +409,10 @@ func statusError(resp *http.Response, method, path string) error {
 	return &StatusError{Code: resp.StatusCode, Method: method, Path: path, Message: msg}
 }
 
-// writeResponse is the part of a write's response this client reads. Pi-hole reports items it couldn't add or
-// change under processed.errors, with a 2xx status, and returns the entries as saved under domains or clients.
+// writeResponse is the part of a write's response this client reads. Pi-hole returns the entries as saved under
+// domains, clients or lists. When some items of a write failed and others didn't, it lists the failures under
+// processed.errors with a 2xx status; when all of them failed (the app writes one at a time, so any failure), FTL
+// v6.9 answers 400 database_error instead, which is a RejectedError too.
 type writeResponse struct {
 	Domains   []DomainEntry `json:"domains"`
 	Clients   []ClientEntry `json:"clients"`
@@ -810,8 +812,8 @@ func (c *Client) UpdateGroup(ctx context.Context, g Group) error {
 }
 
 // RenameGroup renames the Pi-hole group called from to g.Name and sets its comment and enabled flag. Pi-hole renames
-// with a PUT on the old name carrying the new one. A group that doesn't exist is left alone and the PUT still
-// succeeds, so callers check that it does first; a new name already taken is a RejectedError.
+// with a PUT on the old name carrying the new one. A group that doesn't exist, or a new name already taken, is a
+// RejectedError (FTL v6.9's "Group not found" and "The item is already present"); callers check both first.
 func (c *Client) RenameGroup(ctx context.Context, from string, g Group) error {
 	return c.write(ctx, http.MethodPut, "/api/groups/"+url.PathEscape(from), groupBody{g.Name, g.Comment, g.Enabled}, nil)
 }

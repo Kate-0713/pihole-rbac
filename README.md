@@ -185,7 +185,9 @@ SQLite database, shipped as one static binary.
 pihole-rbac serves plain HTTP on port 8080 and expects a reverse proxy
 (Caddy, Traefik, nginx) in front of it for HTTPS. You'll need a Pi-hole v6
 instance with an app password (in Pi-hole, under **Settings → Web interface /
-API**) for each Pi-hole you want to manage.
+API**) for each Pi-hole you want to manage. The oldest Pi-hole supported is
+FTL v6.9 (Docker image 2026.11.0): CI tests the app's use of Pi-hole's API
+against it and against the newest release.
 
 ### Debian or Ubuntu (LXC or VM)
 
@@ -341,7 +343,7 @@ The same tasks exist on both platforms:
 | race | `make race` | `.\build.ps1 race` | `go test -race`; needs a C compiler (`gcc`), because the race detector needs cgo |
 | vulncheck | `make vulncheck` | `.\build.ps1 vulncheck` | `govulncheck` on the Go dependencies and standard library |
 | audit | `make audit` | `.\build.ps1 audit` | `npm audit` on the frontend dependencies; fails on high or critical |
-| shellcheck | `make shellcheck` | `.\build.ps1 shellcheck` | ShellCheck on the deploy scripts |
+| shellcheck | `make shellcheck` | `.\build.ps1 shellcheck` | ShellCheck on the shell scripts |
 | docker-smoke | `make docker-smoke` | `.\build.ps1 docker-smoke` | Build the image, then smoke-test it (needs Docker, bash, curl and openssl) |
 | release-check | `make release-check` | `.\build.ps1 release-check` | Every check above that a release needs, in order, stopping at the first failure (see below) |
 | web | `make web` | `.\build.ps1 web` | Build the SvelteKit app into `web/build/app` |
@@ -373,8 +375,10 @@ RELEASE_CHECK_SKIP="race docker-smoke" make release-check
 $env:RELEASE_CHECK_SKIP = 'race docker-smoke'; .\build.ps1 release-check
 ```
 
-The LXC install and update tests, the rsyslog test and the Prometheus test need a systemd host or downloads, so they
-run only in CI. `vulncheck` runs `govulncheck` from `tools/go.mod`, like the other dev tools; add it once with
+The LXC install and update tests, the rsyslog test, the Prometheus test and the Pi-hole contract tests against a real
+Pi-hole need a systemd host, Docker or downloads, so they run only in CI. `go test ./...` runs the same contract tests
+against the fake Pi-hole; to run them against a real one on Linux with Docker, use
+`bash internal/piholeapi/contract/run-pihole.sh pihole/pihole:<tag>`. `vulncheck` runs `govulncheck` from `tools/go.mod`, like the other dev tools; add it once with
 `go get -modfile=tools/go.mod -tool golang.org/x/vuln/cmd/govulncheck@latest`.
 
 Plain Go commands work too, with no frontend build needed:
@@ -401,7 +405,10 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on Ubuntu and Windows:
 web type-check and build, `go vet`, `go test`, and a binary build that must
 embed the frontend. Separate jobs build and smoke-test the Docker image, run
 the LXC install script, forward to a real rsyslog and check the Prometheus
-examples and `/metrics` output with `promtool` and a real Prometheus. A
+examples and `/metrics` output with `promtool` and a real Prometheus. The
+`pihole` job runs the Pi-hole client's contract tests against real Pi-hole
+containers, pinned by digest, and the same tests run weekly against the newest
+Pi-hole image. A
 GoReleaser snapshot job then builds the Linux amd64 and arm64 release
 artifacts.
 

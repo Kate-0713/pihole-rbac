@@ -132,6 +132,13 @@ jobs:
     name: vulnerability check
     uses: ./.github/workflows/vulncheck.yml
 
+  # The Pi-hole client's contract tests against real Pi-holes, pinned by digest: the same tests go test runs against
+  # the fake Pi-hole, so both passing shows the fake matches FTL. A separate workflow so it can also run weekly against
+  # the newest Pi-hole image.
+  pihole:
+    name: pihole contract
+    uses: ./.github/workflows/pihole.yml
+
   # The image for both architectures, built on every push but never pushed (the release workflow publishes it). The
   # amd64 image is smoke-tested; the arm64 one only has to build, since its final stage runs nothing.
   docker:
@@ -195,7 +202,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: ShellCheck
-        run: shellcheck deploy/lxc/install.sh deploy/lxc/test-install.sh deploy/lxc/test-update.sh deploy/docker/smoke-test.sh
+        run: shellcheck deploy/lxc/install.sh deploy/lxc/test-install.sh deploy/lxc/test-update.sh deploy/docker/smoke-test.sh internal/piholeapi/contract/run-pihole.sh
 
       - name: Build the binary
         run: |

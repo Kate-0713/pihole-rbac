@@ -28,8 +28,8 @@ $Oapi = @('tool', '-modfile=tools/go.mod', 'oapi-codegen', '-config', 'api/oapi-
 # openapi-typescript generates the frontend's API types from the same spec.
 $WebGen = @('--prefix', 'web', 'run', '--silent', 'generate')
 $ApiGen = @('internal\api\gen\api.gen.go', 'web\src\lib\api\schema.d.ts')
-# The deploy scripts ShellCheck covers (the same list as the CI install job).
-$ShellScripts = @('deploy/lxc/install.sh', 'deploy/lxc/test-install.sh', 'deploy/lxc/test-update.sh', 'deploy/docker/smoke-test.sh')
+# The shell scripts ShellCheck covers (the same list as the CI install job).
+$ShellScripts = @('deploy/lxc/install.sh', 'deploy/lxc/test-install.sh', 'deploy/lxc/test-update.sh', 'deploy/docker/smoke-test.sh', 'internal/piholeapi/contract/run-pihole.sh')
 # The checks release-check runs, in this order: quick ones first, slow ones last. Skip some with
 # $env:RELEASE_CHECK_SKIP = 'race docker-smoke' (space or comma separated); skipped checks are listed at the end.
 $ReleaseChecks = @('tree-check', 'fmt-check', 'generate-check', 'test', 'race', 'vulncheck', 'audit', 'web-check', 'web-test', 'e2e', 'shellcheck', 'docker-smoke', 'snapshot')
@@ -180,8 +180,8 @@ try {
             }
             Write-Host ''
             Write-Host 'Still to do by hand:'
-            Write-Host '  - CI is green on this commit (the LXC install and update, rsyslog and Prometheus jobs need a systemd host'
-            Write-Host '    or downloads, so they run only there)'
+            Write-Host '  - CI is green on this commit (the LXC install and update, rsyslog, Prometheus and Pi-hole contract jobs need'
+            Write-Host '    a systemd host, Docker or downloads, so they run only there)'
             Write-Host '  - security-sensitive changes since the last release are reviewed (CONTRIBUTING.md, Release checks)'
             Write-Host '  - both deployments are tried by hand if the installer, updater or image changed'
         }

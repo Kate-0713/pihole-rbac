@@ -68,7 +68,7 @@ A pull request is ready when all of these are true:
 | RBAC | Every invariant has a test that tries to break it: builtin admin immutability, at least one enabled local admin, no granting or assigning beyond what you hold, roles in use cannot be deleted, scope resolution. |
 | Auth, sessions, CSRF, rate limiting | Required tests, including the failure paths: wrong or missing token, bad `Origin`, expired session, unknown user timing, limits tripping and clearing. |
 | LDAP | Filter escaping, DN comparison, and the no-mapped-role case failing closed. |
-| Pi-hole client and fan-out | Per-instance results including partial failure, path escaping and the value whitelist. |
+| Pi-hole client and fan-out | Per-instance results including partial failure, path escaping and the value whitelist. Pi-hole behaviour the app relies on has a contract test in `internal/piholeapi/contract`, which runs against both the fake Pi-hole and a real one, and the fake is changed to match. |
 | Database | Migrations are append-only: a released migration is never edited, and an upgrade test from the previous release must pass. |
 | Frontend | Vitest for logic (stores, permissions, URL and redirect handling) and Playwright for flows. Anything that reads API or Pi-hole data must never render it as HTML. |
 | Security regressions | A fixed vulnerability gets a test that fails without the fix, in the same pull request. |
@@ -83,8 +83,9 @@ Every push to `master` and every pull request runs these jobs, and a release is 
 - **race detector**: `go test -race ./...`.
 - **vulnerability check**: `govulncheck` and `npm audit`. This also runs weekly on its own.
 - **docker**: the amd64 image is built and smoke-tested, and the arm64 image is built.
-- **install**: ShellCheck on the deploy scripts; a real install, restart, uninstall and purge on a systemd host; and a real update through the path unit and the root updater, a refused downgrade, and a rollback of a version that never starts.
+- **install**: ShellCheck on the shell scripts; a real install, restart, uninstall and purge on a systemd host; and a real update through the path unit and the root updater, a refused downgrade, and a rollback of a version that never starts.
 - **rsyslog** and **prometheus**: log forwarding and the metrics output checked against the real programs.
+- **pihole contract**: the Pi-hole client's contract tests against real Pi-hole containers, pinned by digest: the oldest supported Pi-hole (FTL v6.9) and the newest release. The same tests run weekly against the newest image, unpinned, as an early warning; that run doesn't hold back a release.
 - **snapshot**: the release configuration still builds the Linux artifacts and the third-party notices.
 
 ## Reviewing a change
@@ -122,7 +123,7 @@ Before tagging, the maintainer runs `make release-check` (or `.\build.ps1 releas
 
 Some things need a person, and the command ends by listing them:
 
-- CI is green on the release commit, including the jobs that need a systemd host or downloads (the LXC install and update tests, rsyslog and Prometheus);
+- CI is green on the release commit, including the jobs that need a systemd host or downloads (the LXC install and update tests, rsyslog, Prometheus and the Pi-hole contract tests);
 - security-sensitive changes since the last release have been reviewed;
 - both deployments (LXC and Docker) are tried by hand when the installer, updater or image changed.
 
