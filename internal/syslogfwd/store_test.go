@@ -87,27 +87,50 @@ func TestDBStoreCursor(t *testing.T) {
 
 // Row IDs are given in commit order, and a reader sees a row once its transaction commits: reading from a cursor
 // never skips a row that a later read would find. The forwarder's cursor depends on this.
+//
+// Only the order is checked, not how fast rows arrive: every insert is its own transaction, and each commit waits for
+// the disk, which on a Windows CI runner took long enough (about 90 ms a commit) to fail a fixed deadline for all the
+// rows. The test fails if no new row arrives for 30 seconds.
 func TestDBStoreRowsAppearInIDOrderWithNoGaps(t *testing.T) {
 	st := openStore(t)
 	ctx := context.Background()
 	s := DBStore{S: st}
 	const writers, each = 4, 60
 
+	// The writers stop early if the reader fails, and are waited for either way, so none is still writing when the
+	// store is closed at the end of the test.
+	stop := make(chan struct{})
 	var wg sync.WaitGroup
+	defer func() {
+		close(stop)
+		wg.Wait()
+	}()
 	for w := range writers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := range each {
-				insert(t, st, audit.Entry{Username: fmt.Sprint("w", w), Action: audit.ActionLogin, Target: fmt.Sprint(i)})
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				err := st.WithTx(ctx, func(q *db.Queries) error {
+					_, err := audit.Insert(ctx, q, audit.Entry{Username: fmt.Sprint("w", w), Action: audit.ActionLogin, Target: fmt.Sprint(i)})
+					return err
+				})
+				if err != nil {
+					t.Errorf("writer %d, row %d: %v", w, i, err)
+					return
+				}
 			}
 		}()
 	}
 	var cursor int64
-	deadline := time.Now().Add(20 * time.Second)
+	lastNew := time.Now()
 	for cursor < writers*each {
-		if time.Now().After(deadline) {
-			t.Fatalf("read only %d of %d rows", cursor, writers*each)
+		if time.Since(lastNew) > 30*time.Second {
+			t.Fatalf("no new row for 30 seconds after reading %d of %d", cursor, writers*each)
 		}
 		rows, err := s.NextRows(ctx, cursor, 17)
 		if err != nil {
@@ -119,8 +142,12 @@ func TestDBStoreRowsAppearInIDOrderWithNoGaps(t *testing.T) {
 			}
 			cursor = r.ID
 		}
+		if len(rows) > 0 {
+			lastNew = time.Now()
+		} else {
+			time.Sleep(time.Millisecond) // don't spin on the read pool while the writers wait for the disk
+		}
 	}
-	wg.Wait()
 }
 
 // The forwarder over the real database: a row written the way a request writes it, one written the way a command does
