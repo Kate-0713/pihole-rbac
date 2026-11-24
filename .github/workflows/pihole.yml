@@ -34,7 +34,7 @@ jobs:
           # The oldest supported Pi-hole, and the newest release while no newer one is listed: FTL v6.9. To find a
           # digest: docker buildx imagetools inspect pihole/pihole:<tag> --format '{{json .Manifest.Digest}}'
           - name: "2026.11.0, FTL v6.9"
-            image: pihole/pihole:2026.11.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            image: pihole/pihole:2026.11.0@sha256:66c798d79a95c2691f280329c3611dba1746117c61c9f331907ca35a06a52778
     steps:
       - uses: actions/checkout@v7
 
