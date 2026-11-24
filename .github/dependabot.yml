@@ -48,3 +48,7 @@ updates:
     directory: /deploy/docker
     schedule:
       interval: weekly
+
+ignore:
+  - dependency-name: typescript
+    update-types: [version-update:semver-major]
