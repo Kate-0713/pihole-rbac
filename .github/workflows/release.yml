@@ -44,7 +44,7 @@ jobs:
           grep -qxF "readonly MINISIGN_PUBKEY=\"$pub\"" deploy/lxc/install.sh \
             || { echo "MINISIGN_PUBKEY in deploy/lxc/install.sh isn't the key in minisign.pub" >&2; exit 1; }
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache-dependency-path: |
